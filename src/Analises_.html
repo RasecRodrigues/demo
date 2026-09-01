@@ -1,0 +1,374 @@
+<!-- MÓDULO ANÁLISES -->
+<section id="tela-analises" class="oculto">
+  <div class="cabecalho-pagina">
+    <div>
+      <h1>Análises</h1>
+      <div class="subtitulo">
+        Matrículas, receita, turmas e frequência ao longo do tempo.
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+      <div class="campo">
+        <label>Período</label>
+        <select id="analisesMeses" onchange="carregarAnalisesSIGA()">
+          <option value="6">Últimos 6 meses</option>
+          <option value="12" selected>Últimos 12 meses</option>
+          <option value="24">Últimos 24 meses</option>
+          <option value="36">Últimos 36 meses</option>
+        </select>
+      </div>
+
+      <button type="button" class="botao botao-secundario" onclick="carregarAnalisesSIGA()">
+        ↻ Atualizar
+      </button>
+    </div>
+  </div>
+
+  <div class="analises-kpis">
+    <div class="pagamentos-kpi">
+      <span>ALUNOS ATIVOS AGORA</span>
+      <strong id="analisesKpiAtivos">—</strong>
+    </div>
+    <div class="pagamentos-kpi">
+      <span>RECEITA DO ÚLTIMO MÊS DO PERÍODO</span>
+      <strong id="analisesKpiReceita">—</strong>
+    </div>
+    <div class="pagamentos-kpi">
+      <span>SALDO DE MATRÍCULAS NO PERÍODO</span>
+      <strong id="analisesKpiSaldo">—</strong>
+    </div>
+    <div class="pagamentos-kpi">
+      <span>INADIMPLÊNCIA ATUAL (TOTAL)</span>
+      <strong id="analisesKpiInadimplencia">—</strong>
+    </div>
+  </div>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Matrículas e cancelamentos no tempo</h2>
+        <span class="subtitulo">Novas matrículas, cancelamentos/abandonos e alunos ativos por mês.</span>
+      </div>
+    </div>
+    <div id="graficoAnalisesMatriculas" class="analises-grafico-area">
+      <div class="estado-vazio">Carregando...</div>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Receita financeira no tempo</h2>
+        <span class="subtitulo">Valores efetivamente recebidos (boletos pagos + comprovantes), por mês.</span>
+      </div>
+    </div>
+    <div id="graficoAnalisesFinanceiro" class="analises-grafico-area">
+      <div class="estado-vazio">Carregando...</div>
+    </div>
+  </section>
+
+  <div class="analises-grade-dupla">
+    <section class="cartao">
+      <div class="cartao-cabecalho">
+        <div>
+          <h2>Comparação entre turmas</h2>
+          <span class="subtitulo">Alunos ativos vs. cancelados por turma (top 20 por ativos).</span>
+        </div>
+      </div>
+      <div id="graficoAnalisesTurmas" class="analises-grafico-area analises-grafico-alto">
+        <div class="estado-vazio">Carregando...</div>
+      </div>
+    </section>
+
+    <section class="cartao">
+      <div class="cartao-cabecalho">
+        <div>
+          <h2>Frequência média por turma</h2>
+          <span class="subtitulo">Média do período selecionado, por turma (top 20 por ativos).</span>
+        </div>
+      </div>
+      <div id="graficoAnalisesFrequencia" class="analises-grafico-area analises-grafico-alto">
+        <div class="estado-vazio">Carregando...</div>
+      </div>
+    </section>
+  </div>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <h2>Detalhamento por turma</h2>
+    </div>
+    <div class="pagamentos-tabela-wrap">
+      <table class="pagamentos-tabela">
+        <thead>
+          <tr>
+            <th>Turma</th>
+            <th>Ativos</th>
+            <th>Cancelados</th>
+            <th>Total histórico</th>
+            <th>Taxa de evasão</th>
+            <th>Frequência média</th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaAnalisesTurmas">
+          <tr><td colspan="6" class="estado-vazio">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>
+
+<style>
+.analises-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.analises-grade-dupla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.analises-grafico-area{min-height:280px;padding-top:8px}
+.analises-grafico-alto{min-height:340px}
+@media(max-width:900px){.analises-kpis{grid-template-columns:repeat(2,1fr)}.analises-grade-dupla{grid-template-columns:1fr}}
+@media(max-width:560px){.analises-kpis{grid-template-columns:1fr}}
+</style>
+
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+let analisesGraficosProntos = false;
+let analisesDadosCache = null;
+
+google.charts.load('current', { packages: ['corechart'] });
+google.charts.setOnLoadCallback(() => {
+  analisesGraficosProntos = true;
+  if (analisesDadosCache) {
+    desenharGraficosAnalisesSIGA(analisesDadosCache);
+  }
+});
+
+function abrirTelaAnalises(botaoMenu) {
+  if (typeof marcarMenuAtivo === 'function') {
+    marcarMenuAtivo(botaoMenu);
+  }
+  if (typeof fecharMenuMobile === 'function') {
+    fecharMenuMobile();
+  }
+  if (typeof esconderMensagem === 'function') {
+    esconderMensagem();
+  }
+  if (typeof esconderTelas === 'function') {
+    esconderTelas();
+  }
+
+  const tela = document.getElementById('tela-analises');
+  if (!tela) {
+    console.error('Tela de análises não encontrada.');
+    return;
+  }
+
+  tela.classList.remove('oculto');
+  carregarAnalisesSIGA();
+}
+
+function carregarAnalisesSIGA() {
+  const meses = Number(document.getElementById('analisesMeses')?.value || 12);
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+
+  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+    });
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (!resultado || resultado.sucesso !== true) {
+        mostrarErroAnalisesSIGA('Não foi possível carregar as análises.');
+        return;
+      }
+      analisesDadosCache = resultado;
+      preencherKpisAnalisesSIGA(resultado);
+      preencherTabelaAnalisesSIGA(resultado);
+      if (analisesGraficosProntos) {
+        desenharGraficosAnalisesSIGA(resultado);
+      }
+    })
+    .withFailureHandler(erro => {
+      mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.'));
+    })
+    .obterAnalisesSIGA({ token, meses });
+}
+
+function mostrarErroAnalisesSIGA(mensagem) {
+  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="estado-vazio">' + escAnalisesSIGA(mensagem) + '</div>';
+    });
+  if (typeof mostrarMensagem === 'function') {
+    mostrarMensagem(mensagem, 'erro');
+  }
+}
+
+function preencherKpisAnalisesSIGA(resultado) {
+  const resumo = resultado.resumo || {};
+  const serieFin = Array.isArray(resultado.serieFinanceira) ? resultado.serieFinanceira : [];
+  const serieMat = Array.isArray(resultado.serieMatriculas) ? resultado.serieMatriculas : [];
+
+  const ultimaReceita = serieFin.length ? serieFin[serieFin.length - 1].receita : 0;
+  const saldoPeriodo = serieMat.reduce((s, x) => s + Number(x.saldo || 0), 0);
+
+  definirTextoAnalisesSIGA('analisesKpiAtivos', Number(resumo.alunosAtivos || 0).toLocaleString('pt-BR'));
+  definirTextoAnalisesSIGA('analisesKpiReceita', moedaAnalisesSIGA(ultimaReceita));
+  definirTextoAnalisesSIGA(
+    'analisesKpiSaldo',
+    (saldoPeriodo > 0 ? '+' : '') + saldoPeriodo.toLocaleString('pt-BR')
+  );
+  definirTextoAnalisesSIGA('analisesKpiInadimplencia', moedaAnalisesSIGA(resumo.inadimplenciaAtual));
+}
+
+function definirTextoAnalisesSIGA(id, texto) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = texto;
+}
+
+function desenharGraficosAnalisesSIGA(resultado) {
+  desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []);
+  desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []);
+  desenharGraficoTurmasAnalisesSIGA(resultado.comparativoTurmas || []);
+  desenharGraficoFrequenciaAnalisesSIGA(resultado.comparativoTurmas || []);
+}
+
+function desenharGraficoMatriculasAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesMatriculas');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  const dados = new google.visualization.DataTable();
+  dados.addColumn('string', 'Mês');
+  dados.addColumn('number', 'Novas matrículas');
+  dados.addColumn('number', 'Cancelamentos');
+  dados.addColumn('number', 'Alunos ativos');
+  dados.addRows(serie.map(x => [x.periodo, x.novas, x.canceladas, x.ativos]));
+
+  const grafico = new google.visualization.LineChart(alvo);
+  grafico.draw(dados, {
+    height: 280,
+    curveType: 'function',
+    legend: { position: 'top' },
+    colors: ['#16a34a', '#dc2626', '#6427e8'],
+    chartArea: { left: 50, right: 20, top: 40, bottom: 40 },
+    hAxis: { slantedText: true, slantedTextAngle: 45 }
+  });
+}
+
+function desenharGraficoFinanceiroAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesFinanceiro');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  const dados = new google.visualization.DataTable();
+  dados.addColumn('string', 'Mês');
+  dados.addColumn('number', 'Receita recebida');
+  dados.addRows(serie.map(x => [x.periodo, x.receita]));
+
+  const grafico = new google.visualization.ColumnChart(alvo);
+  grafico.draw(dados, {
+    height: 280,
+    legend: { position: 'none' },
+    colors: ['#6427e8'],
+    chartArea: { left: 80, right: 20, top: 20, bottom: 40 },
+    hAxis: { slantedText: true, slantedTextAngle: 45 },
+    vAxis: { format: 'currency' }
+  });
+}
+
+function desenharGraficoTurmasAnalisesSIGA(comparativo) {
+  const alvo = document.getElementById('graficoAnalisesTurmas');
+  if (!alvo) return;
+  if (!comparativo.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem turmas para comparar.</div>';
+    return;
+  }
+
+  const dados = new google.visualization.DataTable();
+  dados.addColumn('string', 'Turma');
+  dados.addColumn('number', 'Ativos');
+  dados.addColumn('number', 'Cancelados');
+  dados.addRows(comparativo.map(x => [x.turma, x.ativos, x.cancelados]));
+
+  const grafico = new google.visualization.BarChart(alvo);
+  grafico.draw(dados, {
+    height: Math.max(340, comparativo.length * 26),
+    legend: { position: 'top' },
+    colors: ['#16a34a', '#dc2626'],
+    chartArea: { left: 140, right: 20, top: 40, bottom: 20 },
+    isStacked: false
+  });
+}
+
+function desenharGraficoFrequenciaAnalisesSIGA(comparativo) {
+  const alvo = document.getElementById('graficoAnalisesFrequencia');
+  if (!alvo) return;
+
+  const comFrequencia = comparativo.filter(x => x.frequenciaMedia !== null && x.frequenciaMedia !== undefined);
+
+  if (!comFrequencia.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Frequência não disponível para essas turmas no período.</div>';
+    return;
+  }
+
+  const dados = new google.visualization.DataTable();
+  dados.addColumn('string', 'Turma');
+  dados.addColumn('number', '% Frequência média');
+  dados.addRows(comFrequencia.map(x => [x.turma, Number(x.frequenciaMedia || 0)]));
+
+  const grafico = new google.visualization.BarChart(alvo);
+  grafico.draw(dados, {
+    height: Math.max(340, comFrequencia.length * 26),
+    legend: { position: 'none' },
+    colors: ['#0ea5e9'],
+    chartArea: { left: 140, right: 30, top: 20, bottom: 20 },
+    hAxis: { minValue: 0, maxValue: 100 }
+  });
+}
+
+function preencherTabelaAnalisesSIGA(resultado) {
+  const corpo = document.getElementById('corpoTabelaAnalisesTurmas');
+  if (!corpo) return;
+
+  const comparativo = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
+
+  if (!comparativo.length) {
+    corpo.innerHTML = '<tr><td colspan="6" class="estado-vazio">Nenhuma turma encontrada.</td></tr>';
+    return;
+  }
+
+  corpo.innerHTML = comparativo.map(x => `
+    <tr>
+      <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
+      <td>${Number(x.ativos || 0)}</td>
+      <td>${Number(x.cancelados || 0)}</td>
+      <td>${Number(x.total || 0)}</td>
+      <td>${Number(x.taxaEvasao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td>
+      <td>${x.frequenciaMedia === null || x.frequenciaMedia === undefined
+        ? '—'
+        : Number(x.frequenciaMedia).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'}</td>
+    </tr>
+  `).join('');
+}
+
+function moedaAnalisesSIGA(valor) {
+  return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function escAnalisesSIGA(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[c]));
+}
+
+window.abrirTelaAnalises = window.abrirTelaAnalises || abrirTelaAnalises;
+</script>
