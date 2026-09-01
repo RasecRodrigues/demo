@@ -26,12 +26,11 @@ function obterAnalisesSIGA(filtros) {
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
 
+  // A frequência por turma NÃO é calculada aqui: obterPainelFrequenciaTurma
+  // é cara e, chamada várias vezes em sequência, deixaria a tela inteira
+  // esperando. O cliente busca a frequência depois, à parte, via
+  // obterFrequenciaComparativoAnalisesSIGA.
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas);
-  adicionarFrequenciaComparativoTurmasAnalisesSIGA_(
-    comparativoTurmas,
-    analisesMesRotulo_(periodos[0]).chave,
-    analisesMesRotulo_(periodos[periodos.length - 1]).chave
-  );
 
   let inadimplenciaAtual = 0;
   try {
@@ -45,6 +44,8 @@ function obterAnalisesSIGA(filtros) {
   return {
     sucesso: true,
     periodos: periodos.map(p => analisesMesRotulo_(p).rotulo),
+    mesInicial: analisesMesRotulo_(periodos[0]).chave,
+    mesFinal: analisesMesRotulo_(periodos[periodos.length - 1]).chave,
     serieMatriculas: calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos),
     serieFinanceira: calcularSerieFinanceiraAnalisesSIGA_(ss, periodos),
     comparativoTurmas,
@@ -54,6 +55,38 @@ function obterAnalisesSIGA(filtros) {
       inadimplenciaAtual: arredPagUnif_(inadimplenciaAtual)
     }
   };
+}
+
+/**
+ * Busca a frequência média de um conjunto pequeno de turmas (chamado à
+ * parte, depois que a tela principal já carregou, para não bloquear a
+ * abertura da tela inteira em obterPainelFrequenciaTurma).
+ */
+function obterFrequenciaComparativoAnalisesSIGA(filtros) {
+  filtros = filtros || {};
+  validarPermissaoPagamentosSIGA_(filtros.token);
+
+  const frequencias = {};
+  const turmas = Array.isArray(filtros.turmas) ? filtros.turmas.slice(0, 10) : [];
+
+  if (typeof obterPainelFrequenciaTurma !== 'function') {
+    return { sucesso: true, frequencias };
+  }
+
+  turmas.forEach(turma => {
+    try {
+      const painel = obterPainelFrequenciaTurma({
+        turma,
+        mesInicial: filtros.mesInicial,
+        mesFinal: filtros.mesFinal
+      });
+      frequencias[turma] = Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0);
+    } catch (erro) {
+      frequencias[turma] = null;
+    }
+  });
+
+  return { sucesso: true, frequencias };
 }
 
 function analisesMesRotulo_(data) {
@@ -126,31 +159,6 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas) {
     }))
     .sort((a, b) => b.ativos - a.ativos)
     .slice(0, 20);
-}
-
-/**
- * Preenche frequenciaMedia por turma usando a função de frequência já existente
- * no projeto (obterPainelFrequenciaTurma). Uma chamada por turma, cobrindo a
- * janela inteira — não por mês, para não repetir o custo alto dessa função
- * dentro de um loop mensal.
- */
-function adicionarFrequenciaComparativoTurmasAnalisesSIGA_(comparativoTurmas, mesInicial, mesFinal) {
-  if (typeof obterPainelFrequenciaTurma !== 'function') {
-    return;
-  }
-
-  comparativoTurmas.forEach(item => {
-    try {
-      const painel = obterPainelFrequenciaTurma({
-        turma: item.turma,
-        mesInicial,
-        mesFinal
-      });
-      item.frequenciaMedia = Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0);
-    } catch (erro) {
-      item.frequenciaMedia = null;
-    }
-  });
 }
 
 function calcularSerieFinanceiraAnalisesSIGA_(ss, periodos) {

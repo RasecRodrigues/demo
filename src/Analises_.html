@@ -125,6 +125,35 @@
 .analises-grafico-alto{min-height:340px}
 @media(max-width:900px){.analises-kpis{grid-template-columns:repeat(2,1fr)}.analises-grade-dupla{grid-template-columns:1fr}}
 @media(max-width:560px){.analises-kpis{grid-template-columns:1fr}}
+
+/* =========================================================
+   ISOLAMENTO DA TELA DE ANÁLISES
+   Mesmo tratamento usado em Pagamentos: sem isso, a section fica
+   posicionada atrás do menu lateral por herdar layout/posição errados.
+   ========================================================= */
+#tela-analises{
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  height:auto !important;
+  min-height:0 !important;
+  margin:0 !important;
+  padding:0 !important;
+  position:static !important;
+  left:auto !important;
+  right:auto !important;
+  top:auto !important;
+  transform:none !important;
+  box-sizing:border-box !important;
+  overflow:visible !important;
+}
+#tela-analises .cabecalho-pagina,
+#tela-analises .analises-kpis,
+#tela-analises .cartao {
+  width:100% !important;
+  max-width:100% !important;
+  box-sizing:border-box !important;
+}
 </style>
 
 <script src="https://www.gstatic.com/charts/loader.js"></script>
@@ -141,6 +170,20 @@ google.charts.setOnLoadCallback(() => {
 });
 
 function abrirTelaAnalises(botaoMenu) {
+  const tela = document.getElementById('tela-analises');
+  const pagina = document.querySelector('main.pagina');
+
+  if (!tela) {
+    console.error('Tela de análises não encontrada.');
+    return;
+  }
+
+  // Garante que a tela seja filha direta de main.pagina — sem isso ela
+  // fica posicionada atrás do menu lateral (mesmo ajuste feito em Pagamentos).
+  if (pagina && tela.parentElement !== pagina) {
+    pagina.appendChild(tela);
+  }
+
   if (typeof marcarMenuAtivo === 'function') {
     marcarMenuAtivo(botaoMenu);
   }
@@ -154,13 +197,25 @@ function abrirTelaAnalises(botaoMenu) {
     esconderTelas();
   }
 
-  const tela = document.getElementById('tela-analises');
-  if (!tela) {
-    console.error('Tela de análises não encontrada.');
-    return;
-  }
+  document.querySelectorAll('[id^="tela-"]').forEach(outraTela => {
+    if (outraTela !== tela) {
+      outraTela.classList.add('oculto');
+    }
+  });
 
   tela.classList.remove('oculto');
+
+  ['height', 'min-height', 'max-height', 'margin-top', 'padding-top', 'left', 'right', 'top', 'transform', 'position']
+    .forEach(prop => tela.style.removeProperty(prop));
+
+  window.scrollTo(0, 0);
+  if (pagina) {
+    pagina.scrollTop = 0;
+    pagina.scrollLeft = 0;
+  }
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+
   carregarAnalisesSIGA();
 }
 
@@ -188,11 +243,59 @@ function carregarAnalisesSIGA() {
       if (analisesGraficosProntos) {
         desenharGraficosAnalisesSIGA(resultado);
       }
+      carregarFrequenciaAnalisesSIGA(resultado, token);
     })
     .withFailureHandler(erro => {
       mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.'));
     })
     .obterAnalisesSIGA({ token, meses });
+}
+
+/**
+ * Busca a frequência das turmas depois que o resto da tela já carregou —
+ * obterPainelFrequenciaTurma é uma chamada cara, então isso roda em segundo
+ * plano em vez de travar a abertura da tela inteira.
+ */
+function carregarFrequenciaAnalisesSIGA(resultado, token) {
+  const alvo = document.getElementById('graficoAnalisesFrequencia');
+  const comparativo = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
+  const turmas = comparativo.slice(0, 10).map(x => x.turma);
+
+  if (!turmas.length) {
+    return;
+  }
+
+  if (alvo) {
+    alvo.innerHTML = '<div class="estado-vazio">Calculando frequência por turma...</div>';
+  }
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      if (!resposta || resposta.sucesso !== true || analisesDadosCache !== resultado) {
+        return;
+      }
+      const frequencias = resposta.frequencias || {};
+      comparativo.forEach(item => {
+        if (Object.prototype.hasOwnProperty.call(frequencias, item.turma)) {
+          item.frequenciaMedia = frequencias[item.turma];
+        }
+      });
+      if (analisesGraficosProntos) {
+        desenharGraficoFrequenciaAnalisesSIGA(comparativo);
+      }
+      preencherTabelaAnalisesSIGA(resultado);
+    })
+    .withFailureHandler(() => {
+      if (alvo) {
+        alvo.innerHTML = '<div class="estado-vazio">Não foi possível calcular a frequência das turmas.</div>';
+      }
+    })
+    .obterFrequenciaComparativoAnalisesSIGA({
+      token,
+      turmas,
+      mesInicial: resultado.mesInicial,
+      mesFinal: resultado.mesFinal
+    });
 }
 
 function mostrarErroAnalisesSIGA(mensagem) {
