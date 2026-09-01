@@ -342,16 +342,70 @@ function analisesRecalcularCacheSemLock_() {
   const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
-  // obterPainelFrequenciaTurma é cara (por isso nunca rodava de forma
-  // confiável no caminho da tela) — aqui ela roda em segundo plano, uma vez
-  // a cada recálculo, só para turmas com aluno ativo.
-  const frequenciaPorTurma = analisesCalcularFrequenciaPorTurma_(comparativoTurmas);
-
+  // Grava os números "rápidos" (não dependem de obterPainelFrequenciaTurma)
+  // ANTES de tentar calcular frequência. Isso é proposital: se a frequência
+  // travar ou estourar o tempo de execução do Apps Script, os números
+  // principais (ativos, saídas, receita, lucro) já estão salvos — só a
+  // coluna de frequência fica pra trás. Antes, a ordem era invertida e uma
+  // frequência lenta podia derrubar a execução INTEIRA antes de gravar
+  // qualquer aba, fazendo o cache nunca se atualizar.
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, lucroPorTurma.detalhesPorTurma);
-  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequenciaPorTurma);
+  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+
+  // Frequência é a etapa mais lenta e menos confiável (obterPainelFrequenciaTurma
+  // pode demorar muito por turma) — roda por último, com orçamento de tempo,
+  // e grava turma por turma com flush imediato: se o tempo estourar e a
+  // execução for encerrada pela plataforma, o que já foi processado até ali
+  // fica salvo, e o resto é retomado na próxima execução.
+  analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
+}
+
+function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
+  if (typeof obterPainelFrequenciaTurma !== 'function') {
+    return;
+  }
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+  if (!aba || aba.getLastRow() < 2) {
+    return;
+  }
+
+  const inicio = Date.now();
+  const ORCAMENTO_MS = 4 * 60 * 1000; // deixa ~2min de folga do limite de 6min do Apps Script
+
+  const periodosFreq = analisesGerarPeriodos_(3);
+  const mesInicial = analisesMesRotulo_(periodosFreq[0]).chave;
+  const mesFinal = analisesMesRotulo_(periodosFreq[periodosFreq.length - 1]).chave;
+
+  const linhaPorTurma = new Map();
+  aba.getRange(2, 1, aba.getLastRow() - 1, 1).getValues().forEach((linha, indice) => {
+    const nome = String(linha[0] || '').trim();
+    if (nome) {
+      linhaPorTurma.set(nome, indice + 2);
+    }
+  });
+
+  const ativas = comparativoTurmas.filter(item => item.ativos > 0);
+  for (let i = 0; i < ativas.length; i++) {
+    if (Date.now() - inicio > ORCAMENTO_MS) {
+      break; // fica pra próxima execução — os números principais já foram salvos
+    }
+    const turma = ativas[i].turma;
+    const linha = linhaPorTurma.get(turma);
+    if (!linha) {
+      continue;
+    }
+    try {
+      const painel = obterPainelFrequenciaTurma({ turma, mesInicial, mesFinal });
+      const media = Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0);
+      aba.getRange(linha, 6).setValue(media);
+    } catch (erro) {
+      // deixa em branco — não trava as próximas turmas nem o resto do cache
+    }
+    SpreadsheetApp.flush();
+  }
 }
 
 function analisesGerarPeriodos_(mesesJanela) {
@@ -425,35 +479,6 @@ function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequencia
   if (linhas.length) {
     aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
   }
-}
-
-/**
- * Frequência média por turma, calculada só para turmas com aluno ativo
- * (turma encerrada não interessa aqui). Roda dentro do recálculo em
- * segundo plano — nunca no caminho de uma requisição da tela.
- */
-function analisesCalcularFrequenciaPorTurma_(comparativoTurmas) {
-  const mapa = new Map();
-  if (typeof obterPainelFrequenciaTurma !== 'function') {
-    return mapa;
-  }
-
-  const periodosFreq = analisesGerarPeriodos_(3);
-  const mesInicial = analisesMesRotulo_(periodosFreq[0]).chave;
-  const mesFinal = analisesMesRotulo_(periodosFreq[periodosFreq.length - 1]).chave;
-
-  comparativoTurmas
-    .filter(item => item.ativos > 0)
-    .forEach(item => {
-      try {
-        const painel = obterPainelFrequenciaTurma({ turma: item.turma, mesInicial, mesFinal });
-        mapa.set(item.turma, Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0));
-      } catch (erro) {
-        mapa.set(item.turma, null);
-      }
-    });
-
-  return mapa;
 }
 
 function analisesLerCacheGeral_() {
