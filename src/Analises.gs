@@ -410,13 +410,13 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma) {
 }
 
 function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequenciaPorTurma) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Cancelados', 'Total', 'TaxaEvasao', 'FrequenciaMedia']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Saidas', 'Total', 'TaxaEvasao', 'FrequenciaMedia']);
   const linhas = comparativoTurmas.map(x => {
     const freq = frequenciaPorTurma.get(x.turma);
     return [
       x.turma,
       Number(x.ativos || 0),
-      Number(x.cancelados || 0),
+      Number(x.saidas || 0),
       Number(x.total || 0),
       Number(x.taxaEvasao || 0),
       (freq === null || freq === undefined) ? '' : Number(freq)
@@ -521,7 +521,7 @@ function analisesLerCacheComparativoTurmas_() {
     lista.push({
       turma,
       ativos: Number(linha[1] || 0),
-      cancelados: Number(linha[2] || 0),
+      saidas: Number(linha[2] || 0),
       total: Number(linha[3] || 0),
       taxaEvasao: Number(linha[4] || 0),
       frequenciaMedia: (freqBruta === '' || freqBruta === null || freqBruta === undefined) ? null : Number(freqBruta)
@@ -682,6 +682,16 @@ function analisesMesRotulo_(data) {
   return { chave, rotulo };
 }
 
+/**
+ * "Em curso" para fins de contagem de alunos: ATIVO ou EM ESPERA somam
+ * juntos. Qualquer outro status (CANCELADO, ABANDONO, FINALIZADO,
+ * SUSPENSO, INATIVO, TURMA ENCERRADA etc.) conta como saída.
+ */
+function analisesStatusAtivo_(status) {
+  const s = normalizarPagUnif_(status);
+  return s === 'ATIVO' || s === 'EM ESPERA';
+}
+
 function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
   return periodos.map(periodo => {
     const inicioMes = periodo;
@@ -699,7 +709,7 @@ function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
         canceladas++;
       }
       if (
-        normalizarPagUnif_(m.status) === 'ATIVO' &&
+        analisesStatusAtivo_(m.status) &&
         vigenteNoMesPagUnif_(m, periodo)
       ) {
         ativos++;
@@ -731,23 +741,26 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas, incluirTodas) {
     }
 
     if (!porTurma.has(turma)) {
-      porTurma.set(turma, { turma, ativos: 0, cancelados: 0, total: 0 });
+      porTurma.set(turma, { turma, ativos: 0, saidas: 0, total: 0 });
     }
 
     const item = porTurma.get(turma);
     item.total++;
 
-    const status = normalizarPagUnif_(m.status);
-    if (status === 'ATIVO') {
+    // Todo status que não seja "em curso" (ATIVO ou EM ESPERA) conta como
+    // saída — CANCELADO, ABANDONO, FINALIZADO, SUSPENSO, INATIVO, TURMA
+    // ENCERRADA etc. Assim ativos + saídas sempre bate com o total, sem
+    // nenhum status ficando de fora da contagem.
+    if (analisesStatusAtivo_(m.status)) {
       item.ativos++;
-    } else if (['CANCELADO', 'CANCELADA', 'ABANDONO'].includes(status)) {
-      item.cancelados++;
+    } else {
+      item.saidas++;
     }
   });
 
   const lista = Array.from(porTurma.values())
     .map(item => Object.assign({}, item, {
-      taxaEvasao: item.total > 0 ? arredPagUnif_((item.cancelados / item.total) * 100) : 0
+      taxaEvasao: item.total > 0 ? arredPagUnif_((item.saidas / item.total) * 100) : 0
     }))
     .sort((a, b) => b.ativos - a.ativos);
 

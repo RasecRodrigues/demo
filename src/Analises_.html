@@ -96,7 +96,7 @@
       <div class="cartao-cabecalho">
         <div>
           <h2>Comparação entre turmas</h2>
-          <span class="subtitulo">Alunos ativos vs. cancelados — só turmas com aluno ativo (até 30, por ativos).</span>
+          <span class="subtitulo">Alunos ativos (ativo ou em espera) vs. saídas — só turmas com aluno ativo (até 30, por ativos).</span>
         </div>
       </div>
       <div id="graficoAnalisesTurmas" class="analises-grafico-area analises-grafico-alto">
@@ -141,7 +141,7 @@
           <tr>
             <th>Turma</th>
             <th>Ativos</th>
-            <th>Cancelados</th>
+            <th>Saídas</th>
             <th>Total histórico</th>
             <th>Receita no período</th>
             <th>Taxa de evasão</th>
@@ -786,13 +786,28 @@ function definirTextoAnalisesSIGA(id, texto) {
   if (el) el.textContent = texto;
 }
 
+/**
+ * Cada painel roda isolado: se um deles quebrar (dado inesperado, etc.),
+ * os outros continuam sendo desenhados normalmente em vez de pararem
+ * silenciosamente em "Carregando..." por causa de um erro em outro
+ * painel anterior na lista.
+ */
 function desenharGraficosAnalisesSIGA(resultado) {
-  desenharGraficoAtivosAnalisesSIGA(resultado.serieMatriculas || []);
-  desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []);
-  desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []);
-  renderizarTurmasFiltradasAnalisesSIGA(resultado);
-  desenharGraficoLucroAnalisesSIGA(resultado.serieLucroPorTurma || []);
-  preencherTabelaLucroAnalisesSIGA(resultado.detalheMensalLucroPorTurma || []);
+  const passos = [
+    () => desenharGraficoAtivosAnalisesSIGA(resultado.serieMatriculas || []),
+    () => desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []),
+    () => desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []),
+    () => renderizarTurmasFiltradasAnalisesSIGA(resultado),
+    () => desenharGraficoLucroAnalisesSIGA(resultado.serieLucroPorTurma || []),
+    () => preencherTabelaLucroAnalisesSIGA(resultado.detalheMensalLucroPorTurma || [])
+  ];
+  passos.forEach(passo => {
+    try {
+      passo();
+    } catch (erro) {
+      console.error('Falha ao desenhar um painel de Análises:', erro);
+    }
+  });
 }
 
 /**
@@ -916,7 +931,7 @@ function desenharGraficoTurmasAnalisesSIGA(comparativo) {
       nome: x.turma,
       valores: [
         { valor: Number(x.ativos || 0), cor: VIZ_COR.categorico[0], rotulo: 'Ativos' },
-        { valor: Number(x.cancelados || 0), cor: VIZ_COR.categorico[1], rotulo: 'Cancelados' }
+        { valor: Number(x.saidas || 0), cor: VIZ_COR.categorico[1], rotulo: 'Saídas' }
       ]
     }))
   });
@@ -1102,7 +1117,7 @@ function preencherTabelaAnalisesSIGA(comparativo) {
     <tr>
       <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
       <td style="font-weight:700">${Number(x.ativos || 0)}</td>
-      <td>${Number(x.cancelados || 0)}</td>
+      <td>${Number(x.saidas || 0)}</td>
       <td>${Number(x.total || 0)}</td>
       <td style="font-weight:700">${moedaAnalisesSIGA(x.receitaPeriodo)}</td>
       <td>${vizChipStatus(Number(x.taxaEvasao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusEvasao)}</td>
