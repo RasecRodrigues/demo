@@ -99,11 +99,37 @@ function obterAnalisesSIGA(filtros) {
     };
   });
 
-  const comparativoTurmas = comparativoBruto
+  // Linha por turma x mês (não só o top 20 do gráfico) — usado pela tabela
+  // "Lucro por turma no período", que mostra o detalhamento mensal completo.
+  const detalheMensalLucroPorTurma = [];
+  resumoPorTurma.forEach(item => {
+    const acc = acumuladoPorTurma.get(item.turma);
+    chaves.forEach(chave => {
+      const ponto = acc.pontos.get(chave);
+      const receita = ponto ? ponto.receita : 0;
+      const lucro = ponto ? ponto.lucro : 0;
+      detalheMensalLucroPorTurma.push({
+        turma: item.turma,
+        periodo: analisesChaveParaRotulo_(chave),
+        lucro,
+        margem: receita > 0 ? arredPagUnif_((lucro / receita) * 100) : 0
+      });
+    });
+  });
+
+  // Só turmas com aluno ativo — uma turma zerada não ajuda a comparação
+  // nem o detalhamento, só polui a lista.
+  const comparativoAtivo = comparativoBruto.filter(item => item.ativos > 0);
+  const comparativoTurmas = comparativoAtivo
     .slice()
     .sort((a, b) => b.ativos - a.ativos)
-    .slice(0, 20)
-    .map(item => Object.assign({ frequenciaMedia: null }, item));
+    .slice(0, 30)
+    .map(item => {
+      const acc = acumuladoPorTurma.get(item.turma);
+      return Object.assign({}, item, {
+        receitaPeriodo: acc ? arredPagUnif_(acc.receita) : 0
+      });
+    });
 
   const ultimaChaveComDados = chaves.slice().reverse().find(chave => geral.has(chave));
   const alunosAtivos = ultimaChaveComDados ? geral.get(ultimaChaveComDados).ativos : 0;
@@ -117,7 +143,7 @@ function obterAnalisesSIGA(filtros) {
     serieFinanceira,
     comparativoTurmas,
     serieLucroPorTurma,
-    resumoLucroPorTurma: resumoPorTurma,
+    detalheMensalLucroPorTurma,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
@@ -125,6 +151,95 @@ function obterAnalisesSIGA(filtros) {
       lucroTotalPeriodo: arredPagUnif_(resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0))
     }
   };
+}
+
+/**
+ * Alunos de uma turma e o quanto cada um pagou (valor devido) no período
+ * selecionado — chamado sob demanda quando o usuário clica numa turma na
+ * tabela de lucro. Não faz parte do cache: é um recorte de UMA turma só,
+ * então é rápido o bastante para rodar na hora.
+ */
+function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
+  filtros = filtros || {};
+  validarPermissaoPagamentosSIGA_(filtros.token);
+
+  const turmaAlvo = String(filtros.turma || '').trim();
+  const periodos = analisesPeriodosEntreChaves_(filtros.mesInicial, filtros.mesFinal);
+  if (!turmaAlvo || !periodos.length) {
+    return { sucesso: true, turma: turmaAlvo, alunos: [] };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMat = ss.getSheetByName('DimMatricula');
+  const matriculas = lerMatriculasPagUnif_(abaMat);
+  criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+
+  const matriculasPorAluno = new Map();
+  matriculas.forEach(m => {
+    const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
+    if (!chave) return;
+    if (!matriculasPorAluno.has(chave)) {
+      matriculasPorAluno.set(chave, []);
+    }
+    matriculasPorAluno.get(chave).push(m);
+  });
+
+  const hoje = new Date();
+  const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const totalPorAluno = new Map();
+
+  periodos.forEach(ref => {
+    let dataCalculo;
+    if (ref < inicioMesAtual) {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+    } else if (ref.getFullYear() === hoje.getFullYear() && ref.getMonth() === hoje.getMonth()) {
+      dataCalculo = hoje;
+    } else {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    }
+
+    matriculasPorAluno.forEach(matsAluno => {
+      const ativas = matsAluno.filter(m =>
+        normalizarPagUnif_(m.status) === 'ATIVO' && vigenteNoMesPagUnif_(m, ref)
+      );
+      if (!ativas.length) return;
+
+      const matriculaDaTurma = ativas.find(m => String(m.turma || '').trim() === turmaAlvo);
+      if (!matriculaDaTurma) return;
+
+      const combo = ativas.length > 1;
+      const valor = Number(calcularValorMatriculaPagUnif_(matriculaDaTurma, combo, ref, dataCalculo) || 0);
+      const chaveAluno = matriculaDaTurma.chaveAluno || normalizarPagUnif_(matriculaDaTurma.idAluno || matriculaDaTurma.nome);
+      const nome = matriculaDaTurma.nome || matriculaDaTurma.idAluno || '(sem nome)';
+
+      if (!totalPorAluno.has(chaveAluno)) {
+        totalPorAluno.set(chaveAluno, { aluno: nome, total: 0 });
+      }
+      totalPorAluno.get(chaveAluno).total += valor;
+    });
+  });
+
+  const alunos = Array.from(totalPorAluno.values())
+    .map(x => ({ aluno: x.aluno, total: arredPagUnif_(x.total) }))
+    .sort((a, b) => b.total - a.total);
+
+  return { sucesso: true, turma: turmaAlvo, alunos };
+}
+
+function analisesPeriodosEntreChaves_(mesInicial, mesFinal) {
+  if (!mesInicial || !mesFinal) {
+    return [];
+  }
+  const partesIni = String(mesInicial).split('-');
+  const partesFim = String(mesFinal).split('-');
+  let d = new Date(Number(partesIni[0]), Number(partesIni[1]) - 1, 1);
+  const fim = new Date(Number(partesFim[0]), Number(partesFim[1]) - 1, 1);
+  const periodos = [];
+  while (d <= fim) {
+    periodos.push(new Date(d));
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  }
+  return periodos;
 }
 
 /**
@@ -189,9 +304,14 @@ function recalcularCacheAnalisesSIGA() {
   const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
+  // obterPainelFrequenciaTurma é cara (por isso nunca rodava de forma
+  // confiável no caminho da tela) — aqui ela roda em segundo plano, uma vez
+  // a cada recálculo, só para turmas com aluno ativo.
+  const frequenciaPorTurma = analisesCalcularFrequenciaPorTurma_(comparativoTurmas);
+
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, lucroPorTurma.detalhesPorTurma);
-  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas);
+  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequenciaPorTurma);
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
 }
@@ -251,12 +371,51 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma) {
   }
 }
 
-function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Cancelados', 'Total', 'TaxaEvasao']);
-  const linhas = comparativoTurmas.map(x => [x.turma, Number(x.ativos || 0), Number(x.cancelados || 0), Number(x.total || 0), Number(x.taxaEvasao || 0)]);
+function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequenciaPorTurma) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Cancelados', 'Total', 'TaxaEvasao', 'FrequenciaMedia']);
+  const linhas = comparativoTurmas.map(x => {
+    const freq = frequenciaPorTurma.get(x.turma);
+    return [
+      x.turma,
+      Number(x.ativos || 0),
+      Number(x.cancelados || 0),
+      Number(x.total || 0),
+      Number(x.taxaEvasao || 0),
+      (freq === null || freq === undefined) ? '' : Number(freq)
+    ];
+  });
   if (linhas.length) {
     aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
   }
+}
+
+/**
+ * Frequência média por turma, calculada só para turmas com aluno ativo
+ * (turma encerrada não interessa aqui). Roda dentro do recálculo em
+ * segundo plano — nunca no caminho de uma requisição da tela.
+ */
+function analisesCalcularFrequenciaPorTurma_(comparativoTurmas) {
+  const mapa = new Map();
+  if (typeof obterPainelFrequenciaTurma !== 'function') {
+    return mapa;
+  }
+
+  const periodosFreq = analisesGerarPeriodos_(3);
+  const mesInicial = analisesMesRotulo_(periodosFreq[0]).chave;
+  const mesFinal = analisesMesRotulo_(periodosFreq[periodosFreq.length - 1]).chave;
+
+  comparativoTurmas
+    .filter(item => item.ativos > 0)
+    .forEach(item => {
+      try {
+        const painel = obterPainelFrequenciaTurma({ turma: item.turma, mesInicial, mesFinal });
+        mapa.set(item.turma, Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0));
+      } catch (erro) {
+        mapa.set(item.turma, null);
+      }
+    });
+
+  return mapa;
 }
 
 function analisesLerCacheGeral_() {
@@ -314,18 +473,20 @@ function analisesLerCacheComparativoTurmas_() {
   if (!aba || aba.getLastRow() < 2) {
     return lista;
   }
-  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 6).getValues();
   dados.forEach(linha => {
     const turma = String(linha[0] || '').trim();
     if (!turma) {
       return;
     }
+    const freqBruta = linha[5];
     lista.push({
       turma,
       ativos: Number(linha[1] || 0),
       cancelados: Number(linha[2] || 0),
       total: Number(linha[3] || 0),
-      taxaEvasao: Number(linha[4] || 0)
+      taxaEvasao: Number(linha[4] || 0),
+      frequenciaMedia: (freqBruta === '' || freqBruta === null || freqBruta === undefined) ? null : Number(freqBruta)
     });
   });
   return lista;
@@ -475,38 +636,6 @@ function calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos) {
   });
 
   return porTurma;
-}
-
-/**
- * Busca a frequência média de um conjunto pequeno de turmas (chamado à
- * parte, depois que a tela principal já carregou, para não bloquear a
- * abertura da tela inteira em obterPainelFrequenciaTurma).
- */
-function obterFrequenciaComparativoAnalisesSIGA(filtros) {
-  filtros = filtros || {};
-  validarPermissaoPagamentosSIGA_(filtros.token);
-
-  const frequencias = {};
-  const turmas = Array.isArray(filtros.turmas) ? filtros.turmas.slice(0, 10) : [];
-
-  if (typeof obterPainelFrequenciaTurma !== 'function') {
-    return { sucesso: true, frequencias };
-  }
-
-  turmas.forEach(turma => {
-    try {
-      const painel = obterPainelFrequenciaTurma({
-        turma,
-        mesInicial: filtros.mesInicial,
-        mesFinal: filtros.mesFinal
-      });
-      frequencias[turma] = Number(painel && painel.resumo && painel.resumo.mediaFrequencia || 0);
-    } catch (erro) {
-      frequencias[turma] = null;
-    }
-  });
-
-  return { sucesso: true, frequencias };
 }
 
 function analisesMesRotulo_(data) {

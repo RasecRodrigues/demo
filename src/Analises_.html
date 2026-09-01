@@ -86,12 +86,17 @@
     </div>
   </section>
 
+  <div class="analises-filtro-modalidade-linha">
+    <span class="analises-filtro-modalidade-rotulo">Modalidade (afeta os gráficos de turma abaixo e o detalhamento):</span>
+    <div id="analisesFiltroModalidade" class="analises-filtro-modalidade"></div>
+  </div>
+
   <div class="analises-grade-dupla">
     <section class="cartao">
       <div class="cartao-cabecalho">
         <div>
           <h2>Comparação entre turmas</h2>
-          <span class="subtitulo">Alunos ativos vs. cancelados por turma (top 20 por ativos).</span>
+          <span class="subtitulo">Alunos ativos vs. cancelados — só turmas com aluno ativo (até 30, por ativos).</span>
         </div>
       </div>
       <div id="graficoAnalisesTurmas" class="analises-grafico-area analises-grafico-alto">
@@ -128,6 +133,7 @@
   <section class="cartao">
     <div class="cartao-cabecalho">
       <h2>Detalhamento por turma</h2>
+      <span class="subtitulo">Só turmas com aluno ativo. Receita é o valor devido no período selecionado.</span>
     </div>
     <div class="pagamentos-tabela-wrap">
       <table class="pagamentos-tabela">
@@ -137,12 +143,13 @@
             <th>Ativos</th>
             <th>Cancelados</th>
             <th>Total histórico</th>
+            <th>Receita no período</th>
             <th>Taxa de evasão</th>
             <th>Frequência média</th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesTurmas">
-          <tr><td colspan="6" class="estado-vazio">Carregando...</td></tr>
+          <tr><td colspan="7" class="estado-vazio">Carregando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -151,21 +158,20 @@
   <section class="cartao">
     <div class="cartao-cabecalho">
       <h2>Lucro por turma no período</h2>
-      <span class="subtitulo">Somado em todos os meses do período selecionado.</span>
+      <span class="subtitulo">Um mês por linha. Clique no nome da turma para ver os alunos e o quanto cada um pagou.</span>
     </div>
     <div class="pagamentos-tabela-wrap">
       <table class="pagamentos-tabela">
         <thead>
           <tr>
             <th>Turma</th>
-            <th>Receita</th>
-            <th>Custo (professores)</th>
+            <th>Mês/Ano</th>
             <th>Lucro</th>
             <th>Margem</th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesLucro">
-          <tr><td colspan="5" class="estado-vazio">Carregando...</td></tr>
+          <tr><td colspan="4" class="estado-vazio">Carregando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -225,6 +231,39 @@
   text-align:right;
   font-variant-numeric:tabular-nums;
 }
+#tela-analises .pagamentos-tabela tbody tr.analises-turma-inicio td{border-top:2px solid #e1e0d9}
+#tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos{background:#f7f6f2}
+#tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos:hover{background:#f7f6f2}
+#tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{padding:12px 14px}
+
+.analises-link-turma{
+  background:none;border:none;padding:0;margin:0;cursor:pointer;
+  font:inherit;font-weight:700;color:#2a78d6;text-decoration:underline;text-decoration-color:#c7dcf3;
+  text-underline-offset:2px;
+}
+.analises-link-turma:hover{color:#195aa8}
+
+.analises-subtabela-alunos{width:100%;border-collapse:collapse;font-size:12.5px}
+.analises-subtabela-alunos th{
+  text-align:left;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:#898781;padding:4px 10px;
+}
+.analises-subtabela-alunos th:last-child,.analises-subtabela-alunos td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.analises-subtabela-alunos td{padding:5px 10px;border-top:1px solid #e7e6e0;color:#0b0b0b}
+
+/* Filtro por modalidade (Teatro, Canto, Formação...) — deriva da própria
+   lista de turmas, sem taxonomia fixa; afeta os dois gráficos de turma e
+   a tabela de detalhamento. */
+.analises-filtro-modalidade-linha{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:4px 0}
+.analises-filtro-modalidade-rotulo{font-size:12px;color:#898781}
+.analises-filtro-modalidade{display:flex;flex-wrap:wrap;gap:8px}
+.analises-filtro-modalidade-linha:has(.analises-filtro-modalidade:empty){display:none}
+.analises-chip-filtro{
+  border:1px solid #e1e0d9;background:#fff;color:#52514e;font:inherit;font-size:12.5px;font-weight:600;
+  padding:6px 14px;border-radius:999px;cursor:pointer;
+}
+.analises-chip-filtro:hover{border-color:#c3c2b7}
+.analises-chip-filtro-ativo{background:#0b0b0b;border-color:#0b0b0b;color:#fff}
 
 /* =========================================================
    ISOLAMENTO DA TELA DE ANÁLISES
@@ -659,9 +698,7 @@ function carregarAnalisesSIGA() {
       analisesDadosCache = resultado;
       exibirAtualizadoEmAnalisesSIGA(resultado.atualizadoEm);
       preencherKpisAnalisesSIGA(resultado);
-      preencherTabelaAnalisesSIGA(resultado);
       desenharGraficosAnalisesSIGA(resultado);
-      carregarFrequenciaAnalisesSIGA(resultado, token);
     })
     .withFailureHandler(erro => {
       mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.'));
@@ -716,52 +753,6 @@ function recalcularCacheAnalisesSIGA() {
     .recalcularCacheAnalisesManualSIGA({ token });
 }
 
-/**
- * Busca a frequência das turmas depois que o resto da tela já carregou —
- * obterPainelFrequenciaTurma é uma chamada cara, então isso roda em segundo
- * plano em vez de travar a abertura da tela inteira. Limitado a 6 turmas
- * (em vez de 10) para reduzir o tempo total de espera.
- */
-function carregarFrequenciaAnalisesSIGA(resultado, token) {
-  const alvo = document.getElementById('graficoAnalisesFrequencia');
-  const comparativo = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
-  const turmas = comparativo.slice(0, 6).map(x => x.turma);
-
-  if (!turmas.length) {
-    return;
-  }
-
-  if (alvo) {
-    alvo.innerHTML = '<div class="estado-vazio">Calculando frequência por turma (pode levar um instante)...</div>';
-  }
-
-  google.script.run
-    .withSuccessHandler(resposta => {
-      if (!resposta || resposta.sucesso !== true || analisesDadosCache !== resultado) {
-        return;
-      }
-      const frequencias = resposta.frequencias || {};
-      comparativo.forEach(item => {
-        if (Object.prototype.hasOwnProperty.call(frequencias, item.turma)) {
-          item.frequenciaMedia = frequencias[item.turma];
-        }
-      });
-      desenharGraficoFrequenciaAnalisesSIGA(comparativo);
-      preencherTabelaAnalisesSIGA(resultado);
-    })
-    .withFailureHandler(() => {
-      if (alvo) {
-        alvo.innerHTML = '<div class="estado-vazio">Não foi possível calcular a frequência das turmas.</div>';
-      }
-    })
-    .obterFrequenciaComparativoAnalisesSIGA({
-      token,
-      turmas,
-      mesInicial: resultado.mesInicial,
-      mesFinal: resultado.mesFinal
-    });
-}
-
 function mostrarErroAnalisesSIGA(mensagem) {
   ANALISES_IDS_GRAFICOS.forEach(id => {
     const el = document.getElementById(id);
@@ -798,10 +789,63 @@ function desenharGraficosAnalisesSIGA(resultado) {
   desenharGraficoAtivosAnalisesSIGA(resultado.serieMatriculas || []);
   desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []);
   desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []);
-  desenharGraficoTurmasAnalisesSIGA(resultado.comparativoTurmas || []);
-  desenharGraficoFrequenciaAnalisesSIGA(resultado.comparativoTurmas || []);
+  renderizarTurmasFiltradasAnalisesSIGA(resultado);
   desenharGraficoLucroAnalisesSIGA(resultado.serieLucroPorTurma || []);
-  preencherTabelaLucroAnalisesSIGA(resultado.resumoLucroPorTurma || []);
+  preencherTabelaLucroAnalisesSIGA(resultado.detalheMensalLucroPorTurma || []);
+}
+
+/**
+ * Categoria derivada do nome da turma (ex.: "TEATRO AD9" -> "TEATRO"),
+ * sem taxonomia fixa — o filtro se adapta ao que existir nos dados.
+ */
+function analisesCategoriaTurma_(turma) {
+  const m = String(turma || '').match(/^[A-Za-zÀ-ÖØ-öø-ÿ]+/);
+  return m ? m[0].toUpperCase() : 'OUTRAS';
+}
+
+let analisesModalidadeSelecionada = 'TODAS';
+
+function montarFiltroModalidadeAnalisesSIGA(comparativoCompleto) {
+  const alvo = document.getElementById('analisesFiltroModalidade');
+  if (!alvo) return;
+
+  const categorias = Array.from(new Set(comparativoCompleto.map(x => analisesCategoriaTurma_(x.turma)))).sort();
+  if (categorias.length <= 1) {
+    alvo.innerHTML = '';
+    return;
+  }
+
+  const opcoes = ['TODAS'].concat(categorias);
+  if (!opcoes.includes(analisesModalidadeSelecionada)) {
+    analisesModalidadeSelecionada = 'TODAS';
+  }
+
+  alvo.innerHTML = opcoes.map(cat => {
+    const ativo = cat === analisesModalidadeSelecionada;
+    const rotulo = cat === 'TODAS' ? 'Todas' : cat.charAt(0) + cat.slice(1).toLowerCase();
+    return `<button type="button" class="analises-chip-filtro${ativo ? ' analises-chip-filtro-ativo' : ''}" data-categoria="${vizEsc(cat)}">${vizEsc(rotulo)}</button>`;
+  }).join('');
+
+  alvo.querySelectorAll('button[data-categoria]').forEach(botao => {
+    botao.addEventListener('click', () => {
+      analisesModalidadeSelecionada = botao.getAttribute('data-categoria');
+      if (analisesDadosCache) {
+        renderizarTurmasFiltradasAnalisesSIGA(analisesDadosCache);
+      }
+    });
+  });
+}
+
+function renderizarTurmasFiltradasAnalisesSIGA(resultado) {
+  const comparativoCompleto = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
+  const filtrado = analisesModalidadeSelecionada === 'TODAS'
+    ? comparativoCompleto
+    : comparativoCompleto.filter(x => analisesCategoriaTurma_(x.turma) === analisesModalidadeSelecionada);
+
+  montarFiltroModalidadeAnalisesSIGA(comparativoCompleto);
+  desenharGraficoTurmasAnalisesSIGA(filtrado);
+  desenharGraficoFrequenciaAnalisesSIGA(filtrado);
+  preencherTabelaAnalisesSIGA(filtrado);
 }
 
 function desenharGraficoAtivosAnalisesSIGA(serie) {
@@ -941,22 +985,34 @@ function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
   });
 }
 
-function preencherTabelaLucroAnalisesSIGA(resumoLucroPorTurma) {
+let analisesAlunosPorTurmaCache = new Map();
+
+/**
+ * `detalheMensalLucroPorTurma` é [{turma, periodo, lucro, margem}], uma
+ * linha por turma x mês (vem ordenado por turma — maior lucro total
+ * primeiro — e, dentro da turma, cronológico). Clicar no nome da turma
+ * expande a lista de alunos e quanto cada um pagou no período.
+ */
+function preencherTabelaLucroAnalisesSIGA(detalheMensalLucroPorTurma) {
   const corpo = document.getElementById('corpoTabelaAnalisesLucro');
   if (!corpo) return;
 
-  if (!resumoLucroPorTurma.length) {
-    corpo.innerHTML = '<tr><td colspan="5" class="estado-vazio">Nenhum dado de lucro encontrado.</td></tr>';
+  analisesAlunosPorTurmaCache = new Map();
+
+  if (!detalheMensalLucroPorTurma.length) {
+    corpo.innerHTML = '<tr><td colspan="4" class="estado-vazio">Nenhum dado de lucro encontrado.</td></tr>';
     return;
   }
 
-  corpo.innerHTML = resumoLucroPorTurma.map(x => {
+  let turmaAnterior = null;
+  corpo.innerHTML = detalheMensalLucroPorTurma.map(x => {
     const statusMargem = vizStatusMargem_(x.margem);
+    const inicioDeGrupo = x.turma !== turmaAnterior;
+    turmaAnterior = x.turma;
     return `
-    <tr>
-      <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
-      <td>${moedaAnalisesSIGA(x.receita)}</td>
-      <td>${moedaAnalisesSIGA(x.custo)}</td>
+    <tr${inicioDeGrupo ? ' class="analises-turma-inicio"' : ''}>
+      <td><button type="button" class="analises-link-turma" onclick="alternarAlunosTurmaAnalisesSIGA(this)" data-turma="${escAnalisesSIGA(x.turma)}">${escAnalisesSIGA(x.turma)}</button></td>
+      <td>${escAnalisesSIGA(x.periodo)}</td>
       <td style="font-weight:800; color:${Number(x.lucro) >= 0 ? VIZ_COR.status.bom : VIZ_COR.status.critico}">${moedaAnalisesSIGA(x.lucro)}</td>
       <td>${vizChipStatus(Number(x.margem || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusMargem)}</td>
     </tr>
@@ -964,14 +1020,74 @@ function preencherTabelaLucroAnalisesSIGA(resumoLucroPorTurma) {
   }).join('');
 }
 
-function preencherTabelaAnalisesSIGA(resultado) {
+function alternarAlunosTurmaAnalisesSIGA(botao) {
+  const turma = botao.getAttribute('data-turma');
+  const linha = botao.closest('tr');
+  const proxima = linha.nextElementSibling;
+
+  if (proxima && proxima.classList.contains('analises-linha-alunos')) {
+    proxima.remove();
+    return;
+  }
+
+  document.querySelectorAll('#corpoTabelaAnalisesLucro tr.analises-linha-alunos').forEach(tr => tr.remove());
+
+  const linhaDetalhe = document.createElement('tr');
+  linhaDetalhe.className = 'analises-linha-alunos';
+  linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Carregando alunos...</div></td>';
+  linha.after(linhaDetalhe);
+
+  const cache = analisesAlunosPorTurmaCache.get(turma);
+  if (cache) {
+    renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, cache);
+    return;
+  }
+
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+  const resultado = analisesDadosCache;
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      const alunos = (resposta && resposta.alunos) || [];
+      analisesAlunosPorTurmaCache.set(turma, alunos);
+      renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos);
+    })
+    .withFailureHandler(() => {
+      linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.</div></td>';
+    })
+    .obterAlunosPagamentosPorTurmaAnalisesSIGA({
+      token,
+      turma,
+      mesInicial: resultado ? resultado.mesInicial : null,
+      mesFinal: resultado ? resultado.mesFinal : null
+    });
+}
+
+function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos) {
+  if (!alunos.length) {
+    linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Nenhum aluno encontrado nessa turma no período.</div></td>';
+    return;
+  }
+
+  const linhas = alunos.map(a => `<tr><td>${escAnalisesSIGA(a.aluno)}</td><td>${moedaAnalisesSIGA(a.total)}</td></tr>`).join('');
+  linhaDetalhe.innerHTML = `<td colspan="4">
+    <table class="analises-subtabela-alunos">
+      <thead><tr><th>Aluno</th><th>Valor no período</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+  </td>`;
+}
+
+function preencherTabelaAnalisesSIGA(comparativo) {
   const corpo = document.getElementById('corpoTabelaAnalisesTurmas');
   if (!corpo) return;
 
-  const comparativo = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
+  comparativo = Array.isArray(comparativo) ? comparativo : [];
 
   if (!comparativo.length) {
-    corpo.innerHTML = '<tr><td colspan="6" class="estado-vazio">Nenhuma turma encontrada.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Nenhuma turma ativa encontrada.</td></tr>';
     return;
   }
 
@@ -982,9 +1098,10 @@ function preencherTabelaAnalisesSIGA(resultado) {
     return `
     <tr>
       <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
-      <td>${Number(x.ativos || 0)}</td>
+      <td style="font-weight:700">${Number(x.ativos || 0)}</td>
       <td>${Number(x.cancelados || 0)}</td>
       <td>${Number(x.total || 0)}</td>
+      <td style="font-weight:700">${moedaAnalisesSIGA(x.receitaPeriodo)}</td>
       <td>${vizChipStatus(Number(x.taxaEvasao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusEvasao)}</td>
       <td>${temFrequencia
         ? vizChipStatus(Number(x.frequenciaMedia).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusFrequencia)
