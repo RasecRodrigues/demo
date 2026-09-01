@@ -42,6 +42,10 @@
       <span>INADIMPLÊNCIA ATUAL (TOTAL)</span>
       <strong id="analisesKpiInadimplencia">—</strong>
     </div>
+    <div class="pagamentos-kpi">
+      <span>LUCRO TOTAL DO PERÍODO</span>
+      <strong id="analisesKpiLucro">—</strong>
+    </div>
   </div>
 
   <section class="cartao">
@@ -96,6 +100,18 @@
 
   <section class="cartao">
     <div class="cartao-cabecalho">
+      <div>
+        <h2>Lucro por turma no tempo</h2>
+        <span class="subtitulo">Receita (valor devido das matrículas) menos custo dos professores daquela turma, por mês. Mostrando as turmas com maior receita no período.</span>
+      </div>
+    </div>
+    <div id="graficoAnalisesLucro" class="analises-grafico-area">
+      <div class="estado-vazio">Carregando...</div>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
       <h2>Detalhamento por turma</h2>
     </div>
     <div class="pagamentos-tabela-wrap">
@@ -116,13 +132,37 @@
       </table>
     </div>
   </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <h2>Lucro por turma no período</h2>
+      <span class="subtitulo">Somado em todos os meses do período selecionado.</span>
+    </div>
+    <div class="pagamentos-tabela-wrap">
+      <table class="pagamentos-tabela">
+        <thead>
+          <tr>
+            <th>Turma</th>
+            <th>Receita</th>
+            <th>Custo (professores)</th>
+            <th>Lucro</th>
+            <th>Margem</th>
+          </tr>
+        </thead>
+        <tbody id="corpoTabelaAnalisesLucro">
+          <tr><td colspan="5" class="estado-vazio">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </section>
 
 <style>
-.analises-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.analises-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:18px 0}
 .analises-grade-dupla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .analises-grafico-area{min-height:280px;padding-top:8px}
 .analises-grafico-alto{min-height:340px}
+@media(max-width:1100px){.analises-kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.analises-kpis{grid-template-columns:repeat(2,1fr)}.analises-grade-dupla{grid-template-columns:1fr}}
 @media(max-width:560px){.analises-kpis{grid-template-columns:1fr}}
 
@@ -225,7 +265,7 @@ function carregarAnalisesSIGA() {
     ? obterTokenPagamentosUnificadosSIGA()
     : '';
 
-  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia']
+  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia', 'graficoAnalisesLucro']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
@@ -299,7 +339,7 @@ function carregarFrequenciaAnalisesSIGA(resultado, token) {
 }
 
 function mostrarErroAnalisesSIGA(mensagem) {
-  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia']
+  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia', 'graficoAnalisesLucro']
     .forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = '<div class="estado-vazio">' + escAnalisesSIGA(mensagem) + '</div>';
@@ -324,6 +364,7 @@ function preencherKpisAnalisesSIGA(resultado) {
     (saldoPeriodo > 0 ? '+' : '') + saldoPeriodo.toLocaleString('pt-BR')
   );
   definirTextoAnalisesSIGA('analisesKpiInadimplencia', moedaAnalisesSIGA(resumo.inadimplenciaAtual));
+  definirTextoAnalisesSIGA('analisesKpiLucro', moedaAnalisesSIGA(resumo.lucroTotalPeriodo));
 }
 
 function definirTextoAnalisesSIGA(id, texto) {
@@ -336,6 +377,64 @@ function desenharGraficosAnalisesSIGA(resultado) {
   desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []);
   desenharGraficoTurmasAnalisesSIGA(resultado.comparativoTurmas || []);
   desenharGraficoFrequenciaAnalisesSIGA(resultado.comparativoTurmas || []);
+  desenharGraficoLucroAnalisesSIGA(resultado.serieLucroPorTurma || []);
+  preencherTabelaLucroAnalisesSIGA(resultado.resumoLucroPorTurma || []);
+}
+
+function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
+  const alvo = document.getElementById('graficoAnalisesLucro');
+  if (!alvo) return;
+
+  if (!serieLucroPorTurma.length || !serieLucroPorTurma[0].pontos || !serieLucroPorTurma[0].pontos.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados de lucro no período (confira se há registros em "Pagamentos Professores").</div>';
+    return;
+  }
+
+  const periodos = serieLucroPorTurma[0].pontos.map(p => p.periodo);
+
+  const dados = new google.visualization.DataTable();
+  dados.addColumn('string', 'Mês');
+  serieLucroPorTurma.forEach(item => dados.addColumn('number', item.turma));
+
+  const linhas = periodos.map((periodo, indice) => {
+    const linha = [periodo];
+    serieLucroPorTurma.forEach(item => {
+      const ponto = item.pontos[indice];
+      linha.push(ponto ? Number(ponto.lucro || 0) : 0);
+    });
+    return linha;
+  });
+  dados.addRows(linhas);
+
+  const grafico = new google.visualization.LineChart(alvo);
+  grafico.draw(dados, {
+    height: 320,
+    curveType: 'function',
+    legend: { position: 'top', maxLines: 3 },
+    chartArea: { left: 80, right: 20, top: 60, bottom: 40 },
+    hAxis: { slantedText: true, slantedTextAngle: 45 },
+    vAxis: { format: 'currency' }
+  });
+}
+
+function preencherTabelaLucroAnalisesSIGA(resumoLucroPorTurma) {
+  const corpo = document.getElementById('corpoTabelaAnalisesLucro');
+  if (!corpo) return;
+
+  if (!resumoLucroPorTurma.length) {
+    corpo.innerHTML = '<tr><td colspan="5" class="estado-vazio">Nenhum dado de lucro encontrado.</td></tr>';
+    return;
+  }
+
+  corpo.innerHTML = resumoLucroPorTurma.map(x => `
+    <tr>
+      <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
+      <td>${moedaAnalisesSIGA(x.receita)}</td>
+      <td>${moedaAnalisesSIGA(x.custo)}</td>
+      <td style="font-weight:800; color:${Number(x.lucro) >= 0 ? '#16a34a' : '#dc2626'}">${moedaAnalisesSIGA(x.lucro)}</td>
+      <td>${Number(x.margem || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td>
+    </tr>
+  `).join('');
 }
 
 function desenharGraficoMatriculasAnalisesSIGA(serie) {

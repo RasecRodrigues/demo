@@ -26,6 +26,14 @@ function obterAnalisesSIGA(filtros) {
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
 
+  // Preenche m.chaveAluno em cada matrícula usando a mesma resolução de
+  // identidade do módulo financeiro — garante que "combo" (aluno com mais
+  // de uma turma ativa) seja calculado com a MESMA regra usada no restante
+  // do sistema, em vez de agrupar por nome/ID de forma diferente aqui.
+  criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+
+  const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
+
   // A frequência por turma NÃO é calculada aqui: obterPainelFrequenciaTurma
   // é cara e, chamada várias vezes em sequência, deixaria a tela inteira
   // esperando. O cliente busca a frequência depois, à parte, via
@@ -49,12 +57,166 @@ function obterAnalisesSIGA(filtros) {
     serieMatriculas: calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos),
     serieFinanceira: calcularSerieFinanceiraAnalisesSIGA_(ss, periodos),
     comparativoTurmas,
+    serieLucroPorTurma: lucroPorTurma.serieDetalhada,
+    resumoLucroPorTurma: lucroPorTurma.resumoPorTurma,
     resumo: {
       alunosAtivos: matriculas.filter(m => normalizarPagUnif_(m.status) === 'ATIVO').length,
       turmasComparadas: comparativoTurmas.length,
-      inadimplenciaAtual: arredPagUnif_(inadimplenciaAtual)
+      inadimplenciaAtual: arredPagUnif_(inadimplenciaAtual),
+      lucroTotalPeriodo: arredPagUnif_(
+        lucroPorTurma.resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0)
+      )
     }
   };
+}
+
+/**
+ * Receita (valor devido, por matrícula) menos custo de professores
+ * (Pagamentos Professores), agrupado por turma e por mês.
+ */
+function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
+  const custoPorTurma = calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos);
+
+  const matriculasPorAluno = new Map();
+  matriculas.forEach(m => {
+    const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
+    if (!chave) return;
+    if (!matriculasPorAluno.has(chave)) {
+      matriculasPorAluno.set(chave, []);
+    }
+    matriculasPorAluno.get(chave).push(m);
+  });
+
+  const hoje = new Date();
+  const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const receitaPorTurmaMes = new Map();
+
+  periodos.forEach(ref => {
+    let dataCalculo;
+    if (ref < inicioMesAtual) {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+    } else if (ref.getFullYear() === hoje.getFullYear() && ref.getMonth() === hoje.getMonth()) {
+      dataCalculo = hoje;
+    } else {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    }
+
+    const chaveMes = analisesMesRotulo_(ref).chave;
+
+    matriculasPorAluno.forEach(matsAluno => {
+      const ativas = matsAluno.filter(m =>
+        normalizarPagUnif_(m.status) === 'ATIVO' && vigenteNoMesPagUnif_(m, ref)
+      );
+      if (!ativas.length) {
+        return;
+      }
+
+      const combo = ativas.length > 1;
+
+      ativas.forEach(m => {
+        const turma = String(m.turma || '').trim();
+        if (!turma) {
+          return;
+        }
+
+        const valor = Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0);
+
+        if (!receitaPorTurmaMes.has(turma)) {
+          receitaPorTurmaMes.set(turma, new Map());
+        }
+        const mapaMes = receitaPorTurmaMes.get(turma);
+        mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + valor);
+      });
+    });
+  });
+
+  const turmas = new Set([...receitaPorTurmaMes.keys(), ...custoPorTurma.keys()]);
+  const resumoPorTurma = [];
+  const detalhesPorTurma = new Map();
+
+  turmas.forEach(turma => {
+    const mapaReceita = receitaPorTurmaMes.get(turma) || new Map();
+    const mapaCusto = custoPorTurma.get(turma) || new Map();
+
+    let totalReceita = 0;
+    let totalCusto = 0;
+
+    const pontos = periodos.map(p => {
+      const chaveMes = analisesMesRotulo_(p).chave;
+      const receita = arredPagUnif_(mapaReceita.get(chaveMes) || 0);
+      const custo = arredPagUnif_(mapaCusto.get(chaveMes) || 0);
+      totalReceita += receita;
+      totalCusto += custo;
+      return {
+        periodo: analisesMesRotulo_(p).rotulo,
+        receita,
+        custo,
+        lucro: arredPagUnif_(receita - custo)
+      };
+    });
+
+    detalhesPorTurma.set(turma, pontos);
+    resumoPorTurma.push({
+      turma,
+      receita: arredPagUnif_(totalReceita),
+      custo: arredPagUnif_(totalCusto),
+      lucro: arredPagUnif_(totalReceita - totalCusto),
+      margem: totalReceita > 0
+        ? arredPagUnif_(((totalReceita - totalCusto) / totalReceita) * 100)
+        : 0
+    });
+  });
+
+  resumoPorTurma.sort((a, b) => b.lucro - a.lucro);
+
+  const serieDetalhada = resumoPorTurma.slice(0, 8).map(item => ({
+    turma: item.turma,
+    pontos: detalhesPorTurma.get(item.turma) || []
+  }));
+
+  return { serieDetalhada, resumoPorTurma };
+}
+
+function calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos) {
+  const porTurma = new Map();
+  const aba = ss.getSheetByName('Pagamentos Professores');
+  if (!aba || aba.getLastRow() < 2) {
+    return porTurma;
+  }
+
+  const chavesValidas = new Set(periodos.map(p => analisesMesRotulo_(p).chave));
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 6).getValues();
+
+  dados.forEach(linha => {
+    const turma = String(linha[2] || '').trim();
+    if (!turma) {
+      return;
+    }
+
+    const dataAula = typeof converterDataPagamentoProfessorSIGA_ === 'function'
+      ? converterDataPagamentoProfessorSIGA_(linha[1])
+      : parseDataPagUnif_(linha[1]);
+    if (!dataAula) {
+      return;
+    }
+
+    const chaveMes = analisesMesRotulo_(dataAula).chave;
+    if (!chavesValidas.has(chaveMes)) {
+      return;
+    }
+
+    const horas = numeroPagUnif_(linha[3]);
+    const valorHora = numeroPagUnif_(linha[4]);
+    const custo = horas * valorHora;
+
+    if (!porTurma.has(turma)) {
+      porTurma.set(turma, new Map());
+    }
+    const mapaMes = porTurma.get(turma);
+    mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + custo);
+  });
+
+  return porTurma;
 }
 
 /**
