@@ -43,8 +43,8 @@
       <strong id="analisesKpiSaldo">—</strong>
     </div>
     <div class="pagamentos-kpi">
-      <span>LUCRO TOTAL DO PERÍODO</span>
-      <strong id="analisesKpiLucro">—</strong>
+      <span>MENSALIDADES DO PERÍODO</span>
+      <strong id="analisesKpiMensalidades">—</strong>
     </div>
   </div>
 
@@ -121,8 +121,8 @@
   <section class="cartao">
     <div class="cartao-cabecalho">
       <div>
-        <h2>Lucro por turma no tempo</h2>
-        <span class="subtitulo">Receita (valor devido das matrículas) menos custo dos professores daquela turma, por mês. As 3 turmas de maior receita aparecem em destaque; as demais, em cinza, dão o contexto.</span>
+        <h2>Mensalidades por turma no tempo</h2>
+        <span class="subtitulo">Valor devido das matrículas daquela turma, por mês. As 3 turmas de maior valor aparecem em destaque; as demais, em cinza, dão o contexto.</span>
       </div>
     </div>
     <div id="graficoAnalisesLucro" class="analises-grafico-area">
@@ -157,7 +157,7 @@
 
   <section class="cartao">
     <div class="cartao-cabecalho">
-      <h2>Lucro por turma no período</h2>
+      <h2>Mensalidades por turma no período</h2>
       <span class="subtitulo">Um mês por linha. Clique no nome da turma para ver os alunos e o quanto cada um pagou.</span>
     </div>
     <div class="pagamentos-tabela-wrap">
@@ -166,12 +166,11 @@
           <tr>
             <th>Turma</th>
             <th>Mês/Ano</th>
-            <th>Lucro</th>
-            <th>Margem</th>
+            <th>Valor</th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesLucro">
-          <tr><td colspan="4" class="estado-vazio">Carregando...</td></tr>
+          <tr><td colspan="3" class="estado-vazio">Carregando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -338,13 +337,6 @@ function vizStatusEvasao_(pct) {
   if (valor >= 50) return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
   if (valor >= 25) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
   return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Baixa' };
-}
-
-function vizStatusMargem_(pct) {
-  const valor = Number(pct || 0);
-  if (valor < 70) return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Baixa' };
-  if (valor < 90) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Média' };
-  return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Alta' };
 }
 
 function vizChipStatus(valorTexto, status) {
@@ -778,7 +770,7 @@ function preencherKpisAnalisesSIGA(resultado) {
     'analisesKpiSaldo',
     (saldoPeriodo > 0 ? '+' : '') + saldoPeriodo.toLocaleString('pt-BR')
   );
-  definirTextoAnalisesSIGA('analisesKpiLucro', moedaAnalisesSIGA(resumo.lucroTotalPeriodo));
+  definirTextoAnalisesSIGA('analisesKpiMensalidades', moedaAnalisesSIGA(resumo.mensalidadesTotalPeriodo));
 }
 
 function definirTextoAnalisesSIGA(id, texto) {
@@ -798,8 +790,8 @@ function desenharGraficosAnalisesSIGA(resultado) {
     () => desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []),
     () => desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []),
     () => renderizarTurmasFiltradasAnalisesSIGA(resultado),
-    () => desenharGraficoLucroAnalisesSIGA(resultado.serieLucroPorTurma || []),
-    () => preencherTabelaLucroAnalisesSIGA(resultado.detalheMensalLucroPorTurma || [])
+    () => desenharGraficoMensalidadesAnalisesSIGA(resultado.serieMensalidadesPorTurma || []),
+    () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || [])
   ];
   passos.forEach(passo => {
     try {
@@ -974,29 +966,29 @@ function desenharGraficoFrequenciaAnalisesSIGA(comparativo) {
 }
 
 /**
- * Lucro por turma no tempo: as 3 turmas de maior receita entram coloridas
- * e com rótulo direto no fim da linha; as demais (até 20) ficam em cinza,
- * como contexto, sem disputar atenção com a cor.
+ * Mensalidades por turma no tempo: as 3 turmas de maior valor entram
+ * coloridas e com rótulo direto no fim da linha; as demais (até 20)
+ * ficam em cinza, como contexto, sem disputar atenção com a cor.
  */
-function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
+function desenharGraficoMensalidadesAnalisesSIGA(serieMensalidadesPorTurma) {
   const alvo = document.getElementById('graficoAnalisesLucro');
   if (!alvo) return;
 
-  if (!serieLucroPorTurma.length || !serieLucroPorTurma[0].pontos || !serieLucroPorTurma[0].pontos.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Sem dados de lucro no período (confira se há registros em "Pagamentos Professores").</div>';
+  if (!serieMensalidadesPorTurma.length || !serieMensalidadesPorTurma[0].pontos || !serieMensalidadesPorTurma[0].pontos.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados de mensalidades no período.</div>';
     return;
   }
 
-  const categorias = serieLucroPorTurma[0].pontos.map(p => p.periodo);
-  const series = serieLucroPorTurma.map((item, indice) => ({
+  const categorias = serieMensalidadesPorTurma[0].pontos.map(p => p.periodo);
+  const series = serieMensalidadesPorTurma.map((item, indice) => ({
     nome: item.turma,
     cor: indice < 3 ? VIZ_COR.categorico[indice] : VIZ_COR.contexto,
     destaque: indice < 3,
-    pontos: item.pontos.map(p => Number(p.lucro || 0))
+    pontos: item.pontos.map(p => Number(p.receita || 0))
   }));
 
   vizGraficoLinha(alvo, {
-    titulo: 'Lucro por turma no tempo',
+    titulo: 'Mensalidades por turma no tempo',
     moeda: true,
     categorias,
     series
@@ -1006,33 +998,31 @@ function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
 let analisesAlunosPorTurmaCache = new Map();
 
 /**
- * `detalheMensalLucroPorTurma` é [{turma, periodo, lucro, margem}], uma
- * linha por turma x mês (vem ordenado por turma — maior lucro total
- * primeiro — e, dentro da turma, cronológico). Clicar no nome da turma
- * expande a lista de alunos e quanto cada um pagou no período.
+ * `detalheMensalPorTurma` é [{turma, periodo, receita}], uma linha por
+ * turma x mês (vem ordenado por turma — maior valor total primeiro — e,
+ * dentro da turma, cronológico). Clicar no nome da turma expande a lista
+ * de alunos e quanto cada um pagou no período.
  */
-function preencherTabelaLucroAnalisesSIGA(detalheMensalLucroPorTurma) {
+function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
   const corpo = document.getElementById('corpoTabelaAnalisesLucro');
   if (!corpo) return;
 
   analisesAlunosPorTurmaCache = new Map();
 
-  if (!detalheMensalLucroPorTurma.length) {
-    corpo.innerHTML = '<tr><td colspan="4" class="estado-vazio">Nenhum dado de lucro encontrado.</td></tr>';
+  if (!detalheMensalPorTurma.length) {
+    corpo.innerHTML = '<tr><td colspan="3" class="estado-vazio">Nenhum dado de mensalidades encontrado.</td></tr>';
     return;
   }
 
   let turmaAnterior = null;
-  corpo.innerHTML = detalheMensalLucroPorTurma.map(x => {
-    const statusMargem = vizStatusMargem_(x.margem);
+  corpo.innerHTML = detalheMensalPorTurma.map(x => {
     const inicioDeGrupo = x.turma !== turmaAnterior;
     turmaAnterior = x.turma;
     return `
     <tr${inicioDeGrupo ? ' class="analises-turma-inicio"' : ''}>
       <td><button type="button" class="analises-link-turma" onclick="alternarAlunosTurmaAnalisesSIGA(this)" data-turma="${escAnalisesSIGA(x.turma)}">${escAnalisesSIGA(x.turma)}</button></td>
       <td>${escAnalisesSIGA(x.periodo)}</td>
-      <td style="font-weight:800; color:${Number(x.lucro) >= 0 ? VIZ_COR.status.bom : VIZ_COR.status.critico}">${moedaAnalisesSIGA(x.lucro)}</td>
-      <td>${vizChipStatus(Number(x.margem || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusMargem)}</td>
+      <td style="font-weight:700">${moedaAnalisesSIGA(x.receita)}</td>
     </tr>
   `;
   }).join('');
@@ -1052,7 +1042,7 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
 
   const linhaDetalhe = document.createElement('tr');
   linhaDetalhe.className = 'analises-linha-alunos';
-  linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Carregando alunos...</div></td>';
+  linhaDetalhe.innerHTML = '<td colspan="3"><div class="estado-vazio">Carregando alunos...</div></td>';
   linha.after(linhaDetalhe);
 
   const cache = analisesAlunosPorTurmaCache.get(turma);
@@ -1073,7 +1063,7 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
       renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos);
     })
     .withFailureHandler(() => {
-      linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.</div></td>';
+      linhaDetalhe.innerHTML = '<td colspan="3"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.</div></td>';
     })
     .obterAlunosPagamentosPorTurmaAnalisesSIGA({
       token,
@@ -1085,12 +1075,12 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
 
 function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos) {
   if (!alunos.length) {
-    linhaDetalhe.innerHTML = '<td colspan="4"><div class="estado-vazio">Nenhum aluno encontrado nessa turma no período.</div></td>';
+    linhaDetalhe.innerHTML = '<td colspan="3"><div class="estado-vazio">Nenhum aluno encontrado nessa turma no período.</div></td>';
     return;
   }
 
   const linhas = alunos.map(a => `<tr><td>${escAnalisesSIGA(a.aluno)}</td><td>${moedaAnalisesSIGA(a.total)}</td></tr>`).join('');
-  linhaDetalhe.innerHTML = `<td colspan="4">
+  linhaDetalhe.innerHTML = `<td colspan="3">
     <table class="analises-subtabela-alunos">
       <thead><tr><th>Aluno</th><th>Valor no período</th></tr></thead>
       <tbody>${linhas}</tbody>

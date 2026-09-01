@@ -8,9 +8,9 @@
  * Não redeclara nada que já exista nesses arquivos.
  *
  * ARQUITETURA DE CACHE — por que existe:
- * Calcular os dados de Análises do zero exige varrer DimMatricula,
- * TodosBoletos (a maior aba do sistema) e Pagamentos Professores por
- * inteiro. Fazer isso a cada abertura da tela levava dezenas de segundos.
+ * Calcular os dados de Análises do zero exige varrer DimMatricula e
+ * TodosBoletos (a maior aba do sistema) por inteiro. Fazer isso a cada
+ * abertura da tela levava dezenas de segundos.
  * Em vez disso, o cálculo pesado roda em segundo plano (gatilho de tempo,
  * ver configurarGatilhoCacheAnalisesSIGA) e grava o resultado em 3 abas
  * pequenas (AnalisesCache_*). A tela só LÊ essas abas — leitura de
@@ -63,56 +63,48 @@ function obterAnalisesSIGA(filtros) {
     return { periodo: analisesChaveParaRotulo_(chave), receita: linha ? linha.receita : 0 };
   });
 
-  // Agrega lucro por turma somando só os meses dentro da janela selecionada.
+  // Agrega mensalidades por turma somando só os meses dentro da janela
+  // selecionada.
   const acumuladoPorTurma = new Map();
   turma.forEach(item => {
     if (!chavesSet.has(item.mes)) {
       return;
     }
     if (!acumuladoPorTurma.has(item.turma)) {
-      acumuladoPorTurma.set(item.turma, { receita: 0, custo: 0, pontos: new Map() });
+      acumuladoPorTurma.set(item.turma, { receita: 0, pontos: new Map() });
     }
     const acc = acumuladoPorTurma.get(item.turma);
     acc.receita += item.receita;
-    acc.custo += item.custo;
-    acc.pontos.set(item.mes, { periodo: analisesChaveParaRotulo_(item.mes), receita: item.receita, custo: item.custo, lucro: item.lucro });
+    acc.pontos.set(item.mes, { periodo: analisesChaveParaRotulo_(item.mes), receita: item.receita });
   });
 
   const resumoPorTurma = Array.from(acumuladoPorTurma.entries())
-    .map(([nomeTurma, acc]) => ({
-      turma: nomeTurma,
-      receita: arredPagUnif_(acc.receita),
-      custo: arredPagUnif_(acc.custo),
-      lucro: arredPagUnif_(acc.receita - acc.custo),
-      margem: acc.receita > 0 ? arredPagUnif_(((acc.receita - acc.custo) / acc.receita) * 100) : 0
-    }))
-    .sort((a, b) => b.lucro - a.lucro);
+    .map(([nomeTurma, acc]) => ({ turma: nomeTurma, receita: arredPagUnif_(acc.receita) }))
+    .sort((a, b) => b.receita - a.receita);
 
   // Manda mais turmas do que o gráfico vai destacar: a tela mostra as 3
   // primeiras em cor e o restante como linhas de contexto (cinza, sem
   // legenda) — assim dá pra ver a forma geral sem competir com 8+ cores.
-  const serieLucroPorTurma = resumoPorTurma.slice(0, 20).map(item => {
+  const serieMensalidadesPorTurma = resumoPorTurma.slice(0, 20).map(item => {
     const acc = acumuladoPorTurma.get(item.turma);
     return {
       turma: item.turma,
-      pontos: chaves.map(chave => acc.pontos.get(chave) || { periodo: analisesChaveParaRotulo_(chave), receita: 0, custo: 0, lucro: 0 })
+      pontos: chaves.map(chave => acc.pontos.get(chave) || { periodo: analisesChaveParaRotulo_(chave), receita: 0 })
     };
   });
 
   // Linha por turma x mês (não só o top 20 do gráfico) — usado pela tabela
-  // "Lucro por turma no período", que mostra o detalhamento mensal completo.
-  const detalheMensalLucroPorTurma = [];
+  // "Mensalidades por turma no período", que mostra o detalhamento mensal
+  // completo.
+  const detalheMensalPorTurma = [];
   resumoPorTurma.forEach(item => {
     const acc = acumuladoPorTurma.get(item.turma);
     chaves.forEach(chave => {
       const ponto = acc.pontos.get(chave);
-      const receita = ponto ? ponto.receita : 0;
-      const lucro = ponto ? ponto.lucro : 0;
-      detalheMensalLucroPorTurma.push({
+      detalheMensalPorTurma.push({
         turma: item.turma,
         periodo: analisesChaveParaRotulo_(chave),
-        lucro,
-        margem: receita > 0 ? arredPagUnif_((lucro / receita) * 100) : 0
+        receita: ponto ? ponto.receita : 0
       });
     });
   });
@@ -142,13 +134,13 @@ function obterAnalisesSIGA(filtros) {
     serieMatriculas,
     serieFinanceira,
     comparativoTurmas,
-    serieLucroPorTurma,
-    detalheMensalLucroPorTurma,
+    serieMensalidadesPorTurma,
+    detalheMensalPorTurma,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
       turmasComparadas: comparativoTurmas.length,
-      lucroTotalPeriodo: arredPagUnif_(resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0))
+      mensalidadesTotalPeriodo: arredPagUnif_(resumoPorTurma.reduce((s, x) => s + Number(x.receita || 0), 0))
     }
   };
 }
@@ -156,8 +148,8 @@ function obterAnalisesSIGA(filtros) {
 /**
  * Alunos de uma turma e o quanto cada um pagou (valor devido) no período
  * selecionado — chamado sob demanda quando o usuário clica numa turma na
- * tabela de lucro. Não faz parte do cache: é um recorte de UMA turma só,
- * então é rápido o bastante para rodar na hora.
+ * tabela de mensalidades. Não faz parte do cache: é um recorte de UMA
+ * turma só, então é rápido o bastante para rodar na hora.
  */
 function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   filtros = filtros || {};
@@ -339,18 +331,18 @@ function analisesRecalcularCacheSemLock_() {
 
   const serieMatriculas = calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos);
   const serieFinanceira = calcularSerieFinanceiraAnalisesSIGA_(ss, periodos);
-  const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
+  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
   // Grava os números "rápidos" (não dependem de obterPainelFrequenciaTurma)
   // ANTES de tentar calcular frequência. Isso é proposital: se a frequência
   // travar ou estourar o tempo de execução do Apps Script, os números
-  // principais (ativos, saídas, receita, lucro) já estão salvos — só a
-  // coluna de frequência fica pra trás. Antes, a ordem era invertida e uma
+  // principais (ativos, saídas, receita, mensalidades) já estão salvos — só
+  // a coluna de frequência fica pra trás. Antes, a ordem era invertida e uma
   // frequência lenta podia derrubar a execução INTEIRA antes de gravar
   // qualquer aba, fazendo o cache nunca se atualizar.
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
-  analisesGravarCacheTurma_(ss, periodos, lucroPorTurma.detalhesPorTurma);
+  analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma);
   analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
@@ -449,13 +441,13 @@ function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceir
 }
 
 function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita', 'Custo', 'Lucro']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita']);
   const linhas = [];
   detalhesPorTurma.forEach((pontos, turma) => {
     periodos.forEach((p, i) => {
       const chave = analisesMesRotulo_(p).chave;
       const ponto = pontos[i] || {};
-      linhas.push([chave, turma, Number(ponto.receita || 0), Number(ponto.custo || 0), Number(ponto.lucro || 0)]);
+      linhas.push([chave, turma, Number(ponto.receita || 0)]);
     });
   });
   if (linhas.length) {
@@ -511,20 +503,14 @@ function analisesLerCacheTurma_() {
   if (!aba || aba.getLastRow() < 2) {
     return lista;
   }
-  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 3).getValues();
   dados.forEach(linha => {
     const mes = String(linha[0] || '').trim();
     const turma = String(linha[1] || '').trim();
     if (!mes || !turma) {
       return;
     }
-    lista.push({
-      mes,
-      turma,
-      receita: Number(linha[2] || 0),
-      custo: Number(linha[3] || 0),
-      lucro: Number(linha[4] || 0)
-    });
+    lista.push({ mes, turma, receita: Number(linha[2] || 0) });
   });
   return lista;
 }
@@ -556,14 +542,12 @@ function analisesLerCacheComparativoTurmas_() {
 }
 
 /**
- * Receita (valor devido, por matrícula) menos custo de professores
- * (Pagamentos Professores), agrupado por turma e por mês.
- * Usado só por recalcularCacheAnalisesSIGA — retorna TODAS as turmas
- * (o corte para as top N usado na tela acontece na leitura do cache).
+ * Mensalidades por turma (valor devido, por matrícula), agrupado por
+ * turma e por mês. Usado só por recalcularCacheAnalisesSIGA — retorna
+ * TODAS as turmas (o corte para as top N usado na tela acontece na
+ * leitura do cache).
  */
-function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
-  const custoPorTurma = calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos);
-
+function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos) {
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
     const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
@@ -617,88 +601,26 @@ function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
     });
   });
 
-  const turmas = new Set([...receitaPorTurmaMes.keys(), ...custoPorTurma.keys()]);
   const resumoPorTurma = [];
   const detalhesPorTurma = new Map();
 
-  turmas.forEach(turma => {
-    const mapaReceita = receitaPorTurmaMes.get(turma) || new Map();
-    const mapaCusto = custoPorTurma.get(turma) || new Map();
-
+  receitaPorTurmaMes.forEach((mapaReceita, turma) => {
     let totalReceita = 0;
-    let totalCusto = 0;
 
     const pontos = periodos.map(p => {
       const chaveMes = analisesMesRotulo_(p).chave;
       const receita = arredPagUnif_(mapaReceita.get(chaveMes) || 0);
-      const custo = arredPagUnif_(mapaCusto.get(chaveMes) || 0);
       totalReceita += receita;
-      totalCusto += custo;
-      return {
-        periodo: analisesMesRotulo_(p).rotulo,
-        receita,
-        custo,
-        lucro: arredPagUnif_(receita - custo)
-      };
+      return { periodo: analisesMesRotulo_(p).rotulo, receita };
     });
 
     detalhesPorTurma.set(turma, pontos);
-    resumoPorTurma.push({
-      turma,
-      receita: arredPagUnif_(totalReceita),
-      custo: arredPagUnif_(totalCusto),
-      lucro: arredPagUnif_(totalReceita - totalCusto),
-      margem: totalReceita > 0
-        ? arredPagUnif_(((totalReceita - totalCusto) / totalReceita) * 100)
-        : 0
-    });
+    resumoPorTurma.push({ turma, receita: arredPagUnif_(totalReceita) });
   });
 
-  resumoPorTurma.sort((a, b) => b.lucro - a.lucro);
+  resumoPorTurma.sort((a, b) => b.receita - a.receita);
 
   return { resumoPorTurma, detalhesPorTurma };
-}
-
-function calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos) {
-  const porTurma = new Map();
-  const aba = ss.getSheetByName('Pagamentos Professores');
-  if (!aba || aba.getLastRow() < 2) {
-    return porTurma;
-  }
-
-  const chavesValidas = new Set(periodos.map(p => analisesMesRotulo_(p).chave));
-  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 6).getValues();
-
-  dados.forEach(linha => {
-    const turma = String(linha[2] || '').trim();
-    if (!turma) {
-      return;
-    }
-
-    const dataAula = typeof converterDataPagamentoProfessorSIGA_ === 'function'
-      ? converterDataPagamentoProfessorSIGA_(linha[1])
-      : parseDataPagUnif_(linha[1]);
-    if (!dataAula) {
-      return;
-    }
-
-    const chaveMes = analisesMesRotulo_(dataAula).chave;
-    if (!chavesValidas.has(chaveMes)) {
-      return;
-    }
-
-    const horas = numeroPagUnif_(linha[3]);
-    const valorHora = numeroPagUnif_(linha[4]);
-    const custo = horas * valorHora;
-
-    if (!porTurma.has(turma)) {
-      porTurma.set(turma, new Map());
-    }
-    const mapaMes = porTurma.get(turma);
-    mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + custo);
-  });
-
-  return porTurma;
 }
 
 function analisesMesRotulo_(data) {
