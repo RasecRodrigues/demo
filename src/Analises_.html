@@ -264,6 +264,7 @@
 }
 .analises-chip-filtro:hover{border-color:#c3c2b7}
 .analises-chip-filtro-ativo{background:#0b0b0b;border-color:#0b0b0b;color:#fff}
+.analises-filtro-vazio{font-size:12.5px;color:#898781;font-style:italic}
 
 /* =========================================================
    ISOLAMENTO DA TELA DE ANÁLISES
@@ -810,8 +811,10 @@ function montarFiltroModalidadeAnalisesSIGA(comparativoCompleto) {
   if (!alvo) return;
 
   const categorias = Array.from(new Set(comparativoCompleto.map(x => analisesCategoriaTurma_(x.turma)))).sort();
-  if (categorias.length <= 1) {
-    alvo.innerHTML = '';
+  if (!categorias.length) {
+    // Sem turma nenhuma no comparativo (cache vazio/incompleto) — mostra
+    // isso explicitamente em vez de só sumir com o filtro em silêncio.
+    alvo.innerHTML = '<span class="analises-filtro-vazio">Nenhuma turma ativa encontrada — clique em "Recalcular dados" acima.</span>';
     return;
   }
 
