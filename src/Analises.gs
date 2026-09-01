@@ -274,19 +274,57 @@ function configurarGatilhoCacheAnalisesSIGA() {
     .create();
 }
 
+/**
+ * Só dispara o recálculo se o cache ainda não existir. Usa um lock com
+ * dupla checagem: se duas requisições chegarem ao mesmo tempo (ex.: o
+ * gatilho de tempo disparando junto com alguém abrindo a tela), a segunda
+ * espera a primeira terminar em vez de tentar criar as mesmas abas de novo
+ * — sem o lock, as duas viam "cache não existe" ao mesmo tempo e a segunda
+ * quebrava com "Já existe uma página chamada ...".
+ */
 function garantirCacheAnalisesSIGA_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
-    recalcularCacheAnalisesSIGA();
+  if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
+    return;
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('O cache de Análises está sendo calculado por outra requisição. Tente novamente em instantes.');
+  }
+  try {
+    if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
+      return; // outra execução já terminou de criar o cache enquanto esperávamos o lock
+    }
+    analisesRecalcularCacheSemLock_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Entrada pública do recálculo — chamada pelo gatilho de tempo e pelo botão
+ * "Recalcular dados". Usa o mesmo lock de garantirCacheAnalisesSIGA_ para
+ * nunca rodar em paralelo com outro recálculo (o que quebraria ao tentar
+ * recriar as abas de cache que a outra execução já criou).
+ */
+function recalcularCacheAnalisesSIGA() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    analisesRecalcularCacheSemLock_();
+  } finally {
+    lock.releaseLock();
   }
 }
 
 /**
  * A única função que faz a varredura pesada (DimMatricula, TodosBoletos,
- * Pagamentos Professores). Deve rodar em segundo plano via gatilho de
- * tempo — nunca no caminho de uma requisição da tela.
+ * Pagamentos Professores). Sempre chamada com o lock de script já
+ * adquirido (ver garantirCacheAnalisesSIGA_ e recalcularCacheAnalisesSIGA)
+ * — nunca chame direto.
  */
-function recalcularCacheAnalisesSIGA() {
+function analisesRecalcularCacheSemLock_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
 
