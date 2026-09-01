@@ -5,6 +5,7 @@
       <h1>Análises</h1>
       <div class="subtitulo">
         Matrículas, receita, turmas e frequência ao longo do tempo.
+        <span id="analisesAtualizadoEm"></span>
       </div>
     </div>
 
@@ -21,6 +22,9 @@
 
       <button type="button" class="botao botao-secundario" onclick="carregarAnalisesSIGA()">
         ↻ Atualizar
+      </button>
+      <button type="button" class="botao botao-secundario" id="botaoRecalcularAnalises" onclick="recalcularCacheAnalisesSIGA()" title="Refaz o cálculo a partir das planilhas — mais lento, use quando os dados parecerem desatualizados.">
+        🔄 Recalcular dados
       </button>
     </div>
   </div>
@@ -169,12 +173,58 @@
 </section>
 
 <style>
+#tela-analises{
+  --analises-fonte: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--analises-fonte);
+}
+#analisesAtualizadoEm{display:block;font-size:12px;color:#898781;margin-top:2px}
 .analises-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
 .analises-grade-dupla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .analises-grafico-area{min-height:280px;padding-top:8px}
 .analises-grafico-alto{min-height:340px}
 @media(max-width:900px){.analises-kpis{grid-template-columns:repeat(2,1fr)}.analises-grade-dupla{grid-template-columns:1fr}}
 @media(max-width:560px){.analises-kpis{grid-template-columns:1fr}}
+
+/* Tabelas — sobrescreve/reforça .pagamentos-tabela só dentro de Análises,
+   pra não depender do estilo global (que ficava com fonte/espaçamento
+   inconsistentes com o resto da tela). */
+#tela-analises .pagamentos-tabela-wrap{
+  overflow-x:auto;
+  border:1px solid #e1e0d9;
+  border-radius:10px;
+}
+#tela-analises .pagamentos-tabela{
+  width:100%;
+  border-collapse:collapse;
+  font-family:var(--analises-fonte);
+  font-size:13px;
+}
+#tela-analises .pagamentos-tabela thead th{
+  text-align:left;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:#52514e;
+  background:#f4f3ef;
+  padding:11px 14px;
+  border-bottom:1px solid #e1e0d9;
+  white-space:nowrap;
+}
+#tela-analises .pagamentos-tabela tbody td{
+  padding:10px 14px;
+  border-bottom:1px solid #eeede7;
+  color:#0b0b0b;
+  vertical-align:middle;
+  line-height:1.4;
+}
+#tela-analises .pagamentos-tabela tbody tr:last-child td{border-bottom:none}
+#tela-analises .pagamentos-tabela tbody tr:hover{background:#faf9f6}
+#tela-analises .pagamentos-tabela thead th:not(:first-child),
+#tela-analises .pagamentos-tabela tbody td:not(:first-child){
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
 
 /* =========================================================
    ISOLAMENTO DA TELA DE ANÁLISES
@@ -215,8 +265,9 @@
 .viz-legenda-status-item{display:inline-flex;align-items:center;gap:6px;font-weight:600}
 .viz-legenda-ponto{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
 .analises-grafico-area svg{display:block;overflow:visible}
-.analises-status-chip{display:inline-flex;align-items:center;gap:6px;font-weight:700}
-.analises-status-ponto{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.analises-status-chip{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;padding:4px 10px 4px 8px;border-radius:999px;line-height:1.3}
+.analises-status-ponto{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.analises-grafico-area svg{font-family:var(--analises-fonte, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif)}
 </style>
 
 <script>
@@ -231,32 +282,34 @@ const VIZ_COR = {
   superficie: '#fcfcfb',
   contexto: '#d8d6cd',
   categorico: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
-  status: { bom: '#0ca30c', atencao: '#fab219', grave: '#ec835a', critico: '#d03b3b' }
+  status: { bom: '#0ca30c', atencao: '#fab219', grave: '#ec835a', critico: '#d03b3b' },
+  statusFundo: { bom: '#e3f5e3', atencao: '#fef1d6', grave: '#fbe4d9', critico: '#fadfdf' }
 };
 
 function vizStatusFrequencia_(pct) {
-  if (pct === null || pct === undefined) return { cor: VIZ_COR.inkMudo, rotulo: 'Sem dado' };
-  if (pct >= 85) return { cor: VIZ_COR.status.bom, rotulo: 'Boa' };
-  if (pct >= 75) return { cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
-  return { cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
+  if (pct === null || pct === undefined) return { chave: null, cor: VIZ_COR.inkMudo, rotulo: 'Sem dado' };
+  if (pct >= 85) return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Boa' };
+  if (pct >= 75) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
+  return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
 }
 
 function vizStatusEvasao_(pct) {
   const valor = Number(pct || 0);
-  if (valor >= 50) return { cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
-  if (valor >= 25) return { cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
-  return { cor: VIZ_COR.status.bom, rotulo: 'Baixa' };
+  if (valor >= 50) return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
+  if (valor >= 25) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
+  return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Baixa' };
 }
 
 function vizStatusMargem_(pct) {
   const valor = Number(pct || 0);
-  if (valor < 70) return { cor: VIZ_COR.status.critico, rotulo: 'Baixa' };
-  if (valor < 90) return { cor: VIZ_COR.status.atencao, rotulo: 'Média' };
-  return { cor: VIZ_COR.status.bom, rotulo: 'Alta' };
+  if (valor < 70) return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Baixa' };
+  if (valor < 90) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Média' };
+  return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Alta' };
 }
 
 function vizChipStatus(valorTexto, status) {
-  return `<span class="analises-status-chip" style="color:${status.cor}">` +
+  const fundo = status.chave ? VIZ_COR.statusFundo[status.chave] : '#f0efe9';
+  return `<span class="analises-status-chip" style="color:${status.cor};background:${fundo}">` +
     `<span class="analises-status-ponto" style="background:${status.cor}"></span>${vizEsc(valorTexto)}</span>`;
 }
 
@@ -604,6 +657,7 @@ function carregarAnalisesSIGA() {
         return;
       }
       analisesDadosCache = resultado;
+      exibirAtualizadoEmAnalisesSIGA(resultado.atualizadoEm);
       preencherKpisAnalisesSIGA(resultado);
       preencherTabelaAnalisesSIGA(resultado);
       desenharGraficosAnalisesSIGA(resultado);
@@ -613,6 +667,53 @@ function carregarAnalisesSIGA() {
       mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.'));
     })
     .obterAnalisesSIGA({ token, meses });
+}
+
+function exibirAtualizadoEmAnalisesSIGA(isoString) {
+  const el = document.getElementById('analisesAtualizadoEm');
+  if (!el) return;
+  if (!isoString) {
+    el.textContent = '';
+    return;
+  }
+  const data = new Date(isoString);
+  el.textContent = 'Dados calculados em ' + data.toLocaleString('pt-BR');
+}
+
+/**
+ * Força o recálculo pesado (varre DimMatricula/TodosBoletos/Pagamentos
+ * Professores de novo) e recarrega a tela em seguida. Usado só quando os
+ * dados parecerem desatualizados — a atualização automática já roda
+ * sozinha em segundo plano (ver configurarGatilhoCacheAnalisesSIGA no
+ * Apps Script).
+ */
+function recalcularCacheAnalisesSIGA() {
+  const botao = document.getElementById('botaoRecalcularAnalises');
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Recalculando... (pode levar um minuto)';
+  }
+
+  google.script.run
+    .withSuccessHandler(() => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = '🔄 Recalcular dados';
+      }
+      carregarAnalisesSIGA();
+    })
+    .withFailureHandler(erro => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = '🔄 Recalcular dados';
+      }
+      mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao recalcular.'));
+    })
+    .recalcularCacheAnalisesManualSIGA({ token });
 }
 
 /**

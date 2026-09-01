@@ -6,62 +6,336 @@
  * normalizarPagUnif_, arredPagUnif_, numeroPagUnif_, obterAbaTodosBoletosPagamentosSIGA_,
  * montarBoletoPagamentosSIGA_, dataPagamentosSIGA_) definidos em Code.gs/Pagamentos.gs.
  * Não redeclara nada que já exista nesses arquivos.
+ *
+ * ARQUITETURA DE CACHE — por que existe:
+ * Calcular os dados de Análises do zero exige varrer DimMatricula,
+ * TodosBoletos (a maior aba do sistema) e Pagamentos Professores por
+ * inteiro. Fazer isso a cada abertura da tela levava dezenas de segundos.
+ * Em vez disso, o cálculo pesado roda em segundo plano (gatilho de tempo,
+ * ver configurarGatilhoCacheAnalisesSIGA) e grava o resultado em 3 abas
+ * pequenas (AnalisesCache_*). A tela só LÊ essas abas — leitura de
+ * algumas dezenas/centenas de linhas é quase instantânea.
  */
 
+const ANALISES_CACHE_SHEETS = {
+  GERAL: 'AnalisesCache_Geral',
+  TURMA: 'AnalisesCache_Turma',
+  COMPARATIVO: 'AnalisesCache_ComparativoTurmas'
+};
+const ANALISES_CACHE_PROP_ATUALIZADO_EM = 'ANALISES_CACHE_ATUALIZADO_EM';
+const ANALISES_CACHE_MESES_MAX = 36;
+
+/**
+ * Endpoint principal chamado pela tela. Só LÊ o cache — não faz nenhuma
+ * varredura pesada. Na primeiríssima chamada (cache ainda não existe),
+ * recalcula uma vez de forma síncrona (lento só dessa vez).
+ */
 function obterAnalisesSIGA(filtros) {
   filtros = filtros || {};
   validarPermissaoPagamentosSIGA_(filtros.token);
 
-  const hoje = new Date();
-  const mesesJanela = Math.min(36, Math.max(3, Number(filtros.meses) || 12));
-  const fimJanela = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const inicioJanela = new Date(fimJanela.getFullYear(), fimJanela.getMonth() - (mesesJanela - 1), 1);
+  const mesesJanela = Math.min(ANALISES_CACHE_MESES_MAX, Math.max(3, Number(filtros.meses) || 12));
+  const periodos = analisesGerarPeriodos_(mesesJanela);
+  const chaves = periodos.map(p => analisesMesRotulo_(p).chave);
+  const chavesSet = new Set(chaves);
 
-  const periodos = [];
-  for (let d = new Date(inicioJanela); d <= fimJanela; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
-    periodos.push(new Date(d));
-  }
+  garantirCacheAnalisesSIGA_();
 
+  const geral = analisesLerCacheGeral_();
+  const turma = analisesLerCacheTurma_();
+  const comparativoBruto = analisesLerCacheComparativoTurmas_();
+
+  const serieMatriculas = chaves.map(chave => {
+    const linha = geral.get(chave);
+    const novas = linha ? linha.novas : 0;
+    const canceladas = linha ? linha.canceladas : 0;
+    return {
+      periodo: analisesChaveParaRotulo_(chave),
+      novas,
+      canceladas,
+      ativos: linha ? linha.ativos : 0,
+      saldo: novas - canceladas
+    };
+  });
+
+  const serieFinanceira = chaves.map(chave => {
+    const linha = geral.get(chave);
+    return { periodo: analisesChaveParaRotulo_(chave), receita: linha ? linha.receita : 0 };
+  });
+
+  // Agrega lucro por turma somando só os meses dentro da janela selecionada.
+  const acumuladoPorTurma = new Map();
+  turma.forEach(item => {
+    if (!chavesSet.has(item.mes)) {
+      return;
+    }
+    if (!acumuladoPorTurma.has(item.turma)) {
+      acumuladoPorTurma.set(item.turma, { receita: 0, custo: 0, pontos: new Map() });
+    }
+    const acc = acumuladoPorTurma.get(item.turma);
+    acc.receita += item.receita;
+    acc.custo += item.custo;
+    acc.pontos.set(item.mes, { periodo: analisesChaveParaRotulo_(item.mes), receita: item.receita, custo: item.custo, lucro: item.lucro });
+  });
+
+  const resumoPorTurma = Array.from(acumuladoPorTurma.entries())
+    .map(([nomeTurma, acc]) => ({
+      turma: nomeTurma,
+      receita: arredPagUnif_(acc.receita),
+      custo: arredPagUnif_(acc.custo),
+      lucro: arredPagUnif_(acc.receita - acc.custo),
+      margem: acc.receita > 0 ? arredPagUnif_(((acc.receita - acc.custo) / acc.receita) * 100) : 0
+    }))
+    .sort((a, b) => b.lucro - a.lucro);
+
+  // Manda mais turmas do que o gráfico vai destacar: a tela mostra as 3
+  // primeiras em cor e o restante como linhas de contexto (cinza, sem
+  // legenda) — assim dá pra ver a forma geral sem competir com 8+ cores.
+  const serieLucroPorTurma = resumoPorTurma.slice(0, 20).map(item => {
+    const acc = acumuladoPorTurma.get(item.turma);
+    return {
+      turma: item.turma,
+      pontos: chaves.map(chave => acc.pontos.get(chave) || { periodo: analisesChaveParaRotulo_(chave), receita: 0, custo: 0, lucro: 0 })
+    };
+  });
+
+  const comparativoTurmas = comparativoBruto
+    .slice()
+    .sort((a, b) => b.ativos - a.ativos)
+    .slice(0, 20)
+    .map(item => Object.assign({ frequenciaMedia: null }, item));
+
+  const ultimaChaveComDados = chaves.slice().reverse().find(chave => geral.has(chave));
+  const alunosAtivos = ultimaChaveComDados ? geral.get(ultimaChaveComDados).ativos : 0;
+
+  return {
+    sucesso: true,
+    periodos: chaves.map(analisesChaveParaRotulo_),
+    mesInicial: chaves[0],
+    mesFinal: chaves[chaves.length - 1],
+    serieMatriculas,
+    serieFinanceira,
+    comparativoTurmas,
+    serieLucroPorTurma,
+    resumoLucroPorTurma: resumoPorTurma,
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
+    resumo: {
+      alunosAtivos,
+      turmasComparadas: comparativoTurmas.length,
+      lucroTotalPeriodo: arredPagUnif_(resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0))
+    }
+  };
+}
+
+/**
+ * Força um recálculo imediato (chamado pelo botão "Recalcular dados" da
+ * tela). É a operação lenta — o usuário decide quando vale a pena esperar.
+ */
+function recalcularCacheAnalisesManualSIGA(filtros) {
+  filtros = filtros || {};
+  validarPermissaoPagamentosSIGA_(filtros.token);
+  recalcularCacheAnalisesSIGA();
+  return {
+    sucesso: true,
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM)
+  };
+}
+
+/**
+ * Execute esta função UMA VEZ manualmente pelo editor do Apps Script
+ * (selecione "configurarGatilhoCacheAnalisesSIGA" no seletor de funções,
+ * ao lado do botão Executar, e rode) para agendar a atualização automática
+ * do cache de Análises a cada 6 horas. Sem isso, o cache só é recalculado
+ * na primeira abertura da tela ou quando alguém clica em "Recalcular dados".
+ */
+function configurarGatilhoCacheAnalisesSIGA() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'recalcularCacheAnalisesSIGA')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('recalcularCacheAnalisesSIGA')
+    .timeBased()
+    .everyHours(6)
+    .create();
+}
+
+function garantirCacheAnalisesSIGA_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
+    recalcularCacheAnalisesSIGA();
+  }
+}
+
+/**
+ * A única função que faz a varredura pesada (DimMatricula, TodosBoletos,
+ * Pagamentos Professores). Deve rodar em segundo plano via gatilho de
+ * tempo — nunca no caminho de uma requisição da tela.
+ */
+function recalcularCacheAnalisesSIGA() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
 
   // Preenche m.chaveAluno em cada matrícula usando a mesma resolução de
   // identidade do módulo financeiro — garante que "combo" (aluno com mais
   // de uma turma ativa) seja calculado com a MESMA regra usada no restante
-  // do sistema, em vez de agrupar por nome/ID de forma diferente aqui.
+  // do sistema.
   criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
 
+  const serieMatriculas = calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos);
+  const serieFinanceira = calcularSerieFinanceiraAnalisesSIGA_(ss, periodos);
   const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
+  const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
-  // A frequência por turma NÃO é calculada aqui: obterPainelFrequenciaTurma
-  // varre TodosBoletos de novo e deixaria a tela inteira esperando. O
-  // cliente busca essa parte depois, à parte, em segundo plano.
-  const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas);
+  analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
+  analisesGravarCacheTurma_(ss, periodos, lucroPorTurma.detalhesPorTurma);
+  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas);
 
-  return {
-    sucesso: true,
-    periodos: periodos.map(p => analisesMesRotulo_(p).rotulo),
-    mesInicial: analisesMesRotulo_(periodos[0]).chave,
-    mesFinal: analisesMesRotulo_(periodos[periodos.length - 1]).chave,
-    serieMatriculas: calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos),
-    serieFinanceira: calcularSerieFinanceiraAnalisesSIGA_(ss, periodos),
-    comparativoTurmas,
-    serieLucroPorTurma: lucroPorTurma.serieDetalhada,
-    resumoLucroPorTurma: lucroPorTurma.resumoPorTurma,
-    resumo: {
-      alunosAtivos: matriculas.filter(m => normalizarPagUnif_(m.status) === 'ATIVO').length,
-      turmasComparadas: comparativoTurmas.length,
-      lucroTotalPeriodo: arredPagUnif_(
-        lucroPorTurma.resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0)
-      )
+  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+}
+
+function analisesGerarPeriodos_(mesesJanela) {
+  const hoje = new Date();
+  const fimJanela = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const inicioJanela = new Date(fimJanela.getFullYear(), fimJanela.getMonth() - (mesesJanela - 1), 1);
+  const periodos = [];
+  for (let d = new Date(inicioJanela); d <= fimJanela; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+    periodos.push(new Date(d));
+  }
+  return periodos;
+}
+
+function analisesChaveParaRotulo_(chave) {
+  const partes = String(chave).split('-');
+  return partes[1] + '/' + partes[0];
+}
+
+function analisesObterOuCriarAbaCache_(ss, nome, cabecalhos) {
+  let aba = ss.getSheetByName(nome);
+  if (!aba) {
+    aba = ss.insertSheet(nome);
+  } else {
+    aba.clearContents();
+  }
+  aba.getRange(1, 1, 1, cabecalhos.length).setValues([cabecalhos]);
+  return aba;
+}
+
+function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.GERAL, ['Mes', 'Ativos', 'Novas', 'Cancelamentos', 'Receita']);
+  const linhas = periodos.map((p, i) => {
+    const chave = analisesMesRotulo_(p).chave;
+    const mat = serieMatriculas[i] || {};
+    const fin = serieFinanceira[i] || {};
+    return [chave, Number(mat.ativos || 0), Number(mat.novas || 0), Number(mat.canceladas || 0), Number(fin.receita || 0)];
+  });
+  if (linhas.length) {
+    aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
+  }
+}
+
+function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita', 'Custo', 'Lucro']);
+  const linhas = [];
+  detalhesPorTurma.forEach((pontos, turma) => {
+    periodos.forEach((p, i) => {
+      const chave = analisesMesRotulo_(p).chave;
+      const ponto = pontos[i] || {};
+      linhas.push([chave, turma, Number(ponto.receita || 0), Number(ponto.custo || 0), Number(ponto.lucro || 0)]);
+    });
+  });
+  if (linhas.length) {
+    aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
+  }
+}
+
+function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Cancelados', 'Total', 'TaxaEvasao']);
+  const linhas = comparativoTurmas.map(x => [x.turma, Number(x.ativos || 0), Number(x.cancelados || 0), Number(x.total || 0), Number(x.taxaEvasao || 0)]);
+  if (linhas.length) {
+    aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
+  }
+}
+
+function analisesLerCacheGeral_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL);
+  const mapa = new Map();
+  if (!aba || aba.getLastRow() < 2) {
+    return mapa;
+  }
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
+  dados.forEach(linha => {
+    const chave = String(linha[0] || '').trim();
+    if (!chave) {
+      return;
     }
-  };
+    mapa.set(chave, {
+      ativos: Number(linha[1] || 0),
+      novas: Number(linha[2] || 0),
+      canceladas: Number(linha[3] || 0),
+      receita: Number(linha[4] || 0)
+    });
+  });
+  return mapa;
+}
+
+function analisesLerCacheTurma_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.TURMA);
+  const lista = [];
+  if (!aba || aba.getLastRow() < 2) {
+    return lista;
+  }
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
+  dados.forEach(linha => {
+    const mes = String(linha[0] || '').trim();
+    const turma = String(linha[1] || '').trim();
+    if (!mes || !turma) {
+      return;
+    }
+    lista.push({
+      mes,
+      turma,
+      receita: Number(linha[2] || 0),
+      custo: Number(linha[3] || 0),
+      lucro: Number(linha[4] || 0)
+    });
+  });
+  return lista;
+}
+
+function analisesLerCacheComparativoTurmas_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+  const lista = [];
+  if (!aba || aba.getLastRow() < 2) {
+    return lista;
+  }
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
+  dados.forEach(linha => {
+    const turma = String(linha[0] || '').trim();
+    if (!turma) {
+      return;
+    }
+    lista.push({
+      turma,
+      ativos: Number(linha[1] || 0),
+      cancelados: Number(linha[2] || 0),
+      total: Number(linha[3] || 0),
+      taxaEvasao: Number(linha[4] || 0)
+    });
+  });
+  return lista;
 }
 
 /**
  * Receita (valor devido, por matrícula) menos custo de professores
  * (Pagamentos Professores), agrupado por turma e por mês.
+ * Usado só por recalcularCacheAnalisesSIGA — retorna TODAS as turmas
+ * (o corte para as top N usado na tela acontece na leitura do cache).
  */
 function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
   const custoPorTurma = calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos);
@@ -158,15 +432,7 @@ function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
 
   resumoPorTurma.sort((a, b) => b.lucro - a.lucro);
 
-  // Manda mais turmas do que o gráfico vai destacar: a tela mostra as 3
-  // primeiras em cor e o restante como linhas de contexto (cinza, sem
-  // legenda) — assim dá pra ver a forma geral sem competir com 8+ cores.
-  const serieDetalhada = resumoPorTurma.slice(0, 20).map(item => ({
-    turma: item.turma,
-    pontos: detalhesPorTurma.get(item.turma) || []
-  }));
-
-  return { serieDetalhada, resumoPorTurma };
+  return { resumoPorTurma, detalhesPorTurma };
 }
 
 function calcularCustoProfessoresPorTurmaAnalisesSIGA_(ss, periodos) {
@@ -283,7 +549,12 @@ function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
   });
 }
 
-function calcularComparativoTurmasAnalisesSIGA_(matriculas) {
+/**
+ * `incluirTodas` controla se a lista completa é retornada (usado ao gravar
+ * o cache) ou só o top 20 por ativos (comportamento antigo, não usado mais
+ * diretamente pela tela — o corte agora acontece na leitura do cache).
+ */
+function calcularComparativoTurmasAnalisesSIGA_(matriculas, incluirTodas) {
   const porTurma = new Map();
 
   matriculas.forEach(m => {
@@ -293,7 +564,7 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas) {
     }
 
     if (!porTurma.has(turma)) {
-      porTurma.set(turma, { turma, ativos: 0, cancelados: 0, total: 0, frequenciaMedia: null });
+      porTurma.set(turma, { turma, ativos: 0, cancelados: 0, total: 0 });
     }
 
     const item = porTurma.get(turma);
@@ -307,12 +578,13 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas) {
     }
   });
 
-  return Array.from(porTurma.values())
+  const lista = Array.from(porTurma.values())
     .map(item => Object.assign({}, item, {
       taxaEvasao: item.total > 0 ? arredPagUnif_((item.cancelados / item.total) * 100) : 0
     }))
-    .sort((a, b) => b.ativos - a.ativos)
-    .slice(0, 20);
+    .sort((a, b) => b.ativos - a.ativos);
+
+  return incluirTodas ? lista : lista.slice(0, 20);
 }
 
 function calcularSerieFinanceiraAnalisesSIGA_(ss, periodos) {
