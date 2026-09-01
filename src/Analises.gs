@@ -35,19 +35,9 @@ function obterAnalisesSIGA(filtros) {
   const lucroPorTurma = calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos);
 
   // A frequência por turma NÃO é calculada aqui: obterPainelFrequenciaTurma
-  // é cara e, chamada várias vezes em sequência, deixaria a tela inteira
-  // esperando. O cliente busca a frequência depois, à parte, via
-  // obterFrequenciaComparativoAnalisesSIGA.
+  // varre TodosBoletos de novo e deixaria a tela inteira esperando. O
+  // cliente busca essa parte depois, à parte, em segundo plano.
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas);
-
-  let inadimplenciaAtual = 0;
-  try {
-    const inad = listarInadimplentesPagamentosSIGA({ token: filtros.token });
-    inadimplenciaAtual = Number(inad && inad.resumo && inad.resumo.debitoTotal || 0);
-  } catch (erro) {
-    // A tela de análises não deve quebrar se o módulo de inadimplência falhar.
-    inadimplenciaAtual = 0;
-  }
 
   return {
     sucesso: true,
@@ -62,7 +52,6 @@ function obterAnalisesSIGA(filtros) {
     resumo: {
       alunosAtivos: matriculas.filter(m => normalizarPagUnif_(m.status) === 'ATIVO').length,
       turmasComparadas: comparativoTurmas.length,
-      inadimplenciaAtual: arredPagUnif_(inadimplenciaAtual),
       lucroTotalPeriodo: arredPagUnif_(
         lucroPorTurma.resumoPorTurma.reduce((s, x) => s + Number(x.lucro || 0), 0)
       )
@@ -169,7 +158,10 @@ function calcularLucroPorTurmaAnalisesSIGA_(ss, matriculas, periodos) {
 
   resumoPorTurma.sort((a, b) => b.lucro - a.lucro);
 
-  const serieDetalhada = resumoPorTurma.slice(0, 8).map(item => ({
+  // Manda mais turmas do que o gráfico vai destacar: a tela mostra as 3
+  // primeiras em cor e o restante como linhas de contexto (cinza, sem
+  // legenda) — assim dá pra ver a forma geral sem competir com 8+ cores.
+  const serieDetalhada = resumoPorTurma.slice(0, 20).map(item => ({
     turma: item.turma,
     pontos: detalhesPorTurma.get(item.turma) || []
   }));

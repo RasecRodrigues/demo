@@ -39,26 +39,36 @@
       <strong id="analisesKpiSaldo">—</strong>
     </div>
     <div class="pagamentos-kpi">
-      <span>INADIMPLÊNCIA ATUAL (TOTAL)</span>
-      <strong id="analisesKpiInadimplencia">—</strong>
-    </div>
-    <div class="pagamentos-kpi">
       <span>LUCRO TOTAL DO PERÍODO</span>
       <strong id="analisesKpiLucro">—</strong>
     </div>
   </div>
 
-  <section class="cartao">
-    <div class="cartao-cabecalho">
-      <div>
-        <h2>Matrículas e cancelamentos no tempo</h2>
-        <span class="subtitulo">Novas matrículas, cancelamentos/abandonos e alunos ativos por mês.</span>
+  <div class="analises-grade-dupla">
+    <section class="cartao">
+      <div class="cartao-cabecalho">
+        <div>
+          <h2>Alunos ativos ao longo do tempo</h2>
+          <span class="subtitulo">Total de matrículas ativas ao final de cada mês.</span>
+        </div>
       </div>
-    </div>
-    <div id="graficoAnalisesMatriculas" class="analises-grafico-area">
-      <div class="estado-vazio">Carregando...</div>
-    </div>
-  </section>
+      <div id="graficoAnalisesAtivos" class="analises-grafico-area">
+        <div class="estado-vazio">Carregando...</div>
+      </div>
+    </section>
+
+    <section class="cartao">
+      <div class="cartao-cabecalho">
+        <div>
+          <h2>Novas matrículas vs. cancelamentos</h2>
+          <span class="subtitulo">Movimentação do mês (entradas e saídas), separada do total acumulado ao lado.</span>
+        </div>
+      </div>
+      <div id="graficoAnalisesMatriculas" class="analises-grafico-area">
+        <div class="estado-vazio">Carregando...</div>
+      </div>
+    </section>
+  </div>
 
   <section class="cartao">
     <div class="cartao-cabecalho">
@@ -89,9 +99,10 @@
       <div class="cartao-cabecalho">
         <div>
           <h2>Frequência média por turma</h2>
-          <span class="subtitulo">Média do período selecionado, por turma (top 20 por ativos).</span>
+          <span class="subtitulo">Turmas coloridas pela situação: boa (≥85%), atenção (75–85%) ou crítica (&lt;75%).</span>
         </div>
       </div>
+      <div id="legendaAnalisesFrequencia"></div>
       <div id="graficoAnalisesFrequencia" class="analises-grafico-area analises-grafico-alto">
         <div class="estado-vazio">Carregando...</div>
       </div>
@@ -102,7 +113,7 @@
     <div class="cartao-cabecalho">
       <div>
         <h2>Lucro por turma no tempo</h2>
-        <span class="subtitulo">Receita (valor devido das matrículas) menos custo dos professores daquela turma, por mês. Mostrando as turmas com maior receita no período.</span>
+        <span class="subtitulo">Receita (valor devido das matrículas) menos custo dos professores daquela turma, por mês. As 3 turmas de maior receita aparecem em destaque; as demais, em cinza, dão o contexto.</span>
       </div>
     </div>
     <div id="graficoAnalisesLucro" class="analises-grafico-area">
@@ -158,11 +169,10 @@
 </section>
 
 <style>
-.analises-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:18px 0}
+.analises-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
 .analises-grade-dupla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .analises-grafico-area{min-height:280px;padding-top:8px}
 .analises-grafico-alto{min-height:340px}
-@media(max-width:1100px){.analises-kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.analises-kpis{grid-template-columns:repeat(2,1fr)}.analises-grade-dupla{grid-template-columns:1fr}}
 @media(max-width:560px){.analises-kpis{grid-template-columns:1fr}}
 
@@ -194,20 +204,332 @@
   max-width:100% !important;
   box-sizing:border-box !important;
 }
+
+/* =========================================================
+   MOTOR DE GRÁFICOS (SVG customizado) — paleta validada
+   ========================================================= */
+.viz-legenda{display:flex;flex-wrap:wrap;gap:14px;padding:10px 4px 4px;font-size:12px;color:#52514e}
+.viz-legenda-item{display:inline-flex;align-items:center;gap:6px}
+.viz-legenda-cor{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+.viz-legenda-status{display:flex;flex-wrap:wrap;gap:14px;padding:0 4px 10px;font-size:12px;color:#52514e}
+.viz-legenda-status-item{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.viz-legenda-ponto{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.analises-grafico-area svg{display:block;overflow:visible}
+.analises-status-chip{display:inline-flex;align-items:center;gap:6px;font-weight:700}
+.analises-status-ponto{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
 </style>
 
-<script src="https://www.gstatic.com/charts/loader.js"></script>
 <script>
-let analisesGraficosProntos = false;
 let analisesDadosCache = null;
 
-google.charts.load('current', { packages: ['corechart'] });
-google.charts.setOnLoadCallback(() => {
-  analisesGraficosProntos = true;
-  if (analisesDadosCache) {
-    desenharGraficosAnalisesSIGA(analisesDadosCache);
+const VIZ_COR = {
+  inkPrimario: '#0b0b0b',
+  inkSecundario: '#52514e',
+  inkMudo: '#898781',
+  grade: '#e1e0d9',
+  linhaBase: '#c3c2b7',
+  superficie: '#fcfcfb',
+  contexto: '#d8d6cd',
+  categorico: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'],
+  status: { bom: '#0ca30c', atencao: '#fab219', grave: '#ec835a', critico: '#d03b3b' }
+};
+
+function vizStatusFrequencia_(pct) {
+  if (pct === null || pct === undefined) return { cor: VIZ_COR.inkMudo, rotulo: 'Sem dado' };
+  if (pct >= 85) return { cor: VIZ_COR.status.bom, rotulo: 'Boa' };
+  if (pct >= 75) return { cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
+  return { cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
+}
+
+function vizStatusEvasao_(pct) {
+  const valor = Number(pct || 0);
+  if (valor >= 50) return { cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
+  if (valor >= 25) return { cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
+  return { cor: VIZ_COR.status.bom, rotulo: 'Baixa' };
+}
+
+function vizStatusMargem_(pct) {
+  const valor = Number(pct || 0);
+  if (valor < 70) return { cor: VIZ_COR.status.critico, rotulo: 'Baixa' };
+  if (valor < 90) return { cor: VIZ_COR.status.atencao, rotulo: 'Média' };
+  return { cor: VIZ_COR.status.bom, rotulo: 'Alta' };
+}
+
+function vizChipStatus(valorTexto, status) {
+  return `<span class="analises-status-chip" style="color:${status.cor}">` +
+    `<span class="analises-status-ponto" style="background:${status.cor}"></span>${vizEsc(valorTexto)}</span>`;
+}
+
+function vizEsc(v) {
+  return escAnalisesSIGA(v);
+}
+
+function vizFormatarEixoY(valor, moeda) {
+  const numero = Number(valor || 0);
+  if (moeda) {
+    if (Math.abs(numero) >= 1000) {
+      return 'R$ ' + (numero / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + 'k';
+    }
+    return 'R$ ' + numero.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   }
-});
+  return numero.toLocaleString('pt-BR');
+}
+
+function vizEscalaNice_(valorMax, passos) {
+  if (!valorMax || valorMax <= 0) return { max: passos };
+  const bruto = valorMax / passos;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(bruto)));
+  const residuo = bruto / magnitude;
+  let passo;
+  if (residuo <= 1) passo = 1 * magnitude;
+  else if (residuo <= 2) passo = 2 * magnitude;
+  else if (residuo <= 5) passo = 5 * magnitude;
+  else passo = 10 * magnitude;
+  return { max: Math.ceil(valorMax / passo) * passo };
+}
+
+function vizLargura_(alvo) {
+  return Math.max(alvo.clientWidth || 0, 480);
+}
+
+function vizBarraArredondadaTopo_(x, yTopo, largura, yBase, raio) {
+  const r = Math.max(0, Math.min(raio, largura / 2, Math.max(0, yBase - yTopo)));
+  if (r <= 0.5) {
+    return `M${x},${yTopo} h${largura} v${yBase - yTopo} h${-largura} Z`;
+  }
+  return `M${x},${yTopo + r} Q${x},${yTopo} ${x + r},${yTopo} H${x + largura - r} Q${x + largura},${yTopo} ${x + largura},${yTopo + r} V${yBase} H${x} Z`;
+}
+
+function vizBarraArredondadaDireita_(xBase, y, comprimento, altura, raio) {
+  const r = Math.max(0, Math.min(raio, altura / 2, Math.max(0, comprimento)));
+  const xFim = xBase + comprimento;
+  if (r <= 0.5) {
+    return `M${xBase},${y} h${comprimento} v${altura} h${-comprimento} Z`;
+  }
+  return `M${xBase},${y} H${xFim - r} Q${xFim},${y} ${xFim},${y + r} V${y + altura - r} Q${xFim},${y + altura} ${xFim - r},${y + altura} H${xBase} Z`;
+}
+
+function vizLegenda(itens) {
+  if (!itens.length) return '';
+  return `<div class="viz-legenda">${itens.map(s =>
+    `<span class="viz-legenda-item"><span class="viz-legenda-cor" style="background:${s.cor}"></span>${vizEsc(s.nome)}</span>`
+  ).join('')}</div>`;
+}
+
+/**
+ * Gráfico de linha. `series` é [{ nome, cor, destaque, pontos:[numero|null] }].
+ * Séries com destaque:false entram como contexto cinza, sem legenda nem rótulo.
+ */
+function vizGraficoLinha(alvo, opcoes) {
+  if (!alvo) return;
+  const largura = vizLargura_(alvo);
+  const altura = opcoes.altura || 280;
+  const margem = { topo: 24, direita: 96, baixo: 40, esquerda: 60 };
+  const largPlot = largura - margem.esquerda - margem.direita;
+  const altPlot = altura - margem.topo - margem.baixo;
+
+  const todosValores = opcoes.series.flatMap(s => s.pontos.filter(v => v !== null && v !== undefined));
+  const valorMaxAbs = Math.max(0, ...todosValores.map(v => Math.abs(v)));
+  const temNegativo = todosValores.some(v => v < 0);
+  const { max: maxNice } = vizEscalaNice_(valorMaxAbs, 5);
+  const minNice = temNegativo ? -maxNice : 0;
+  const faixa = (maxNice - minNice) || 1;
+
+  const categorias = opcoes.categorias;
+  const n = categorias.length;
+  const x = i => margem.esquerda + (n <= 1 ? largPlot / 2 : (i / (n - 1)) * largPlot);
+  const y = v => margem.topo + altPlot - ((v - minNice) / faixa) * altPlot;
+
+  let gridSvg = '';
+  let ticksSvg = '';
+  for (let i = 0; i <= 5; i++) {
+    const valor = minNice + (faixa * i) / 5;
+    const yPos = y(valor);
+    gridSvg += `<line x1="${margem.esquerda}" y1="${yPos.toFixed(1)}" x2="${largura - margem.direita}" y2="${yPos.toFixed(1)}" stroke="${VIZ_COR.grade}" stroke-width="1"/>`;
+    ticksSvg += `<text x="${margem.esquerda - 8}" y="${(yPos + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${VIZ_COR.inkMudo}">${vizFormatarEixoY(valor, opcoes.moeda)}</text>`;
+  }
+
+  const passoLabel = Math.max(1, Math.ceil(n / 8));
+  let xLabelsSvg = '';
+  categorias.forEach((cat, i) => {
+    if (i % passoLabel !== 0 && i !== n - 1) return;
+    xLabelsSvg += `<text x="${x(i).toFixed(1)}" y="${altura - margem.baixo + 20}" text-anchor="middle" font-size="11" fill="${VIZ_COR.inkMudo}">${vizEsc(cat)}</text>`;
+  });
+
+  let baselineSvg = '';
+  if (temNegativo) {
+    baselineSvg = `<line x1="${margem.esquerda}" y1="${y(0).toFixed(1)}" x2="${largura - margem.direita}" y2="${y(0).toFixed(1)}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
+  }
+
+  let linhasSvg = '';
+  let marcasSvg = '';
+  let rotulosSvg = '';
+  const legendaItens = [];
+
+  // Contexto (cinza) primeiro, para ficar atrás das séries em destaque.
+  const emContexto = opcoes.series.filter(s => s.destaque === false);
+  const emDestaque = opcoes.series.filter(s => s.destaque !== false);
+
+  emContexto.forEach(serie => {
+    const pontos = serie.pontos.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
+    const path = pontos.filter(Boolean).map((p, idx) => (idx === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    linhasSvg += `<path d="${path}" fill="none" stroke="${VIZ_COR.contexto}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  });
+
+  emDestaque.forEach(serie => {
+    const pontos = serie.pontos.map((v, i) => (v === null || v === undefined ? null : [x(i), y(v)]));
+    const path = pontos.filter(Boolean).map((p, idx) => (idx === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    linhasSvg += `<path d="${path}" fill="none" stroke="${serie.cor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+    if (opcoes.areaUnicaSerie && emDestaque.length === 1) {
+      const base = y(Math.max(minNice, 0));
+      const areaPath = path + ` L${x(n - 1).toFixed(1)},${base.toFixed(1)} L${x(0).toFixed(1)},${base.toFixed(1)} Z`;
+      linhasSvg = `<path d="${areaPath}" fill="${serie.cor}" opacity="0.10"/>` + linhasSvg;
+    }
+
+    pontos.forEach((p, i) => {
+      if (!p) return;
+      const valorPonto = serie.pontos[i];
+      marcasSvg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="7" fill="transparent"><title>${vizEsc(categorias[i])} · ${vizEsc(serie.nome)}: ${opcoes.moeda ? moedaAnalisesSIGA(valorPonto) : valorPonto}</title></circle>`;
+    });
+
+    const ultimo = pontos.filter(Boolean).pop();
+    if (ultimo) {
+      marcasSvg += `<circle cx="${ultimo[0].toFixed(1)}" cy="${ultimo[1].toFixed(1)}" r="4" fill="${serie.cor}" stroke="${VIZ_COR.superficie}" stroke-width="2"/>`;
+      if (emDestaque.length > 1 || !opcoes.semRotuloUnico) {
+        rotulosSvg += `<text x="${(ultimo[0] + 8).toFixed(1)}" y="${(ultimo[1] + 4).toFixed(1)}" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}">${vizEsc(serie.nome)}</text>`;
+      }
+    }
+    legendaItens.push(serie);
+  });
+
+  alvo.innerHTML = `
+    <svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">
+      ${gridSvg}${baselineSvg}${linhasSvg}${marcasSvg}${rotulosSvg}${ticksSvg}${xLabelsSvg}
+    </svg>
+    ${legendaItens.length > 1 ? vizLegenda(legendaItens) : ''}
+  `;
+}
+
+/**
+ * Colunas verticais agrupadas. `series` é [{ nome, cor, valores:[numero] }].
+ */
+function vizGraficoColunas(alvo, opcoes) {
+  if (!alvo) return;
+  const largura = vizLargura_(alvo);
+  const altura = opcoes.altura || 280;
+  const margem = { topo: 20, direita: 16, baixo: 52, esquerda: 68 };
+  const largPlot = largura - margem.esquerda - margem.direita;
+  const altPlot = altura - margem.topo - margem.baixo;
+
+  const n = opcoes.categorias.length;
+  const numSeries = opcoes.series.length;
+  const valorMax = Math.max(0, ...opcoes.series.flatMap(s => s.valores));
+  const { max: maxNice } = vizEscalaNice_(valorMax, 5);
+  const faixa = maxNice || 1;
+  const y = v => margem.topo + altPlot - (v / faixa) * altPlot;
+
+  let gridSvg = '';
+  let ticksSvg = '';
+  for (let i = 0; i <= 5; i++) {
+    const valor = (faixa * i) / 5;
+    const yPos = y(valor);
+    gridSvg += `<line x1="${margem.esquerda}" y1="${yPos.toFixed(1)}" x2="${largura - margem.direita}" y2="${yPos.toFixed(1)}" stroke="${VIZ_COR.grade}" stroke-width="1"/>`;
+    ticksSvg += `<text x="${margem.esquerda - 8}" y="${(yPos + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${VIZ_COR.inkMudo}">${vizFormatarEixoY(valor, opcoes.moeda)}</text>`;
+  }
+
+  const larguraGrupo = largPlot / n;
+  const gap = 3;
+  const larguraBarra = Math.min(24, (larguraGrupo - gap * (numSeries + 1)) / numSeries);
+  const baselineY = y(0);
+
+  let barrasSvg = '';
+  let xLabelsSvg = '';
+
+  opcoes.categorias.forEach((cat, i) => {
+    const centroGrupo = margem.esquerda + i * larguraGrupo + larguraGrupo / 2;
+    const inicioGrupo = centroGrupo - (larguraBarra * numSeries + gap * (numSeries - 1)) / 2;
+
+    opcoes.series.forEach((serie, si) => {
+      const valor = Number(serie.valores[i] || 0);
+      const xBarra = inicioGrupo + si * (larguraBarra + gap);
+      const yTopo = y(Math.max(0, valor));
+      const d = vizBarraArredondadaTopo_(xBarra, yTopo, larguraBarra, baselineY, 4);
+      const tituloValor = opcoes.moeda ? moedaAnalisesSIGA(valor) : valor.toLocaleString('pt-BR');
+      barrasSvg += `<path d="${d}" fill="${serie.cor}"><title>${vizEsc(cat)} · ${vizEsc(serie.nome)}: ${tituloValor}</title></path>`;
+    });
+
+    xLabelsSvg += `<text x="${centroGrupo.toFixed(1)}" y="${altura - margem.baixo + 20}" text-anchor="middle" font-size="11" fill="${VIZ_COR.inkMudo}" transform="rotate(-40 ${centroGrupo.toFixed(1)} ${altura - margem.baixo + 20})">${vizEsc(cat)}</text>`;
+  });
+
+  const baselineSvg = `<line x1="${margem.esquerda}" y1="${baselineY.toFixed(1)}" x2="${largura - margem.direita}" y2="${baselineY.toFixed(1)}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
+
+  alvo.innerHTML = `
+    <svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">
+      ${gridSvg}${barrasSvg}${baselineSvg}${ticksSvg}${xLabelsSvg}
+    </svg>
+    ${numSeries > 1 ? vizLegenda(opcoes.series) : ''}
+  `;
+}
+
+/**
+ * Barras horizontais (uma ou mais séries por item). Cada valor pode trazer
+ * sua própria cor (usado para colorir por status: bom/atenção/crítico).
+ * `itens` é [{ nome, valores: [{ valor, cor, rotulo }] }].
+ */
+function vizGraficoBarrasHorizontais(alvo, opcoes) {
+  if (!alvo) return;
+  const itens = opcoes.itens;
+  if (!itens.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados para comparar.</div>';
+    return;
+  }
+
+  const numSeries = itens[0].valores.length;
+  const alturaBarra = numSeries > 1 ? 18 : 20;
+  const gapBarras = 2;
+  const gapGrupos = 14;
+  const alturaGrupo = alturaBarra * numSeries + gapBarras * (numSeries - 1) + gapGrupos;
+  const margem = { topo: 10, esquerda: 168, direita: 20, baixo: 30 };
+  const largura = vizLargura_(alvo);
+  const largPlot = largura - margem.esquerda - margem.direita;
+  const altura = itens.length * alturaGrupo + margem.topo + margem.baixo;
+
+  const valorMax = Math.max(0, ...itens.flatMap(it => it.valores.map(v => v.valor)));
+  const { max: maxNice } = vizEscalaNice_(valorMax || 1, 4);
+  const faixa = maxNice || 1;
+  const larguraPara = v => (v / faixa) * largPlot;
+
+  let gridSvg = '';
+  let ticksSvg = '';
+  for (let i = 0; i <= 4; i++) {
+    const valor = (faixa * i) / 4;
+    const xPos = margem.esquerda + larguraPara(valor);
+    gridSvg += `<line x1="${xPos.toFixed(1)}" y1="${margem.topo}" x2="${xPos.toFixed(1)}" y2="${altura - margem.baixo}" stroke="${VIZ_COR.grade}" stroke-width="1"/>`;
+    ticksSvg += `<text x="${xPos.toFixed(1)}" y="${altura - margem.baixo + 18}" text-anchor="middle" font-size="11" fill="${VIZ_COR.inkMudo}">${vizFormatarEixoY(valor, opcoes.moeda)}</text>`;
+  }
+
+  let barrasSvg = '';
+  let nomesSvg = '';
+
+  itens.forEach((item, i) => {
+    const yGrupo = margem.topo + i * alturaGrupo;
+    const centroNome = yGrupo + (alturaBarra * numSeries + gapBarras * (numSeries - 1)) / 2;
+    nomesSvg += `<text x="${margem.esquerda - 10}" y="${(centroNome + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="${VIZ_COR.inkPrimario}" font-weight="600">${vizEsc(item.nome)}</text>`;
+
+    item.valores.forEach((v, si) => {
+      const yBarra = yGrupo + si * (alturaBarra + gapBarras);
+      const largura2 = Math.max(0, larguraPara(v.valor));
+      const d = vizBarraArredondadaDireita_(margem.esquerda, yBarra, largura2, alturaBarra, 4);
+      const tituloValor = opcoes.moeda ? moedaAnalisesSIGA(v.valor) : v.valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+      barrasSvg += `<path d="${d}" fill="${v.cor}"><title>${vizEsc(item.nome)}${v.rotulo ? ' · ' + vizEsc(v.rotulo) : ''}: ${tituloValor}</title></path>`;
+    });
+  });
+
+  const baseSvg = `<line x1="${margem.esquerda}" y1="${margem.topo}" x2="${margem.esquerda}" y2="${altura - margem.baixo}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
+
+  alvo.innerHTML = `<svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">${gridSvg}${barrasSvg}${baseSvg}${ticksSvg}${nomesSvg}</svg>`;
+}
 
 function abrirTelaAnalises(botaoMenu) {
   const tela = document.getElementById('tela-analises');
@@ -259,17 +581,21 @@ function abrirTelaAnalises(botaoMenu) {
   carregarAnalisesSIGA();
 }
 
+const ANALISES_IDS_GRAFICOS = [
+  'graficoAnalisesAtivos', 'graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro',
+  'graficoAnalisesTurmas', 'graficoAnalisesFrequencia', 'graficoAnalisesLucro'
+];
+
 function carregarAnalisesSIGA() {
   const meses = Number(document.getElementById('analisesMeses')?.value || 12);
   const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
     ? obterTokenPagamentosUnificadosSIGA()
     : '';
 
-  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia', 'graficoAnalisesLucro']
-    .forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
-    });
+  ANALISES_IDS_GRAFICOS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+  });
 
   google.script.run
     .withSuccessHandler(resultado => {
@@ -280,9 +606,7 @@ function carregarAnalisesSIGA() {
       analisesDadosCache = resultado;
       preencherKpisAnalisesSIGA(resultado);
       preencherTabelaAnalisesSIGA(resultado);
-      if (analisesGraficosProntos) {
-        desenharGraficosAnalisesSIGA(resultado);
-      }
+      desenharGraficosAnalisesSIGA(resultado);
       carregarFrequenciaAnalisesSIGA(resultado, token);
     })
     .withFailureHandler(erro => {
@@ -294,19 +618,20 @@ function carregarAnalisesSIGA() {
 /**
  * Busca a frequência das turmas depois que o resto da tela já carregou —
  * obterPainelFrequenciaTurma é uma chamada cara, então isso roda em segundo
- * plano em vez de travar a abertura da tela inteira.
+ * plano em vez de travar a abertura da tela inteira. Limitado a 6 turmas
+ * (em vez de 10) para reduzir o tempo total de espera.
  */
 function carregarFrequenciaAnalisesSIGA(resultado, token) {
   const alvo = document.getElementById('graficoAnalisesFrequencia');
   const comparativo = Array.isArray(resultado.comparativoTurmas) ? resultado.comparativoTurmas : [];
-  const turmas = comparativo.slice(0, 10).map(x => x.turma);
+  const turmas = comparativo.slice(0, 6).map(x => x.turma);
 
   if (!turmas.length) {
     return;
   }
 
   if (alvo) {
-    alvo.innerHTML = '<div class="estado-vazio">Calculando frequência por turma...</div>';
+    alvo.innerHTML = '<div class="estado-vazio">Calculando frequência por turma (pode levar um instante)...</div>';
   }
 
   google.script.run
@@ -320,9 +645,7 @@ function carregarFrequenciaAnalisesSIGA(resultado, token) {
           item.frequenciaMedia = frequencias[item.turma];
         }
       });
-      if (analisesGraficosProntos) {
-        desenharGraficoFrequenciaAnalisesSIGA(comparativo);
-      }
+      desenharGraficoFrequenciaAnalisesSIGA(comparativo);
       preencherTabelaAnalisesSIGA(resultado);
     })
     .withFailureHandler(() => {
@@ -339,11 +662,10 @@ function carregarFrequenciaAnalisesSIGA(resultado, token) {
 }
 
 function mostrarErroAnalisesSIGA(mensagem) {
-  ['graficoAnalisesMatriculas', 'graficoAnalisesFinanceiro', 'graficoAnalisesTurmas', 'graficoAnalisesFrequencia', 'graficoAnalisesLucro']
-    .forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = '<div class="estado-vazio">' + escAnalisesSIGA(mensagem) + '</div>';
-    });
+  ANALISES_IDS_GRAFICOS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="estado-vazio">' + escAnalisesSIGA(mensagem) + '</div>';
+  });
   if (typeof mostrarMensagem === 'function') {
     mostrarMensagem(mensagem, 'erro');
   }
@@ -363,7 +685,6 @@ function preencherKpisAnalisesSIGA(resultado) {
     'analisesKpiSaldo',
     (saldoPeriodo > 0 ? '+' : '') + saldoPeriodo.toLocaleString('pt-BR')
   );
-  definirTextoAnalisesSIGA('analisesKpiInadimplencia', moedaAnalisesSIGA(resumo.inadimplenciaAtual));
   definirTextoAnalisesSIGA('analisesKpiLucro', moedaAnalisesSIGA(resumo.lucroTotalPeriodo));
 }
 
@@ -373,6 +694,7 @@ function definirTextoAnalisesSIGA(id, texto) {
 }
 
 function desenharGraficosAnalisesSIGA(resultado) {
+  desenharGraficoAtivosAnalisesSIGA(resultado.serieMatriculas || []);
   desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []);
   desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []);
   desenharGraficoTurmasAnalisesSIGA(resultado.comparativoTurmas || []);
@@ -381,6 +703,118 @@ function desenharGraficosAnalisesSIGA(resultado) {
   preencherTabelaLucroAnalisesSIGA(resultado.resumoLucroPorTurma || []);
 }
 
+function desenharGraficoAtivosAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesAtivos');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  vizGraficoLinha(alvo, {
+    titulo: 'Alunos ativos ao longo do tempo',
+    categorias: serie.map(x => x.periodo),
+    areaUnicaSerie: true,
+    semRotuloUnico: true,
+    series: [{ nome: 'Alunos ativos', cor: VIZ_COR.categorico[0], pontos: serie.map(x => x.ativos) }]
+  });
+}
+
+function desenharGraficoMatriculasAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesMatriculas');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  vizGraficoColunas(alvo, {
+    titulo: 'Novas matrículas vs. cancelamentos',
+    categorias: serie.map(x => x.periodo),
+    series: [
+      { nome: 'Novas matrículas', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.novas) },
+      { nome: 'Cancelamentos', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.canceladas) }
+    ]
+  });
+}
+
+function desenharGraficoFinanceiroAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesFinanceiro');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  vizGraficoColunas(alvo, {
+    titulo: 'Receita financeira no tempo',
+    moeda: true,
+    categorias: serie.map(x => x.periodo),
+    series: [{ nome: 'Receita recebida', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.receita) }]
+  });
+}
+
+function desenharGraficoTurmasAnalisesSIGA(comparativo) {
+  const alvo = document.getElementById('graficoAnalisesTurmas');
+  if (!alvo) return;
+  if (!comparativo.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem turmas para comparar.</div>';
+    return;
+  }
+
+  vizGraficoBarrasHorizontais(alvo, {
+    titulo: 'Comparação entre turmas',
+    itens: comparativo.map(x => ({
+      nome: x.turma,
+      valores: [
+        { valor: Number(x.ativos || 0), cor: VIZ_COR.categorico[0], rotulo: 'Ativos' },
+        { valor: Number(x.cancelados || 0), cor: VIZ_COR.categorico[1], rotulo: 'Cancelados' }
+      ]
+    }))
+  });
+}
+
+function desenharGraficoFrequenciaAnalisesSIGA(comparativo) {
+  const alvo = document.getElementById('graficoAnalisesFrequencia');
+  const legenda = document.getElementById('legendaAnalisesFrequencia');
+  if (!alvo) return;
+
+  const comFrequencia = comparativo.filter(x => x.frequenciaMedia !== null && x.frequenciaMedia !== undefined);
+
+  if (legenda) {
+    legenda.innerHTML = '';
+  }
+
+  if (!comFrequencia.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Frequência não disponível para essas turmas no período.</div>';
+    return;
+  }
+
+  if (legenda) {
+    legenda.innerHTML = `<div class="viz-legenda-status">` +
+      [['bom', 'Boa (≥85%)'], ['atencao', 'Atenção (75–85%)'], ['critico', 'Crítica (<75%)']]
+        .map(([chave, rotulo]) => `<span class="viz-legenda-status-item"><span class="viz-legenda-ponto" style="background:${VIZ_COR.status[chave]}"></span>${vizEsc(rotulo)}</span>`)
+        .join('') +
+      `</div>`;
+  }
+
+  vizGraficoBarrasHorizontais(alvo, {
+    titulo: 'Frequência média por turma',
+    itens: comFrequencia.map(x => {
+      const status = vizStatusFrequencia_(x.frequenciaMedia);
+      return {
+        nome: x.turma,
+        valores: [{ valor: Number(x.frequenciaMedia || 0), cor: status.cor, rotulo: status.rotulo }]
+      };
+    })
+  });
+}
+
+/**
+ * Lucro por turma no tempo: as 3 turmas de maior receita entram coloridas
+ * e com rótulo direto no fim da linha; as demais (até 20) ficam em cinza,
+ * como contexto, sem disputar atenção com a cor.
+ */
 function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
   const alvo = document.getElementById('graficoAnalisesLucro');
   if (!alvo) return;
@@ -390,30 +824,19 @@ function desenharGraficoLucroAnalisesSIGA(serieLucroPorTurma) {
     return;
   }
 
-  const periodos = serieLucroPorTurma[0].pontos.map(p => p.periodo);
+  const categorias = serieLucroPorTurma[0].pontos.map(p => p.periodo);
+  const series = serieLucroPorTurma.map((item, indice) => ({
+    nome: item.turma,
+    cor: indice < 3 ? VIZ_COR.categorico[indice] : VIZ_COR.contexto,
+    destaque: indice < 3,
+    pontos: item.pontos.map(p => Number(p.lucro || 0))
+  }));
 
-  const dados = new google.visualization.DataTable();
-  dados.addColumn('string', 'Mês');
-  serieLucroPorTurma.forEach(item => dados.addColumn('number', item.turma));
-
-  const linhas = periodos.map((periodo, indice) => {
-    const linha = [periodo];
-    serieLucroPorTurma.forEach(item => {
-      const ponto = item.pontos[indice];
-      linha.push(ponto ? Number(ponto.lucro || 0) : 0);
-    });
-    return linha;
-  });
-  dados.addRows(linhas);
-
-  const grafico = new google.visualization.LineChart(alvo);
-  grafico.draw(dados, {
-    height: 320,
-    curveType: 'function',
-    legend: { position: 'top', maxLines: 3 },
-    chartArea: { left: 80, right: 20, top: 60, bottom: 40 },
-    hAxis: { slantedText: true, slantedTextAngle: 45 },
-    vAxis: { format: 'currency' }
+  vizGraficoLinha(alvo, {
+    titulo: 'Lucro por turma no tempo',
+    moeda: true,
+    categorias,
+    series
   });
 }
 
@@ -426,115 +849,18 @@ function preencherTabelaLucroAnalisesSIGA(resumoLucroPorTurma) {
     return;
   }
 
-  corpo.innerHTML = resumoLucroPorTurma.map(x => `
+  corpo.innerHTML = resumoLucroPorTurma.map(x => {
+    const statusMargem = vizStatusMargem_(x.margem);
+    return `
     <tr>
       <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
       <td>${moedaAnalisesSIGA(x.receita)}</td>
       <td>${moedaAnalisesSIGA(x.custo)}</td>
-      <td style="font-weight:800; color:${Number(x.lucro) >= 0 ? '#16a34a' : '#dc2626'}">${moedaAnalisesSIGA(x.lucro)}</td>
-      <td>${Number(x.margem || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td>
+      <td style="font-weight:800; color:${Number(x.lucro) >= 0 ? VIZ_COR.status.bom : VIZ_COR.status.critico}">${moedaAnalisesSIGA(x.lucro)}</td>
+      <td>${vizChipStatus(Number(x.margem || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusMargem)}</td>
     </tr>
-  `).join('');
-}
-
-function desenharGraficoMatriculasAnalisesSIGA(serie) {
-  const alvo = document.getElementById('graficoAnalisesMatriculas');
-  if (!alvo) return;
-  if (!serie.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
-    return;
-  }
-
-  const dados = new google.visualization.DataTable();
-  dados.addColumn('string', 'Mês');
-  dados.addColumn('number', 'Novas matrículas');
-  dados.addColumn('number', 'Cancelamentos');
-  dados.addColumn('number', 'Alunos ativos');
-  dados.addRows(serie.map(x => [x.periodo, x.novas, x.canceladas, x.ativos]));
-
-  const grafico = new google.visualization.LineChart(alvo);
-  grafico.draw(dados, {
-    height: 280,
-    curveType: 'function',
-    legend: { position: 'top' },
-    colors: ['#16a34a', '#dc2626', '#6427e8'],
-    chartArea: { left: 50, right: 20, top: 40, bottom: 40 },
-    hAxis: { slantedText: true, slantedTextAngle: 45 }
-  });
-}
-
-function desenharGraficoFinanceiroAnalisesSIGA(serie) {
-  const alvo = document.getElementById('graficoAnalisesFinanceiro');
-  if (!alvo) return;
-  if (!serie.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
-    return;
-  }
-
-  const dados = new google.visualization.DataTable();
-  dados.addColumn('string', 'Mês');
-  dados.addColumn('number', 'Receita recebida');
-  dados.addRows(serie.map(x => [x.periodo, x.receita]));
-
-  const grafico = new google.visualization.ColumnChart(alvo);
-  grafico.draw(dados, {
-    height: 280,
-    legend: { position: 'none' },
-    colors: ['#6427e8'],
-    chartArea: { left: 80, right: 20, top: 20, bottom: 40 },
-    hAxis: { slantedText: true, slantedTextAngle: 45 },
-    vAxis: { format: 'currency' }
-  });
-}
-
-function desenharGraficoTurmasAnalisesSIGA(comparativo) {
-  const alvo = document.getElementById('graficoAnalisesTurmas');
-  if (!alvo) return;
-  if (!comparativo.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Sem turmas para comparar.</div>';
-    return;
-  }
-
-  const dados = new google.visualization.DataTable();
-  dados.addColumn('string', 'Turma');
-  dados.addColumn('number', 'Ativos');
-  dados.addColumn('number', 'Cancelados');
-  dados.addRows(comparativo.map(x => [x.turma, x.ativos, x.cancelados]));
-
-  const grafico = new google.visualization.BarChart(alvo);
-  grafico.draw(dados, {
-    height: Math.max(340, comparativo.length * 26),
-    legend: { position: 'top' },
-    colors: ['#16a34a', '#dc2626'],
-    chartArea: { left: 140, right: 20, top: 40, bottom: 20 },
-    isStacked: false
-  });
-}
-
-function desenharGraficoFrequenciaAnalisesSIGA(comparativo) {
-  const alvo = document.getElementById('graficoAnalisesFrequencia');
-  if (!alvo) return;
-
-  const comFrequencia = comparativo.filter(x => x.frequenciaMedia !== null && x.frequenciaMedia !== undefined);
-
-  if (!comFrequencia.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Frequência não disponível para essas turmas no período.</div>';
-    return;
-  }
-
-  const dados = new google.visualization.DataTable();
-  dados.addColumn('string', 'Turma');
-  dados.addColumn('number', '% Frequência média');
-  dados.addRows(comFrequencia.map(x => [x.turma, Number(x.frequenciaMedia || 0)]));
-
-  const grafico = new google.visualization.BarChart(alvo);
-  grafico.draw(dados, {
-    height: Math.max(340, comFrequencia.length * 26),
-    legend: { position: 'none' },
-    colors: ['#0ea5e9'],
-    chartArea: { left: 140, right: 30, top: 20, bottom: 20 },
-    hAxis: { minValue: 0, maxValue: 100 }
-  });
+  `;
+  }).join('');
 }
 
 function preencherTabelaAnalisesSIGA(resultado) {
@@ -548,18 +874,23 @@ function preencherTabelaAnalisesSIGA(resultado) {
     return;
   }
 
-  corpo.innerHTML = comparativo.map(x => `
+  corpo.innerHTML = comparativo.map(x => {
+    const statusEvasao = vizStatusEvasao_(x.taxaEvasao);
+    const temFrequencia = x.frequenciaMedia !== null && x.frequenciaMedia !== undefined;
+    const statusFrequencia = temFrequencia ? vizStatusFrequencia_(x.frequenciaMedia) : null;
+    return `
     <tr>
       <td><strong>${escAnalisesSIGA(x.turma)}</strong></td>
       <td>${Number(x.ativos || 0)}</td>
       <td>${Number(x.cancelados || 0)}</td>
       <td>${Number(x.total || 0)}</td>
-      <td>${Number(x.taxaEvasao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</td>
-      <td>${x.frequenciaMedia === null || x.frequenciaMedia === undefined
-        ? '—'
-        : Number(x.frequenciaMedia).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'}</td>
+      <td>${vizChipStatus(Number(x.taxaEvasao || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusEvasao)}</td>
+      <td>${temFrequencia
+        ? vizChipStatus(Number(x.frequenciaMedia).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%', statusFrequencia)
+        : '—'}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function moedaAnalisesSIGA(valor) {
