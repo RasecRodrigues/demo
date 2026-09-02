@@ -153,14 +153,14 @@
     <div class="pagamentos-tabela-wrap">
       <table class="pagamentos-tabela">
         <thead>
-          <tr>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('turma')">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('ativos')">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('saidas')">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('total')">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('receitaPeriodo')">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('taxaEvasao')">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
-            <th class="analises-th-ordenavel" onclick="ordenarTabelaAnalisesSIGA('frequenciaMedia')">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
+          <tr id="cabecalhoTabelaAnalisesTurmas">
+            <th class="analises-th-ordenavel" data-campo="turma">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
+            <th class="analises-th-ordenavel" data-campo="ativos">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
+            <th class="analises-th-ordenavel" data-campo="saidas">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
+            <th class="analises-th-ordenavel" data-campo="total">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
+            <th class="analises-th-ordenavel" data-campo="receitaPeriodo">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
+            <th class="analises-th-ordenavel" data-campo="taxaEvasao">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
+            <th class="analises-th-ordenavel" data-campo="frequenciaMedia">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesTurmas">
@@ -217,6 +217,10 @@
   border:1px solid #e1e0d9;
   border-radius:10px;
 }
+#tela-analises .pagamentos-tabela-wrap:has(.analises-tabela-pivot){
+  max-height:460px;
+  overflow-y:auto;
+}
 #tela-analises .pagamentos-tabela{
   width:100%;
   border-collapse:collapse;
@@ -231,10 +235,11 @@
   text-transform:uppercase;
   color:#52514e;
   background:#f4f3ef;
-  padding:11px 14px;
+  padding:12px 14px;
   border-bottom:1px solid #e1e0d9;
   white-space:nowrap;
 }
+#tela-analises .analises-tabela-pivot thead th{position:sticky;top:0;z-index:1}
 #tela-analises .pagamentos-tabela tbody td{
   padding:10px 14px;
   border-bottom:1px solid #eeede7;
@@ -243,7 +248,8 @@
   line-height:1.4;
 }
 #tela-analises .pagamentos-tabela tbody tr:last-child td{border-bottom:none}
-#tela-analises .pagamentos-tabela tbody tr:hover{background:#faf9f6}
+#tela-analises .pagamentos-tabela tbody tr:nth-child(even):not(.analises-linha-alunos) td{background:#faf9f6}
+#tela-analises .pagamentos-tabela tbody tr:hover:not(.analises-linha-alunos) td{background:#f2f1eb}
 #tela-analises .pagamentos-tabela thead th:not(:first-child),
 #tela-analises .pagamentos-tabela tbody td:not(:first-child){
   text-align:right;
@@ -252,14 +258,14 @@
 #tela-analises .pagamentos-tabela tbody tr.analises-turma-inicio td{border-top:2px solid #e1e0d9}
 #tela-analises .analises-th-ordenavel{cursor:pointer;user-select:none;white-space:nowrap}
 #tela-analises .analises-th-ordenavel:hover{color:#0b0b0b;background:#eeede7}
-#tela-analises .analises-seta-ordenacao{display:inline-block;margin-left:3px;font-size:10px}
+#tela-analises .analises-seta-ordenacao{display:inline-block;margin-left:3px;font-size:10px;color:#2a78d6}
 #tela-analises .analises-tabela-pivot{white-space:nowrap}
 #tela-analises .analises-tabela-pivot th:first-child,
 #tela-analises .analises-tabela-pivot td:first-child{
   position:sticky;left:0;background:#fcfcfb;z-index:1;
   box-shadow:1px 0 0 #e1e0d9;
 }
-#tela-analises .analises-tabela-pivot thead th:first-child{background:#f4f3ef;z-index:2}
+#tela-analises .analises-tabela-pivot thead th:first-child{background:#f4f3ef;z-index:3}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos:hover{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{padding:12px 14px}
@@ -701,6 +707,7 @@ const ANALISES_IDS_GRAFICOS = [
 ];
 
 function carregarAnalisesSIGA() {
+  analisesInicializarOrdenacaoSIGA_();
   const meses = Number(document.getElementById('analisesMeses')?.value || 12);
   const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
     ? obterTokenPagamentosUnificadosSIGA()
@@ -1140,9 +1147,38 @@ function analisesAlternarOrdenacaoPivot_(estado, campo) {
   }
 }
 
-function analisesThOrdenavelPivot_(rotulo, campo, estado, onclickFn) {
+function analisesThOrdenavelPivot_(rotulo, campo, estado) {
   const seta = estado.campo === campo ? (estado.direcao === 'asc' ? ' ▲' : ' ▼') : '';
-  return `<th class="analises-th-ordenavel" onclick="${onclickFn}('${escAnalisesSIGA(campo).replace(/'/g, "\\'")}')">${vizEsc(rotulo)}${seta}</th>`;
+  return `<th class="analises-th-ordenavel" data-campo="${escAnalisesSIGA(campo)}">${vizEsc(rotulo)}${seta}</th>`;
+}
+
+/**
+ * Liga a ordenação das tabelas via delegação de evento: um único listener
+ * no <tr> do cabeçalho (que nunca é recriado — só o innerHTML dos <th>
+ * dentro dele muda a cada render) cobre qualquer coluna, mesmo as geradas
+ * dinamicamente depois desse listener ser ligado. Mais robusto que
+ * onclick inline, que nas tabelas pivô dependia de escapar corretamente
+ * o nome do campo dentro de uma string de atributo HTML.
+ */
+function analisesLigarOrdenacaoDelegada_(idContainer, aoClicar) {
+  const container = document.getElementById(idContainer);
+  if (!container) return;
+  container.addEventListener('click', evento => {
+    const th = evento.target.closest('.analises-th-ordenavel');
+    if (!th || !container.contains(th)) return;
+    const campo = th.getAttribute('data-campo');
+    if (campo) aoClicar(campo);
+  });
+}
+
+let analisesOrdenacaoDelegadaLigada_ = false;
+
+function analisesInicializarOrdenacaoSIGA_() {
+  if (analisesOrdenacaoDelegadaLigada_) return;
+  analisesOrdenacaoDelegadaLigada_ = true;
+  analisesLigarOrdenacaoDelegada_('cabecalhoTabelaAnalisesTurmas', ordenarTabelaAnalisesSIGA);
+  analisesLigarOrdenacaoDelegada_('cabecalhoTabelaMensalidadesTempo', ordenarTabelaMensalidadesTempoAnalisesSIGA);
+  analisesLigarOrdenacaoDelegada_('cabecalhoTabelaAnalisesLucro', ordenarTabelaMensalidadesPeriodoAnalisesSIGA);
 }
 
 let analisesOrdenacaoPivotTempo = { campo: 'total', direcao: 'desc' };
@@ -1174,9 +1210,9 @@ function preencherTabelaMensalidadesTempoAnalisesSIGA(detalheMensalPorTurma, per
   const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(detalheMensalPorTurma), analisesOrdenacaoPivotTempo);
 
   cabecalho.innerHTML =
-    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA') +
-    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA')).join('') +
-    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA');
+    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotTempo) +
+    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotTempo)).join('') +
+    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotTempo);
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
@@ -1229,8 +1265,8 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
 
   if (mesFiltro) {
     cabecalho.innerHTML =
-      analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA') +
-      analisesThOrdenavelPivot_('Valor', mesFiltro, analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA');
+      analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo) +
+      analisesThOrdenavelPivot_('Valor', mesFiltro, analisesOrdenacaoPivotPeriodo);
     corpo.innerHTML = linhas.map(linha => `
       <tr>
         <td>${botaoTurma(linha.turma)}</td>
@@ -1241,9 +1277,9 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
   }
 
   cabecalho.innerHTML =
-    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA') +
-    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA')).join('') +
-    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA');
+    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo) +
+    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotPeriodo)).join('') +
+    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotPeriodo);
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
