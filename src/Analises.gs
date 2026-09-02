@@ -45,6 +45,21 @@ function obterAnalisesSIGA(filtros) {
   const turma = analisesLerCacheTurma_();
   const comparativoBruto = analisesLerCacheComparativoTurmas_();
 
+  // DIAGNÓSTICO TEMPORÁRIO — remover depois de descobrir por que a leitura
+  // do cache está vindo vazia mesmo com dado gravado na planilha.
+  const ssDiag = SpreadsheetApp.getActiveSpreadsheet();
+  const debugAnalises = {
+    spreadsheetId: ssDiag.getId(),
+    spreadsheetName: ssDiag.getName(),
+    linhasGeral: geral.size,
+    linhasTurma: turma.length,
+    linhasComparativo: comparativoBruto.length,
+    chaveMaisRecenteSolicitada: chaves[chaves.length - 1],
+    chaveMaisAntigaSolicitada: chaves[0],
+    algumasChavesDoCacheGeral: Array.from(geral.keys()).slice(0, 3),
+    algumasChavesDoCacheTurma: turma.slice(0, 3).map(t => t.mes)
+  };
+
   const serieMatriculas = chaves.map(chave => {
     const linha = geral.get(chave);
     const novas = linha ? linha.novas : 0;
@@ -136,6 +151,7 @@ function obterAnalisesSIGA(filtros) {
     comparativoTurmas,
     serieMensalidadesPorTurma,
     detalheMensalPorTurma,
+    debugAnalises,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
