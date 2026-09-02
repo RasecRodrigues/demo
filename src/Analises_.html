@@ -1107,14 +1107,58 @@ function analisesAgruparPorTurmaEMes_(detalheMensalPorTurma) {
     acc.porMes.set(item.periodo, valor);
     acc.total += valor;
   });
-  return Array.from(porTurma.values()).sort((a, b) => b.total - a.total);
+  return Array.from(porTurma.values());
+}
+
+/**
+ * Ordena as linhas de uma tabela pivô por um campo: 'turma' (texto),
+ * 'total', ou o rótulo de um mês específico (ex.: "ago-26" — lido de
+ * linha.porMes). Usado pelas duas tabelas pivô de mensalidades.
+ */
+function analisesOrdenarPivot_(linhas, estado) {
+  const { campo, direcao } = estado;
+  const copia = linhas.slice();
+  copia.sort((a, b) => {
+    if (campo === 'turma') {
+      return direcao === 'asc'
+        ? String(a.turma || '').localeCompare(String(b.turma || ''), 'pt-BR')
+        : String(b.turma || '').localeCompare(String(a.turma || ''), 'pt-BR');
+    }
+    const va = campo === 'total' ? a.total : (a.porMes.get(campo) || 0);
+    const vb = campo === 'total' ? b.total : (b.porMes.get(campo) || 0);
+    return direcao === 'asc' ? va - vb : vb - va;
+  });
+  return copia;
+}
+
+function analisesAlternarOrdenacaoPivot_(estado, campo) {
+  if (estado.campo === campo) {
+    estado.direcao = estado.direcao === 'desc' ? 'asc' : 'desc';
+  } else {
+    estado.campo = campo;
+    estado.direcao = campo === 'turma' ? 'asc' : 'desc';
+  }
+}
+
+function analisesThOrdenavelPivot_(rotulo, campo, estado, onclickFn) {
+  const seta = estado.campo === campo ? (estado.direcao === 'asc' ? ' ▲' : ' ▼') : '';
+  return `<th class="analises-th-ordenavel" onclick="${onclickFn}('${escAnalisesSIGA(campo).replace(/'/g, "\\'")}')">${vizEsc(rotulo)}${seta}</th>`;
+}
+
+let analisesOrdenacaoPivotTempo = { campo: 'total', direcao: 'desc' };
+
+function ordenarTabelaMensalidadesTempoAnalisesSIGA(campo) {
+  analisesAlternarOrdenacaoPivot_(analisesOrdenacaoPivotTempo, campo);
+  if (analisesDadosCache) {
+    preencherTabelaMensalidadesTempoAnalisesSIGA(analisesDadosCache.detalheMensalPorTurma || [], analisesDadosCache.periodos || []);
+  }
 }
 
 /**
  * Mensalidades por turma no tempo: uma tabela com uma turma por linha e
- * um mês por coluna (mais uma coluna de Total), ordenada pelo total do
- * período — substitui o gráfico de linhas antigo, que ficava ilegível
- * com muitas turmas competindo por cor.
+ * um mês por coluna (mais uma coluna de Total) — substitui o gráfico de
+ * linhas antigo, que ficava ilegível com muitas turmas competindo por
+ * cor. Clique num cabeçalho de coluna pra ordenar por ele.
  */
 function preencherTabelaMensalidadesTempoAnalisesSIGA(detalheMensalPorTurma, periodosRotulos) {
   const cabecalho = document.getElementById('cabecalhoTabelaMensalidadesTempo');
@@ -1127,11 +1171,12 @@ function preencherTabelaMensalidadesTempoAnalisesSIGA(detalheMensalPorTurma, per
     return;
   }
 
-  const linhas = analisesAgruparPorTurmaEMes_(detalheMensalPorTurma);
+  const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(detalheMensalPorTurma), analisesOrdenacaoPivotTempo);
 
-  cabecalho.innerHTML = '<th>Turma</th>' +
-    periodosRotulos.map(p => `<th>${vizEsc(p)}</th>`).join('') +
-    '<th>Total</th>';
+  cabecalho.innerHTML =
+    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA') +
+    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA')).join('') +
+    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotTempo, 'ordenarTabelaMensalidadesTempoAnalisesSIGA');
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
@@ -1143,14 +1188,23 @@ function preencherTabelaMensalidadesTempoAnalisesSIGA(detalheMensalPorTurma, per
 }
 
 let analisesAlunosPorTurmaCache = new Map();
+let analisesOrdenacaoPivotPeriodo = { campo: 'total', direcao: 'desc' };
+
+function ordenarTabelaMensalidadesPeriodoAnalisesSIGA(campo) {
+  analisesAlternarOrdenacaoPivot_(analisesOrdenacaoPivotPeriodo, campo);
+  if (analisesDadosCache) {
+    preencherTabelaMensalidadesAnalisesSIGA(analisesDadosCache.detalheMensalPorTurma || []);
+  }
+}
 
 /**
  * `detalheMensalPorTurma` é [{turma, periodo, receita}], uma linha por
  * turma x mês. Por padrão vira uma tabela pivô (turma nas linhas, mês
  * nas colunas, mais uma coluna de Total). Se um mês específico estiver
  * selecionado no filtro "Mês", mostra só a coluna Turma + Valor daquele
- * mês, pra tabela não ficar larga à toa. Clicar no nome da turma expande
- * a lista de alunos ativos/suspensos e quanto cada um pagou no período.
+ * mês, pra tabela não ficar larga à toa. Clique num cabeçalho de coluna
+ * pra ordenar por ele. Clicar no nome da turma expande a lista de
+ * alunos ativos/suspensos e quanto cada um pagou.
  */
 function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
   const cabecalho = document.getElementById('cabecalhoTabelaAnalisesLucro');
@@ -1168,13 +1222,15 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
 
   const mesFiltro = document.getElementById('analisesMensalidadesMes')?.value || '';
   const periodosRotulos = Array.from(new Set(lista.map(x => x.periodo)));
-  const linhas = analisesAgruparPorTurmaEMes_(lista);
+  const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(lista), analisesOrdenacaoPivotPeriodo);
 
   const botaoTurma = turma =>
     `<button type="button" class="analises-link-turma" onclick="alternarAlunosTurmaAnalisesSIGA(this)" data-turma="${escAnalisesSIGA(turma)}">${escAnalisesSIGA(turma)}</button>`;
 
   if (mesFiltro) {
-    cabecalho.innerHTML = '<th>Turma</th><th>Valor</th>';
+    cabecalho.innerHTML =
+      analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA') +
+      analisesThOrdenavelPivot_('Valor', mesFiltro, analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA');
     corpo.innerHTML = linhas.map(linha => `
       <tr>
         <td>${botaoTurma(linha.turma)}</td>
@@ -1184,9 +1240,10 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
     return;
   }
 
-  cabecalho.innerHTML = '<th>Turma</th>' +
-    periodosRotulos.map(p => `<th>${vizEsc(p)}</th>`).join('') +
-    '<th>Total</th>';
+  cabecalho.innerHTML =
+    analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA') +
+    periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA')).join('') +
+    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotPeriodo, 'ordenarTabelaMensalidadesPeriodoAnalisesSIGA');
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
@@ -1195,6 +1252,23 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
       <td style="font-weight:800">${moedaAnalisesSIGA(linha.total)}</td>
     </tr>
   `).join('');
+}
+
+/**
+ * Meses aparecem na tela como "ago-26" (ver ANALISES_MESES_ABREV_PT_ no
+ * Analises.gs) — essa é a conversão inversa, "ago-26" -> "2026-08",
+ * usada só para mandar pro backend um mês específico quando o filtro
+ * "Mês" da tabela de mensalidades estiver ativo.
+ */
+const ANALISES_MESES_ABREV_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+function analisesRotuloParaChave_(rotulo) {
+  const partes = String(rotulo || '').split('-');
+  if (partes.length !== 2) return null;
+  const indice = ANALISES_MESES_ABREV_PT.indexOf(partes[0].toLowerCase());
+  if (indice < 0) return null;
+  const ano = partes[1].length === 2 ? '20' + partes[1] : partes[1];
+  return `${ano}-${String(indice + 1).padStart(2, '0')}`;
 }
 
 function alternarAlunosTurmaAnalisesSIGA(botao) {
@@ -1215,7 +1289,14 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
   linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Carregando alunos...</div></td>`;
   linha.after(linhaDetalhe);
 
-  const cache = analisesAlunosPorTurmaCache.get(turma);
+  // Se um mês específico estiver selecionado no filtro "Mês" da tabela,
+  // o valor mostrado por aluno deve ser só o daquele mês — não a soma do
+  // período inteiro.
+  const mesFiltroRotulo = document.getElementById('analisesMensalidadesMes')?.value || '';
+  const chaveMesFiltro = mesFiltroRotulo ? analisesRotuloParaChave_(mesFiltroRotulo) : null;
+  const chaveCache = turma + '::' + (chaveMesFiltro || 'PERIODO');
+
+  const cache = analisesAlunosPorTurmaCache.get(chaveCache);
   if (cache) {
     renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, cache, colspan);
     return;
@@ -1229,7 +1310,7 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
   google.script.run
     .withSuccessHandler(resposta => {
       const alunos = (resposta && resposta.alunos) || [];
-      analisesAlunosPorTurmaCache.set(turma, alunos);
+      analisesAlunosPorTurmaCache.set(chaveCache, alunos);
       renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan);
     })
     .withFailureHandler(() => {
@@ -1238,21 +1319,24 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
     .obterAlunosPagamentosPorTurmaAnalisesSIGA({
       token,
       turma,
-      mesInicial: resultado ? resultado.mesInicial : null,
-      mesFinal: resultado ? resultado.mesFinal : null
+      mesInicial: chaveMesFiltro || (resultado ? resultado.mesInicial : null),
+      mesFinal: chaveMesFiltro || (resultado ? resultado.mesFinal : null)
     });
 }
 
 function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan) {
+  const mesFiltroRotulo = document.getElementById('analisesMensalidadesMes')?.value || '';
+  const rotuloColuna = mesFiltroRotulo ? `Valor em ${escAnalisesSIGA(mesFiltroRotulo)}` : 'Valor no período';
+
   if (!alunos.length) {
-    linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Nenhum aluno ativo ou suspenso encontrado nessa turma no período.</div></td>`;
+    linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Nenhum aluno ativo ou suspenso encontrado nessa turma${mesFiltroRotulo ? ' em ' + escAnalisesSIGA(mesFiltroRotulo) : ' no período'}.</div></td>`;
     return;
   }
 
   const linhas = alunos.map(a => `<tr><td>${escAnalisesSIGA(a.aluno)}</td><td>${moedaAnalisesSIGA(a.total)}</td></tr>`).join('');
   linhaDetalhe.innerHTML = `<td colspan="${colspan}">
     <table class="analises-subtabela-alunos">
-      <thead><tr><th>Aluno (ativo/suspenso)</th><th>Valor no período</th></tr></thead>
+      <thead><tr><th>Aluno (ativo/suspenso)</th><th>${rotuloColuna}</th></tr></thead>
       <tbody>${linhas}</tbody>
     </table>
   </td>`;

@@ -425,9 +425,12 @@ function analisesGerarPeriodos_(mesesJanela) {
   return periodos;
 }
 
+const ANALISES_MESES_ABREV_PT_ = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
 function analisesChaveParaRotulo_(chave) {
   const partes = String(chave).split('-');
-  return partes[1] + '/' + partes[0];
+  const mes = Number(partes[1]);
+  return ANALISES_MESES_ABREV_PT_[mes - 1] + '-' + partes[0].slice(-2);
 }
 
 function analisesObterOuCriarAbaCache_(ss, nome, cabecalhos) {
@@ -656,7 +659,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
 
 function analisesMesRotulo_(data) {
   const chave = Utilities.formatDate(data, Session.getScriptTimeZone(), 'yyyy-MM');
-  const rotulo = Utilities.formatDate(data, Session.getScriptTimeZone(), 'MM/yyyy');
+  const rotulo = ANALISES_MESES_ABREV_PT_[data.getMonth()] + '-' + String(data.getFullYear()).slice(-2);
   return { chave, rotulo };
 }
 
