@@ -347,8 +347,13 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
 
   const serieMatriculas = calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos);
   const serieFinanceira = calcularSerieFinanceiraAnalisesSIGA_(ss, periodos);
-  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
+
+  // Só turmas com aluno ativo agora — mesmo filtro já usado no
+  // Detalhamento e na Comparação entre turmas. Turma sem ninguém ativo
+  // não aparece mais no gráfico/tabela de mensalidades.
+  const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
+  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas);
 
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma);
@@ -551,7 +556,7 @@ function analisesLerCacheComparativoTurmas_() {
  * TODAS as turmas (o corte para as top N usado na tela acontece na
  * leitura do cache).
  */
-function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos) {
+function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas) {
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
     const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
@@ -590,7 +595,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos) {
 
       ativas.forEach(m => {
         const turma = String(m.turma || '').trim();
-        if (!turma) {
+        if (!turma || (turmasAtivas && !turmasAtivas.has(turma))) {
           return;
         }
 
