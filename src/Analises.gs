@@ -45,21 +45,6 @@ function obterAnalisesSIGA(filtros) {
   const turma = analisesLerCacheTurma_();
   const comparativoBruto = analisesLerCacheComparativoTurmas_();
 
-  // DIAGNÓSTICO TEMPORÁRIO — remover depois de descobrir por que a leitura
-  // do cache está vindo vazia mesmo com dado gravado na planilha.
-  const ssDiag = SpreadsheetApp.getActiveSpreadsheet();
-  const debugAnalises = {
-    spreadsheetId: ssDiag.getId(),
-    spreadsheetName: ssDiag.getName(),
-    linhasGeral: geral.size,
-    linhasTurma: turma.length,
-    linhasComparativo: comparativoBruto.length,
-    chaveMaisRecenteSolicitada: chaves[chaves.length - 1],
-    chaveMaisAntigaSolicitada: chaves[0],
-    algumasChavesDoCacheGeral: Array.from(geral.keys()).slice(0, 3),
-    algumasChavesDoCacheTurma: turma.slice(0, 3).map(t => t.mes)
-  };
-
   const serieMatriculas = chaves.map(chave => {
     const linha = geral.get(chave);
     const novas = linha ? linha.novas : 0;
@@ -151,7 +136,6 @@ function obterAnalisesSIGA(filtros) {
     comparativoTurmas,
     serieMensalidadesPorTurma,
     detalheMensalPorTurma,
-    debugAnalises,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
@@ -207,9 +191,14 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
     }
 
     matriculasPorAluno.forEach(matsAluno => {
-      const ativas = matsAluno.filter(m =>
-        analisesStatusAtivo_(m.status) && vigenteNoMesPagUnif_(m, ref)
-      );
+      // Aqui o filtro é intencionalmente mais restrito que analisesStatusAtivo_:
+      // a lista de alunos de uma turma (clique na tabela de mensalidades) deve
+      // mostrar só quem está ATIVO ou SUSPENSO, sem incluir EM ESPERA (que
+      // ainda não começou de fato na turma).
+      const ativas = matsAluno.filter(m => {
+        const status = normalizarPagUnif_(m.status);
+        return (status === 'ATIVO' || status === 'SUSPENSO') && vigenteNoMesPagUnif_(m, ref);
+      });
       if (!ativas.length) return;
 
       const matriculaDaTurma = ativas.find(m => String(m.turma || '').trim() === turmaAlvo);
