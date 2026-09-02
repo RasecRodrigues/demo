@@ -192,7 +192,7 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
 
     matriculasPorAluno.forEach(matsAluno => {
       const ativas = matsAluno.filter(m =>
-        normalizarPagUnif_(m.status) === 'ATIVO' && vigenteNoMesPagUnif_(m, ref)
+        analisesStatusAtivo_(m.status) && vigenteNoMesPagUnif_(m, ref)
       );
       if (!ativas.length) return;
 
@@ -585,7 +585,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
 
     matriculasPorAluno.forEach(matsAluno => {
       const ativas = matsAluno.filter(m =>
-        normalizarPagUnif_(m.status) === 'ATIVO' && vigenteNoMesPagUnif_(m, ref)
+        analisesStatusAtivo_(m.status) && vigenteNoMesPagUnif_(m, ref)
       );
       if (!ativas.length) {
         return;
