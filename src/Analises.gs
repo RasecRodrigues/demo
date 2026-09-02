@@ -448,8 +448,25 @@ function analisesObterOuCriarAbaCache_(ss, nome, cabecalhos) {
   } else {
     aba.clearContents();
   }
+  // Força a primeira coluna (Mes ou Turma) a ficar em texto puro — sem
+  // isso, o Sheets pode auto-converter um texto como "2025-10" para uma
+  // data de verdade, e a comparação de texto usada na leitura nunca bate
+  // (foi exatamente isso que deixou o cache de turma "vazio" mesmo com
+  // linhas gravadas).
+  aba.getRange('A:A').setNumberFormat('@');
   aba.getRange(1, 1, 1, cabecalhos.length).setValues([cabecalhos]);
   return aba;
+}
+
+/**
+ * Alguma linha antiga pode já ter sido convertida para data pelo Sheets
+ * antes da correção acima — trata os dois formatos na leitura.
+ */
+function analisesNormalizarChaveMes_(valor) {
+  if (valor instanceof Date) {
+    return analisesMesRotulo_(valor).chave;
+  }
+  return String(valor || '').trim();
 }
 
 function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira) {
@@ -507,7 +524,7 @@ function analisesLerCacheGeral_() {
   }
   const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 5).getValues();
   dados.forEach(linha => {
-    const chave = String(linha[0] || '').trim();
+    const chave = analisesNormalizarChaveMes_(linha[0]);
     if (!chave) {
       return;
     }
@@ -530,7 +547,7 @@ function analisesLerCacheTurma_() {
   }
   const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 3).getValues();
   dados.forEach(linha => {
-    const mes = String(linha[0] || '').trim();
+    const mes = analisesNormalizarChaveMes_(linha[0]);
     const turma = String(linha[1] || '').trim();
     if (!mes || !turma) {
       return;
