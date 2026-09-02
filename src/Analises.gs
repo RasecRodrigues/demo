@@ -284,40 +284,56 @@ function garantirCacheAnalisesSIGA_() {
   if (!lock.tryLock(30000)) {
     throw new Error('O cache de Análises está sendo calculado por outra requisição. Tente novamente em instantes.');
   }
+  let comparativoTurmas;
   try {
     if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
       return; // outra execução já terminou de criar o cache enquanto esperávamos o lock
     }
-    analisesRecalcularCacheSemLock_();
+    comparativoTurmas = analisesRecalcularCacheNucleoSemLock_(ss);
   } finally {
     lock.releaseLock();
+  }
+  if (comparativoTurmas) {
+    analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
   }
 }
 
 /**
  * Entrada pública do recálculo — chamada pelo gatilho de tempo e pelo botão
- * "Recalcular dados". Usa o mesmo lock de garantirCacheAnalisesSIGA_ para
- * nunca rodar em paralelo com outro recálculo (o que quebraria ao tentar
- * recriar as abas de cache que a outra execução já criou).
+ * "Recalcular dados". O lock só protege a parte RÁPIDA (criar/gravar as 3
+ * abas — segundos). A etapa de frequência, que pode levar minutos, roda
+ * DEPOIS de soltar o lock — se ela ficasse presa dentro do lock, qualquer
+ * execução concorrente (o gatilho de 6h caindo junto de um clique manual,
+ * por exemplo) esperaria só 30s e falharia com "Lock timeout: another
+ * process was holding the lock for too long", mesmo a primeira execução
+ * sendo legítima e ainda rodando. Escrever na mesma célula de frequência
+ * duas vezes ao mesmo tempo não quebra nada (só refaz um trabalho), então
+ * essa etapa não precisa de lock nenhum.
  */
 function recalcularCacheAnalisesSIGA() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const comparativoTurmas = analisesRecalcularCacheNucleoComLock_(ss);
+  analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
+}
+
+function analisesRecalcularCacheNucleoComLock_(ss) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    analisesRecalcularCacheSemLock_();
+    return analisesRecalcularCacheNucleoSemLock_(ss);
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * A única função que faz a varredura pesada (DimMatricula, TodosBoletos,
- * Pagamentos Professores). Sempre chamada com o lock de script já
- * adquirido (ver garantirCacheAnalisesSIGA_ e recalcularCacheAnalisesSIGA)
- * — nunca chame direto.
+ * A parte rápida do recálculo (DimMatricula, TodosBoletos): calcula e
+ * grava os números "principais" — ativos, saídas, receita, mensalidades.
+ * Não depende de obterPainelFrequenciaTurma (isso fica pra depois, fora
+ * do lock — ver recalcularCacheAnalisesSIGA). Sempre chamada com o lock
+ * de script já adquirido — nunca chame direto.
  */
-function analisesRecalcularCacheSemLock_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+function analisesRecalcularCacheNucleoSemLock_(ss) {
   const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
 
   const abaMat = ss.getSheetByName('DimMatricula');
@@ -334,25 +350,13 @@ function analisesRecalcularCacheSemLock_() {
   const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
-  // Grava os números "rápidos" (não dependem de obterPainelFrequenciaTurma)
-  // ANTES de tentar calcular frequência. Isso é proposital: se a frequência
-  // travar ou estourar o tempo de execução do Apps Script, os números
-  // principais (ativos, saídas, receita, mensalidades) já estão salvos — só
-  // a coluna de frequência fica pra trás. Antes, a ordem era invertida e uma
-  // frequência lenta podia derrubar a execução INTEIRA antes de gravar
-  // qualquer aba, fazendo o cache nunca se atualizar.
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma);
   analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
 
-  // Frequência é a etapa mais lenta e menos confiável (obterPainelFrequenciaTurma
-  // pode demorar muito por turma) — roda por último, com orçamento de tempo,
-  // e grava turma por turma com flush imediato: se o tempo estourar e a
-  // execução for encerrada pela plataforma, o que já foi processado até ali
-  // fica salvo, e o resto é retomado na próxima execução.
-  analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
+  return comparativoTurmas;
 }
 
 function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
