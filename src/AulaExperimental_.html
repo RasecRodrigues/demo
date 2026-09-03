@@ -1,0 +1,1676 @@
+<!-- =========================================================
+     SIGA — AULA EXPERIMENTAL
+     Arquivo: AulaExperimental_.html
+     ========================================================= -->
+
+<section id="tela-aula-experimental" class="oculto aula-experimental-siga">
+
+  <div class="cabecalho-pagina aula-exp-cabecalho">
+    <div>
+      <h1>Aulas experimentais</h1>
+
+      <div class="subtitulo">
+        Acompanhe as solicitações recebidas pelo formulário e confirme os agendamentos.
+      </div>
+    </div>
+
+    <div class="aula-exp-acoes-cabecalho">
+      <button
+        type="button"
+        class="botao botao-primario"
+        onclick="abrirModalInserirAulaExperimentalSIGA()"
+      >
+        + Inserir manualmente
+      </button>
+
+      <button
+        id="botaoAtualizarAulasExperimentaisSIGA"
+        type="button"
+        class="botao botao-secundario"
+        onclick="carregarAulasExperimentaisSIGA()"
+      >
+        ↻ Atualizar
+      </button>
+    </div>
+  </div>
+
+
+  <div class="aula-exp-kpis">
+
+    <section class="cartao aula-exp-kpi">
+      <span>Total de agendamentos</span>
+      <strong id="kpiAulaExpTotal">0</strong>
+      <small>aulas experimentais agendadas</small>
+    </section>
+
+    <section class="cartao aula-exp-kpi aula-exp-kpi-alerta">
+      <span>A confirmar</span>
+      <strong id="kpiAulaExpConfirmar24h">0</strong>
+      <small>alunos aguardando confirmação</small>
+    </section>
+
+    <section class="cartao aula-exp-kpi">
+      <span>Agendadas</span>
+      <strong id="kpiAulaExpAgendadas">0</strong>
+      <small>confirmadas pela escola</small>
+    </section>
+
+    <section class="cartao aula-exp-kpi">
+      <span>Compareceram</span>
+      <strong id="kpiAulaExpCompareceram">0</strong>
+      <small>aulas realizadas</small>
+    </section>
+
+    <section class="cartao aula-exp-kpi">
+      <span>Faltaram</span>
+      <strong id="kpiAulaExpFaltaram">0</strong>
+      <small>não compareceram</small>
+    </section>
+
+    <section class="cartao aula-exp-kpi">
+      <span>Matrículas fechadas</span>
+      <strong id="kpiAulaExpMatriculas">0</strong>
+      <small>conversões</small>
+    </section>
+
+  </div>
+
+
+  <section class="cartao aula-exp-filtros">
+    <div class="aula-exp-filtros-grade">
+
+      <div class="campo aula-exp-busca">
+        <label>Pesquisar</label>
+        <input
+          id="filtroAulaExpBusca"
+          type="search"
+          placeholder="Aluno, telefone, responsável ou aula..."
+          oninput="filtrarAulasExperimentaisSIGA()"
+        >
+      </div>
+
+      <div class="campo">
+        <label>Aula experimental</label>
+        <select
+          id="filtroAulaExpAula"
+          onchange="filtrarAulasExperimentaisSIGA()"
+        >
+          <option value="">Todas</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Confirmação</label>
+        <select
+          id="filtroAulaExpConfirmacao"
+          onchange="filtrarAulasExperimentaisSIGA()"
+        >
+          <option value="">Todas</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="CONFIRMADO">Confirmado</option>
+          <option value="NAO CONFIRMADO">Não confirmado</option>
+          <option value="24H">Confirmar em 24h</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Comparecimento</label>
+        <select
+          id="filtroAulaExpComparecimento"
+          onchange="filtrarAulasExperimentaisSIGA()"
+        >
+          <option value="">Todos</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="COMPARECEU">Compareceu</option>
+          <option value="FALTOU">Faltou</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Matrícula</label>
+        <select
+          id="filtroAulaExpMatricula"
+          onchange="filtrarAulasExperimentaisSIGA()"
+        >
+          <option value="">Todas</option>
+          <option value="SIM">Fechou</option>
+          <option value="NAO">Não fechou</option>
+          <option value="PENDENTE">Pendente</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Data da aula</label>
+        <input
+          id="filtroAulaExpData"
+          type="date"
+          onchange="filtrarAulasExperimentaisSIGA()"
+        >
+      </div>
+
+    </div>
+  </section>
+
+
+  <section class="cartao">
+
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Solicitações de aula experimental</h2>
+        <span
+          id="resumoAulasExperimentaisSIGA"
+          class="subtitulo"
+        ></span>
+      </div>
+    </div>
+
+    <div class="aula-exp-tabela-wrap">
+
+      <table class="aula-exp-tabela">
+
+        <thead>
+          <tr>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('nomeAluno',this)">Aluno <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('idade',this)">Idade <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('telefoneAluno',this)">Contato <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('nomeResponsavel',this)">Responsável <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('aulaDesejada',this)">Aula desejada <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('dataEscolhidaISO',this)">Data escolhida <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('confirmacaoPresenca',this)">Confirmação <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('comparecimento',this)">Comparecimento <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('matriculaEncontrada',this)">Matrícula <span>↕</span></button></th>
+            <th><button type="button" class="aula-exp-ordenar" onclick="ordenarAulasExperimentaisSIGA('observacao',this)">Observação <span>↕</span></button></th>
+          </tr>
+        </thead>
+
+        <tbody id="corpoAulasExperimentaisSIGA">
+          <tr>
+            <td colspan="10" class="estado-vazio">
+              Abra a tela para carregar as solicitações.
+            </td>
+          </tr>
+        </tbody>
+
+      </table>
+
+    </div>
+
+  </section>
+
+
+  <div id="modalInserirAulaExperimentalSIGA" class="aula-exp-modal-overlay oculto">
+    <div class="aula-exp-modal">
+
+      <div class="aula-exp-modal-cabecalho">
+        <h2>Inserir aula experimental manualmente</h2>
+        <button type="button" class="aula-exp-modal-fechar" onclick="fecharModalInserirAulaExperimentalSIGA()">✕</button>
+      </div>
+
+      <div class="aula-exp-modal-corpo">
+
+        <div class="aula-exp-modal-grade">
+
+          <div class="campo aula-exp-modal-campo-largo">
+            <label>Nome do aluno(a) *</label>
+            <input id="formAulaExpNome" type="text" placeholder="Nome completo">
+          </div>
+
+          <div class="campo">
+            <label>Idade do aluno(a)</label>
+            <input id="formAulaExpIdade" type="text" placeholder="Ex.: 8">
+          </div>
+
+          <div class="campo">
+            <label>Telefone do aluno(a)</label>
+            <input id="formAulaExpTelefoneAluno" type="text" placeholder="(00) 00000-0000">
+          </div>
+
+          <div class="campo">
+            <label>Nome do responsável</label>
+            <input id="formAulaExpNomeResponsavel" type="text" placeholder="Se o aluno for menor de 18 anos">
+          </div>
+
+          <div class="campo">
+            <label>Telefone do responsável</label>
+            <input id="formAulaExpTelefoneResponsavel" type="text" placeholder="(00) 00000-0000">
+          </div>
+
+          <div class="campo">
+            <label>Aula experimental desejada *</label>
+            <input id="formAulaExpAula" type="text" list="listaAulaExpAulasConhecidas" placeholder="Ex.: Teatro AD8">
+            <datalist id="listaAulaExpAulasConhecidas"></datalist>
+          </div>
+
+          <div class="campo">
+            <label>Data escolhida *</label>
+            <input id="formAulaExpData" type="date">
+          </div>
+
+          <div class="campo">
+            <label>E-mail</label>
+            <input id="formAulaExpEmail" type="email" placeholder="email@exemplo.com">
+          </div>
+
+          <div class="campo aula-exp-modal-campo-largo">
+            <label>Observação</label>
+            <textarea id="formAulaExpObservacao" rows="3" placeholder="Experiência anterior, expectativas, necessidades específicas..."></textarea>
+          </div>
+
+        </div>
+
+      </div>
+
+      <div class="aula-exp-modal-rodape">
+        <button type="button" class="botao botao-secundario" onclick="fecharModalInserirAulaExperimentalSIGA()">Cancelar</button>
+        <button id="botaoSalvarAulaExperimentalManualSIGA" type="button" class="botao botao-primario" onclick="salvarAulaExperimentalManualSIGA()">Salvar</button>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+
+<style>
+
+#aula-experimental,
+#aula-experimental *{
+  box-sizing:border-box;
+}
+
+.aula-experimental-siga{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+}
+
+.aula-exp-cabecalho{
+  margin-bottom:16px;
+}
+
+.aula-exp-kpis{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+  margin-bottom:16px;
+}
+
+.aula-exp-kpi{
+  position:relative;
+  overflow:hidden;
+  min-height:112px;
+  padding:18px;
+}
+
+.aula-exp-kpi:before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:0;
+  right:0;
+  height:4px;
+  background:#6427e8;
+}
+
+.aula-exp-kpi span{
+  display:block;
+  color:#687083;
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+.aula-exp-kpi strong{
+  display:block;
+  margin-top:10px;
+  color:#1b2030;
+  font-size:26px;
+  line-height:1;
+}
+
+.aula-exp-kpi small{
+  display:block;
+  margin-top:10px;
+  color:#747b8d;
+  font-size:10px;
+}
+
+.aula-exp-filtros{
+  margin-bottom:16px;
+}
+
+.aula-exp-filtros-grade{
+  display:grid;
+  grid-template-columns:minmax(300px,1.7fr) minmax(190px,.9fr) minmax(150px,.7fr) minmax(160px,.7fr);
+  gap:12px;
+  padding:16px;
+  align-items:end;
+}
+
+.aula-exp-tabela-wrap{
+  width:100%;
+  overflow-x:auto;
+}
+
+.aula-exp-tabela{
+  width:100%;
+  min-width:1560px;
+  border-collapse:collapse;
+}
+
+.aula-exp-tabela th,
+.aula-exp-tabela td{
+  padding:12px 13px;
+  border-bottom:1px solid #eceef3;
+  text-align:left;
+  vertical-align:middle;
+  font-size:11px;
+}
+
+.aula-exp-tabela th{
+  background:#fafbfc;
+  color:#7b8190;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+}
+
+.aula-exp-ordenar{appearance:none;width:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;font-weight:inherit;letter-spacing:inherit;text-align:left;text-transform:inherit;cursor:pointer;white-space:nowrap}
+.aula-exp-ordenar:hover,.aula-exp-ordenar.ativo{color:#5b21b6}
+.aula-exp-ordenar span{margin-left:4px;font-size:11px}
+
+.aula-exp-tabela tbody tr:hover{
+  background:#faf9ff;
+}
+
+.aula-exp-aluno{
+  font-weight:800;
+  color:#202431;
+}
+
+.aula-exp-secundario{
+  display:block;
+  margin-top:3px;
+  color:#747b8d;
+  font-size:9px;
+  line-height:1.3;
+}
+
+.aula-exp-observacao{
+  max-width:260px;
+  white-space:normal;
+  line-height:1.35;
+}
+
+.aula-exp-select-status{
+  min-width:118px;
+  border:1px solid #e2e5ee;
+  border-radius:9px;
+  padding:7px 8px;
+  background:#fff;
+  font-size:10px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.aula-exp-select-status.agendado{
+  background:#ecfdf3;
+  color:#067647;
+  border-color:#abefc6;
+}
+
+.aula-exp-select-status.pendente{
+  background:#fff7ed;
+  color:#b54708;
+  border-color:#fed7aa;
+}
+
+@media(max-width:1000px){
+  .aula-exp-kpis{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .aula-exp-filtros-grade{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .aula-exp-busca{
+    grid-column:1/-1;
+  }
+}
+
+@media(max-width:600px){
+  .aula-exp-kpis,
+  .aula-exp-filtros-grade{
+    grid-template-columns:1fr;
+  }
+
+  .aula-exp-busca{
+    grid-column:auto;
+  }
+}
+
+
+.aula-exp-kpi-alerta:before{background:#f97316;}
+.aula-exp-alerta-24h{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  margin-top:6px;
+  padding:4px 7px;
+  border-radius:999px;
+  background:#fff4e5;
+  color:#b54708;
+  font-size:9px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.aula-exp-select-etapa{
+  min-width:132px;
+  border:1px solid #e2e5ee;
+  border-radius:9px;
+  padding:7px 8px;
+  background:#fff;
+  font-size:10px;
+  font-weight:800;
+  cursor:pointer;
+}
+.aula-exp-select-etapa.ok{background:#ecfdf3;color:#067647;border-color:#abefc6;}
+.aula-exp-select-etapa.alerta{background:#fff4e5;color:#b54708;border-color:#fed7aa;}
+.aula-exp-select-etapa.erro{background:#fef3f2;color:#b42318;border-color:#fecdca;}
+.aula-exp-select-etapa.neutro{background:#f8fafc;color:#475467;}
+.aula-exp-matricula-auto{
+  display:inline-flex;
+  padding:5px 8px;
+  border-radius:999px;
+  background:#ecfdf3;
+  color:#067647;
+  font-size:9px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+
+.aula-exp-matricula-auto + .aula-exp-secundario{
+  margin-top:6px;
+  max-width:180px;
+}
+
+
+.aula-exp-acoes-cabecalho{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+
+.aula-exp-modal-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(20,20,30,.45);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  z-index:1000;
+}
+
+.aula-exp-modal-overlay.oculto{
+  display:none;
+}
+
+.aula-exp-modal{
+  width:100%;
+  max-width:640px;
+  max-height:90vh;
+  overflow-y:auto;
+  background:#fff;
+  border-radius:14px;
+  box-shadow:0 20px 60px rgba(20,20,30,.25);
+}
+
+.aula-exp-modal-cabecalho{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:18px 22px;
+  border-bottom:1px solid #eceef3;
+}
+
+.aula-exp-modal-cabecalho h2{
+  margin:0;
+  font-size:16px;
+  color:#1b2030;
+}
+
+.aula-exp-modal-fechar{
+  appearance:none;
+  border:0;
+  background:transparent;
+  font-size:16px;
+  line-height:1;
+  color:#687083;
+  cursor:pointer;
+  padding:4px 8px;
+  border-radius:6px;
+}
+
+.aula-exp-modal-fechar:hover{
+  background:#f4f4f7;
+  color:#1b2030;
+}
+
+.aula-exp-modal-corpo{
+  padding:20px 22px;
+}
+
+.aula-exp-modal-grade{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+
+.aula-exp-modal-campo-largo{
+  grid-column:1/-1;
+}
+
+.aula-exp-modal-grade .campo label{
+  display:block;
+  margin-bottom:5px;
+  font-size:11px;
+  font-weight:700;
+  color:#475467;
+}
+
+.aula-exp-modal-grade .campo input,
+.aula-exp-modal-grade .campo textarea{
+  width:100%;
+  border:1px solid #e2e5ee;
+  border-radius:9px;
+  padding:9px 10px;
+  font:inherit;
+  font-size:13px;
+  color:#1b2030;
+}
+
+.aula-exp-modal-grade .campo textarea{
+  resize:vertical;
+}
+
+.aula-exp-modal-rodape{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding:16px 22px;
+  border-top:1px solid #eceef3;
+}
+
+@media(max-width:600px){
+  .aula-exp-modal-grade{
+    grid-template-columns:1fr;
+  }
+}
+
+</style>
+
+
+<script>
+
+let aulasExperimentaisSIGA = [];
+let aulasExperimentaisFiltradasSIGA = [];
+let ordenacaoAulasExperimentaisSIGA = { campo: 'dataEscolhidaISO', direcao: 1 };
+
+function ordenarAulasExperimentaisSIGA(campo, botao) {
+  if (ordenacaoAulasExperimentaisSIGA.campo === campo) {
+    ordenacaoAulasExperimentaisSIGA.direcao *= -1;
+  } else {
+    ordenacaoAulasExperimentaisSIGA = { campo, direcao: 1 };
+  }
+  document.querySelectorAll('.aula-exp-ordenar').forEach(item => {
+    item.classList.remove('ativo');
+    const icone = item.querySelector('span');
+    if (icone) icone.textContent = '↕';
+  });
+  if (botao) {
+    botao.classList.add('ativo');
+    const icone = botao.querySelector('span');
+    if (icone) icone.textContent = ordenacaoAulasExperimentaisSIGA.direcao === 1 ? '↑' : '↓';
+  }
+  renderizarAulasExperimentaisSIGA(aplicarOrdenacaoAulasExperimentaisSIGA(aulasExperimentaisFiltradasSIGA));
+}
+
+function aplicarOrdenacaoAulasExperimentaisSIGA(lista) {
+  const campo = ordenacaoAulasExperimentaisSIGA.campo;
+  const direcao = ordenacaoAulasExperimentaisSIGA.direcao;
+  return [...(Array.isArray(lista) ? lista : [])].sort((a,b) => {
+    let va = a?.[campo];
+    let vb = b?.[campo];
+    if (campo === 'matriculaEncontrada') {
+      va = a?.matriculaEncontrada ? 'SIM' : (a?.fechouMatricula || 'PENDENTE');
+      vb = b?.matriculaEncontrada ? 'SIM' : (b?.fechouMatricula || 'PENDENTE');
+    }
+    const na = Number(va), nb = Number(vb);
+    if (va !== '' && vb !== '' && Number.isFinite(na) && Number.isFinite(nb)) return (na-nb)*direcao;
+    return String(va ?? '').localeCompare(String(vb ?? ''),'pt-BR',{numeric:true,sensitivity:'base'})*direcao;
+  });
+}
+
+
+function abrirTelaAulaExperimentalSIGA(
+  botaoMenu
+) {
+
+  if (
+    typeof marcarMenuAtivo ===
+    'function'
+  ) {
+    marcarMenuAtivo(botaoMenu);
+  }
+
+  if (
+    typeof fecharMenuMobile ===
+    'function'
+  ) {
+    fecharMenuMobile();
+  }
+
+  if (
+    typeof esconderMensagem ===
+    'function'
+  ) {
+    esconderMensagem();
+  }
+
+  const tela =
+    document.getElementById(
+      'tela-aula-experimental'
+    );
+
+  if (!tela) {
+    if (
+      typeof mostrarMensagem ===
+      'function'
+    ) {
+      mostrarMensagem(
+        'A tela de aulas experimentais não foi encontrada.',
+        'erro'
+      );
+    }
+    return;
+  }
+
+  const pagina =
+    document.querySelector(
+      'main.pagina'
+    );
+
+  if (
+    pagina &&
+    tela.parentElement !== pagina
+  ) {
+    pagina.appendChild(tela);
+  }
+
+  document
+    .querySelectorAll('[id^="tela-"]')
+    .forEach(outraTela => {
+      if (outraTela !== tela) {
+        outraTela.classList.add(
+          'oculto'
+        );
+      }
+    });
+
+  tela.classList.remove('oculto');
+
+  window.scrollTo(0, 0);
+
+  carregarAulasExperimentaisSIGA();
+}
+
+
+function carregarAulasExperimentaisSIGA() {
+
+  const corpo =
+    document.getElementById(
+      'corpoAulasExperimentaisSIGA'
+    );
+
+  const botao =
+    document.getElementById(
+      'botaoAtualizarAulasExperimentaisSIGA'
+    );
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent =
+      '↻ Atualizando...';
+  }
+
+  if (corpo) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="10" class="estado-vazio">
+          Carregando solicitações...
+        </td>
+      </tr>
+    `;
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent =
+          '↻ Atualizar';
+      }
+
+      aulasExperimentaisSIGA =
+        Array.isArray(resultado?.registros)
+          ? resultado.registros
+          : [];
+
+      preencherFiltroAulasExperimentaisSIGA(
+        resultado?.aulas || []
+      );
+
+      atualizarKpisAulasExperimentaisSIGA(
+        resultado?.resumo || {}
+      );
+
+      filtrarAulasExperimentaisSIGA();
+    })
+    .withFailureHandler(erro => {
+
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent =
+          '↻ Atualizar';
+      }
+
+      const mensagem =
+        erro?.message ||
+        String(
+          erro ||
+          'Erro ao carregar aulas experimentais.'
+        );
+
+      if (corpo) {
+        corpo.innerHTML = `
+          <tr>
+            <td colspan="10" class="estado-vazio">
+              ${escaparHtmlAulaExperimentalSIGA(mensagem)}
+            </td>
+          </tr>
+        `;
+      }
+    })
+    .listarAulasExperimentaisSIGA();
+}
+
+
+let aulasConhecidasAulaExperimentalSIGA = [];
+
+function preencherFiltroAulasExperimentaisSIGA(
+  aulas
+) {
+
+  const select =
+    document.getElementById(
+      'filtroAulaExpAula'
+    );
+
+  const lista =
+    Array.isArray(aulas)
+      ? aulas
+      : [];
+
+  aulasConhecidasAulaExperimentalSIGA =
+    lista;
+
+  const listaDatalist =
+    document.getElementById(
+      'listaAulaExpAulasConhecidas'
+    );
+
+  if (listaDatalist) {
+    listaDatalist.innerHTML =
+      lista
+        .map(aula => `<option value="${escaparAtributoAulaExperimentalSIGA(aula)}"></option>`)
+        .join('');
+  }
+
+  if (!select) return;
+
+  const atual =
+    select.value || '';
+
+  select.innerHTML =
+    '<option value="">Todas</option>' +
+    lista
+      .map(aula => `
+        <option value="${escaparAtributoAulaExperimentalSIGA(aula)}">
+          ${escaparHtmlAulaExperimentalSIGA(aula)}
+        </option>
+      `)
+      .join('');
+
+  if (
+    atual &&
+    lista.includes(atual)
+  ) {
+    select.value = atual;
+  }
+}
+
+
+/**
+ * Modal "Inserir manualmente" — pra solicitações recebidas por
+ * telefone/WhatsApp, que não passaram pelo formulário do Google.
+ */
+function abrirModalInserirAulaExperimentalSIGA() {
+
+  const modal =
+    document.getElementById(
+      'modalInserirAulaExperimentalSIGA'
+    );
+
+  if (!modal) return;
+
+  [
+    'formAulaExpNome',
+    'formAulaExpIdade',
+    'formAulaExpTelefoneAluno',
+    'formAulaExpNomeResponsavel',
+    'formAulaExpTelefoneResponsavel',
+    'formAulaExpAula',
+    'formAulaExpData',
+    'formAulaExpEmail',
+    'formAulaExpObservacao'
+  ].forEach(id => {
+    const campo = document.getElementById(id);
+    if (campo) campo.value = '';
+  });
+
+  modal.classList.remove('oculto');
+
+  const campoNome =
+    document.getElementById('formAulaExpNome');
+
+  if (campoNome) campoNome.focus();
+}
+
+
+function fecharModalInserirAulaExperimentalSIGA() {
+
+  const modal =
+    document.getElementById(
+      'modalInserirAulaExperimentalSIGA'
+    );
+
+  if (modal) modal.classList.add('oculto');
+}
+
+
+function salvarAulaExperimentalManualSIGA() {
+
+  const valor = id =>
+    String(
+      document.getElementById(id)?.value || ''
+    ).trim();
+
+  const nomeAluno = valor('formAulaExpNome');
+  const aulaDesejada = valor('formAulaExpAula');
+  const dataEscolhida = valor('formAulaExpData');
+
+  if (!nomeAluno) {
+    alert('Informe o nome do aluno.');
+    return;
+  }
+
+  if (!aulaDesejada) {
+    alert('Informe a aula experimental desejada.');
+    return;
+  }
+
+  if (!dataEscolhida) {
+    alert('Informe a data escolhida para a aula experimental.');
+    return;
+  }
+
+  const dados = {
+    nomeAluno,
+    idade: valor('formAulaExpIdade'),
+    telefoneAluno: valor('formAulaExpTelefoneAluno'),
+    nomeResponsavel: valor('formAulaExpNomeResponsavel'),
+    telefoneResponsavel: valor('formAulaExpTelefoneResponsavel'),
+    aulaDesejada,
+    dataEscolhida,
+    email: valor('formAulaExpEmail'),
+    observacao: valor('formAulaExpObservacao')
+  };
+
+  const botao =
+    document.getElementById(
+      'botaoSalvarAulaExperimentalManualSIGA'
+    );
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Salvando...';
+  }
+
+  google.script.run
+    .withSuccessHandler(() => {
+
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar';
+      }
+
+      fecharModalInserirAulaExperimentalSIGA();
+      carregarAulasExperimentaisSIGA();
+    })
+    .withFailureHandler(erro => {
+
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar';
+      }
+
+      alert(
+        erro?.message ||
+        String(
+          erro ||
+          'Não foi possível salvar a solicitação.'
+        )
+      );
+    })
+    .criarAulaExperimentalManualSIGA(dados);
+}
+
+
+function atualizarKpisAulasExperimentaisSIGA(
+  resumo
+) {
+
+  const dados =
+    resumo || {};
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpTotal',
+    dados.total || 0
+  );
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpConfirmar24h',
+    dados.confirmacoesPendentes ?? dados.confirmar24h ?? 0
+  );
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpAgendadas',
+    dados.agendadas || 0
+  );
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpCompareceram',
+    dados.compareceram || 0
+  );
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpFaltaram',
+    dados.faltaram || 0
+  );
+
+  textoAulaExperimentalSIGA(
+    'kpiAulaExpMatriculas',
+    dados.matriculasFechadas || 0
+  );
+}
+
+
+function filtrarAulasExperimentaisSIGA() {
+
+  const busca =
+    normalizarAulaExperimentalSIGA(
+      document.getElementById(
+        'filtroAulaExpBusca'
+      )?.value || ''
+    );
+
+  const aula =
+    normalizarAulaExperimentalSIGA(
+      document.getElementById(
+        'filtroAulaExpAula'
+      )?.value || ''
+    );
+
+  const confirmacao =
+    normalizarAulaExperimentalSIGA(
+      document.getElementById(
+        'filtroAulaExpConfirmacao'
+      )?.value || ''
+    );
+
+  const comparecimento =
+    normalizarAulaExperimentalSIGA(
+      document.getElementById(
+        'filtroAulaExpComparecimento'
+      )?.value || ''
+    );
+
+  const matricula =
+    normalizarAulaExperimentalSIGA(
+      document.getElementById(
+        'filtroAulaExpMatricula'
+      )?.value || ''
+    );
+
+  const data =
+    String(
+      document.getElementById(
+        'filtroAulaExpData'
+      )?.value || ''
+    );
+
+  aulasExperimentaisFiltradasSIGA =
+    aulasExperimentaisSIGA.filter(
+      item => {
+
+        const textoBusca =
+          normalizarAulaExperimentalSIGA([
+            item.nomeAluno,
+            item.email,
+            item.telefoneAluno,
+            item.nomeResponsavel,
+            item.telefoneResponsavel,
+            item.aulaDesejada,
+            item.observacao
+          ].join(' '));
+
+        const bateBusca =
+          !busca ||
+          textoBusca.includes(busca);
+
+        const bateAula =
+          !aula ||
+          normalizarAulaExperimentalSIGA(
+            item.aulaDesejada
+          ) === aula;
+
+        const confirmacaoItem =
+          normalizarAulaExperimentalSIGA(
+            item.confirmacaoPresenca || 'PENDENTE'
+          );
+
+        const bateConfirmacao =
+          !confirmacao ||
+          (
+            confirmacao === '24H' &&
+            item.precisaConfirmacao24h
+          ) ||
+          (
+            confirmacao !== '24H' &&
+            confirmacaoItem === confirmacao
+          );
+
+        const bateComparecimento =
+          !comparecimento ||
+          normalizarAulaExperimentalSIGA(
+            item.comparecimento || 'PENDENTE'
+          ) === comparecimento;
+
+        const statusMatricula =
+          item.matriculaEncontrada
+            ? 'SIM'
+            : normalizarAulaExperimentalSIGA(
+                item.fechouMatricula || 'PENDENTE'
+              );
+
+        const bateMatricula =
+          !matricula ||
+          statusMatricula === matricula;
+
+        const bateData =
+          !data ||
+          item.dataEscolhidaISO === data;
+
+        return (
+          bateBusca &&
+          bateAula &&
+          bateConfirmacao &&
+          bateComparecimento &&
+          bateMatricula &&
+          bateData
+        );
+      }
+    );
+
+  renderizarAulasExperimentaisSIGA(
+    aplicarOrdenacaoAulasExperimentaisSIGA(aulasExperimentaisFiltradasSIGA)
+  );
+}
+
+
+function renderizarAulasExperimentaisSIGA(
+  lista
+) {
+
+  const corpo =
+    document.getElementById(
+      'corpoAulasExperimentaisSIGA'
+    );
+
+  const resumo =
+    document.getElementById(
+      'resumoAulasExperimentaisSIGA'
+    );
+
+  if (resumo) {
+    resumo.textContent =
+      `${lista.length} solicitação(ões) exibida(s)`;
+  }
+
+  if (!corpo) return;
+
+  if (!lista.length) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="10" class="estado-vazio">
+          Nenhuma solicitação encontrada para os filtros selecionados.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  corpo.innerHTML =
+    lista
+      .map(item => {
+
+        const confirmacao =
+          item.confirmacaoPresenca ||
+          'PENDENTE';
+
+        const comparecimento =
+          item.comparecimento ||
+          'PENDENTE';
+
+        const fechouMatricula =
+          item.fechouMatricula ||
+          'PENDENTE';
+
+        const alerta24h =
+          item.precisaConfirmacao24h
+            ? `
+              <div class="aula-exp-alerta-24h">
+                ⚠️ Confirmar presença
+              </div>
+            `
+            : '';
+
+        const matriculaAuto =
+          item.matriculaAutomatica || {};
+
+        const detalhesMatricula =
+          [
+            matriculaAuto.turma || '',
+            matriculaAuto.dataMatricula || ''
+          ]
+            .filter(Boolean)
+            .join(' • ');
+
+        const matriculaHtml =
+          item.matriculaEncontrada
+            ? `
+              <span class="aula-exp-matricula-auto">
+                ✓ Matriculou-se
+              </span>
+              ${
+                detalhesMatricula
+                  ? `
+                    <span class="aula-exp-secundario">
+                      ${escaparHtmlAulaExperimentalSIGA(
+                        detalhesMatricula
+                      )}
+                    </span>
+                  `
+                  : ''
+              }
+            `
+            : `
+              <select
+                class="aula-exp-select-etapa ${classeEtapaAulaExperimentalSIGA(fechouMatricula)}"
+                onchange="alterarEtapaAulaExperimentalSIGA(
+                  ${Number(item.linha)},
+                  'FECHOU_MATRICULA',
+                  this
+                )"
+              >
+                <option value="PENDENTE" ${fechouMatricula === 'PENDENTE' ? 'selected' : ''}>Pendente</option>
+                <option value="SIM" ${fechouMatricula === 'SIM' ? 'selected' : ''}>Sim</option>
+                <option value="NÃO" ${fechouMatricula === 'NÃO' ? 'selected' : ''}>Não</option>
+              </select>
+            `;
+
+        return `
+          <tr>
+
+            <td>
+              <span class="aula-exp-aluno">
+                ${escaparHtmlAulaExperimentalSIGA(
+                  item.nomeAluno || '—'
+                )}
+              </span>
+
+              <span class="aula-exp-secundario">
+                ${escaparHtmlAulaExperimentalSIGA(
+                  item.email || ''
+                )}
+              </span>
+            </td>
+
+            <td>
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.idade || '—'
+              )}
+            </td>
+
+            <td>
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.telefoneAluno || '—'
+              )}
+            </td>
+
+            <td>
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.nomeResponsavel || '—'
+              )}
+
+              ${
+                item.telefoneResponsavel
+                  ? `
+                    <span class="aula-exp-secundario">
+                      ${escaparHtmlAulaExperimentalSIGA(
+                        item.telefoneResponsavel
+                      )}
+                    </span>
+                  `
+                  : ''
+              }
+            </td>
+
+            <td>
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.aulaDesejada || '—'
+              )}
+            </td>
+
+            <td>
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.dataEscolhida || '—'
+              )}
+              ${alerta24h}
+            </td>
+
+            <td>
+              <select
+                class="aula-exp-select-etapa ${classeEtapaAulaExperimentalSIGA(confirmacao)}"
+                onchange="alterarEtapaAulaExperimentalSIGA(
+                  ${Number(item.linha)},
+                  'CONFIRMACAO_PRESENCA',
+                  this
+                )"
+              >
+                <option value="PENDENTE" ${confirmacao === 'PENDENTE' ? 'selected' : ''}>Pendente</option>
+                <option value="CONFIRMADO" ${confirmacao === 'CONFIRMADO' ? 'selected' : ''}>Confirmado</option>
+                <option value="NÃO CONFIRMADO" ${confirmacao === 'NÃO CONFIRMADO' ? 'selected' : ''}>Não confirmado</option>
+              </select>
+            </td>
+
+            <td>
+              <select
+                class="aula-exp-select-etapa ${classeEtapaAulaExperimentalSIGA(comparecimento)}"
+                onchange="alterarEtapaAulaExperimentalSIGA(
+                  ${Number(item.linha)},
+                  'COMPARECIMENTO',
+                  this
+                )"
+              >
+                <option value="PENDENTE" ${comparecimento === 'PENDENTE' ? 'selected' : ''}>Pendente</option>
+                <option value="COMPARECEU" ${comparecimento === 'COMPARECEU' ? 'selected' : ''}>Compareceu</option>
+                <option value="FALTOU" ${comparecimento === 'FALTOU' ? 'selected' : ''}>Faltou</option>
+              </select>
+            </td>
+
+            <td>
+              ${matriculaHtml}
+            </td>
+
+            <td class="aula-exp-observacao">
+              ${escaparHtmlAulaExperimentalSIGA(
+                item.observacao || '—'
+              )}
+            </td>
+
+          </tr>
+        `;
+      })
+      .join('');
+}
+
+
+function alterarAgendadoAulaExperimentalSIGA(
+  linha,
+  select
+) {
+
+  const valor =
+    select?.value === 'SIM';
+
+  if (select) {
+    select.disabled = true;
+  }
+
+  google.script.run
+    .withSuccessHandler(() => {
+
+      if (select) {
+        select.disabled = false;
+
+        select.classList.toggle(
+          'agendado',
+          valor
+        );
+
+        select.classList.toggle(
+          'pendente',
+          !valor
+        );
+      }
+
+      const item =
+        aulasExperimentaisSIGA.find(
+          registro =>
+            Number(registro.linha) ===
+            Number(linha)
+        );
+
+      if (item) {
+        item.agendado = valor;
+      }
+
+      recalcularKpisAulasExperimentaisFrontendSIGA();
+      filtrarAulasExperimentaisSIGA();
+    })
+    .withFailureHandler(erro => {
+
+      if (select) {
+        select.disabled = false;
+        select.value =
+          valor
+            ? 'NAO'
+            : 'SIM';
+      }
+
+      alert(
+        erro?.message ||
+        String(
+          erro ||
+          'Não foi possível atualizar o agendamento.'
+        )
+      );
+    })
+    .atualizarAgendadoAulaExperimentalSIGA({
+      linha,
+      agendado: valor
+    });
+}
+
+
+
+function alterarEtapaAulaExperimentalSIGA(
+  linha,
+  campo,
+  select
+) {
+
+  const valor =
+    select?.value || 'PENDENTE';
+
+  if (select) {
+    select.disabled = true;
+  }
+
+  google.script.run
+    .withSuccessHandler(() => {
+
+      if (select) {
+        select.disabled = false;
+        select.className =
+          'aula-exp-select-etapa ' +
+          classeEtapaAulaExperimentalSIGA(
+            valor
+          );
+      }
+
+      const item =
+        aulasExperimentaisSIGA.find(
+          registro =>
+            Number(registro.linha) ===
+            Number(linha)
+        );
+
+      if (item) {
+        if (
+          campo ===
+          'CONFIRMACAO_PRESENCA'
+        ) {
+          item.confirmacaoPresenca =
+            valor;
+
+          item.precisaConfirmacao24h =
+            false;
+        }
+
+        if (
+          campo ===
+          'COMPARECIMENTO'
+        ) {
+          item.comparecimento =
+            valor;
+        }
+
+        if (
+          campo ===
+          'FECHOU_MATRICULA'
+        ) {
+          item.fechouMatricula =
+            valor;
+        }
+      }
+
+      recalcularKpisAulasExperimentaisFrontendSIGA();
+      filtrarAulasExperimentaisSIGA();
+    })
+    .withFailureHandler(erro => {
+
+      if (select) {
+        select.disabled = false;
+      }
+
+      alert(
+        erro?.message ||
+        String(
+          erro ||
+          'Não foi possível atualizar o registro.'
+        )
+      );
+    })
+    .atualizarEtapaAulaExperimentalSIGA({
+      linha,
+      campo,
+      valor
+    });
+}
+
+
+function classeEtapaAulaExperimentalSIGA(
+  valor
+) {
+
+  const v =
+    normalizarAulaExperimentalSIGA(
+      valor
+    );
+
+  if (
+    [
+      'CONFIRMADO',
+      'COMPARECEU',
+      'SIM'
+    ].includes(v)
+  ) {
+    return 'ok';
+  }
+
+  if (
+    [
+      'NAO CONFIRMADO',
+      'FALTOU',
+      'NAO'
+    ].includes(v)
+  ) {
+    return 'erro';
+  }
+
+  if (v === 'PENDENTE') {
+    return 'alerta';
+  }
+
+  return 'neutro';
+}
+
+
+function recalcularKpisAulasExperimentaisFrontendSIGA() {
+
+  const total =
+    aulasExperimentaisSIGA.length;
+
+  const agendadas =
+    aulasExperimentaisSIGA.filter(
+      item => item.agendado
+    ).length;
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const confirmacoesPendentes =
+    aulasExperimentaisSIGA.filter(item => {
+      const status = normalizarAulaExperimentalSIGA(
+        item.confirmacaoPresenca || 'PENDENTE'
+      );
+      if (status === 'CONFIRMADO' || status === 'NAO CONFIRMADO') return false;
+      if (!item.dataEscolhidaISO) return false;
+      const partes = String(item.dataEscolhidaISO).split('-').map(Number);
+      if (partes.length !== 3 || partes.some(numero => !Number.isFinite(numero))) return false;
+      const dataAula = new Date(partes[0], partes[1] - 1, partes[2]);
+      return dataAula >= hoje;
+    }).length;
+
+  const compareceram =
+    aulasExperimentaisSIGA.filter(
+      item =>
+        normalizarAulaExperimentalSIGA(
+          item.comparecimento
+        ) === 'COMPARECEU'
+    ).length;
+
+  const faltaram =
+    aulasExperimentaisSIGA.filter(
+      item =>
+        normalizarAulaExperimentalSIGA(
+          item.comparecimento
+        ) === 'FALTOU'
+    ).length;
+
+  const matriculasFechadas =
+    aulasExperimentaisSIGA.filter(
+      item =>
+        item.matriculaEncontrada ||
+        normalizarAulaExperimentalSIGA(
+          item.fechouMatricula
+        ) === 'SIM'
+    ).length;
+
+  atualizarKpisAulasExperimentaisSIGA({
+    total,
+    confirmacoesPendentes,
+    agendadas,
+    compareceram,
+    faltaram,
+    matriculasFechadas
+  });
+}
+
+
+function textoAulaExperimentalSIGA(
+  id,
+  valor
+) {
+
+  const elemento =
+    document.getElementById(id);
+
+  if (elemento) {
+    elemento.textContent =
+      String(valor ?? '');
+  }
+}
+
+
+function normalizarAulaExperimentalSIGA(
+  valor
+) {
+
+  return String(valor || '')
+    .trim()
+    .normalize('NFD')
+    .replace(
+      /[\u0300-\u036f]/g,
+      ''
+    )
+    .toUpperCase()
+    .replace(
+      /\s+/g,
+      ' '
+    );
+}
+
+
+function escaparHtmlAulaExperimentalSIGA(
+  valor
+) {
+
+  return String(valor ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+
+function escaparAtributoAulaExperimentalSIGA(
+  valor
+) {
+
+  return escaparHtmlAulaExperimentalSIGA(
+    valor
+  );
+}
+
+</script>
