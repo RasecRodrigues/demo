@@ -71,11 +71,16 @@ function obterAnalisesSIGA(filtros) {
       return;
     }
     if (!acumuladoPorTurma.has(item.turma)) {
-      acumuladoPorTurma.set(item.turma, { receita: 0, pontos: new Map() });
+      acumuladoPorTurma.set(item.turma, { receita: 0, custoProfessor: 0, pontos: new Map() });
     }
     const acc = acumuladoPorTurma.get(item.turma);
     acc.receita += item.receita;
-    acc.pontos.set(item.mes, { periodo: analisesChaveParaRotulo_(item.mes), receita: item.receita });
+    acc.custoProfessor += Number(item.custoProfessor || 0);
+    acc.pontos.set(item.mes, {
+      periodo: analisesChaveParaRotulo_(item.mes),
+      receita: item.receita,
+      lucro: arredPagUnif_(item.receita - Number(item.custoProfessor || 0))
+    });
   });
 
   const resumoPorTurma = Array.from(acumuladoPorTurma.entries())
@@ -97,6 +102,10 @@ function obterAnalisesSIGA(filtros) {
   // "Mensalidades por turma no período", que mostra o detalhamento mensal
   // completo.
   const detalheMensalPorTurma = [];
+  // Mesma coisa, mas com o LUCRO (receita paga − custo do professor) —
+  // usado só pela tabela "Mensalidades por turma no tempo", que na
+  // verdade é lucro por turma, não mensalidade.
+  const lucroPorTurma = [];
   resumoPorTurma.forEach(item => {
     const acc = acumuladoPorTurma.get(item.turma);
     chaves.forEach(chave => {
@@ -105,6 +114,11 @@ function obterAnalisesSIGA(filtros) {
         turma: item.turma,
         periodo: analisesChaveParaRotulo_(chave),
         receita: ponto ? ponto.receita : 0
+      });
+      lucroPorTurma.push({
+        turma: item.turma,
+        periodo: analisesChaveParaRotulo_(chave),
+        receita: ponto ? ponto.lucro : 0
       });
     });
   });
@@ -136,6 +150,7 @@ function obterAnalisesSIGA(filtros) {
     comparativoTurmas,
     serieMensalidadesPorTurma,
     detalheMensalPorTurma,
+    lucroPorTurma,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
@@ -384,9 +399,10 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
   const valorPagoPorAlunoMes = analisesCalcularValorPagoPorAlunoMes_(ss, identidades);
   const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMes);
+  const custoProfessorPorTurmaMes = analisesCalcularCustoProfessorPorTurmaMes_(ss);
 
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
-  analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma);
+  analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
   analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
@@ -499,14 +515,15 @@ function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceir
   }
 }
 
-function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita']);
+function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfessorPorTurmaMes) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita', 'CustoProfessor']);
   const linhas = [];
   detalhesPorTurma.forEach((pontos, turma) => {
     periodos.forEach((p, i) => {
       const chave = analisesMesRotulo_(p).chave;
       const ponto = pontos[i] || {};
-      linhas.push([chave, turma, Number(ponto.receita || 0)]);
+      const custo = custoProfessorPorTurmaMes ? Number(custoProfessorPorTurmaMes.get(turma + '|' + chave) || 0) : 0;
+      linhas.push([chave, turma, Number(ponto.receita || 0), custo]);
     });
   });
   if (linhas.length) {
@@ -562,14 +579,14 @@ function analisesLerCacheTurma_() {
   if (!aba || aba.getLastRow() < 2) {
     return lista;
   }
-  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 3).getValues();
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 4).getValues();
   dados.forEach(linha => {
     const mes = analisesNormalizarChaveMes_(linha[0]);
     const turma = String(linha[1] || '').trim();
     if (!mes || !turma) {
       return;
     }
-    lista.push({ mes, turma, receita: Number(linha[2] || 0) });
+    lista.push({ mes, turma, receita: Number(linha[2] || 0), custoProfessor: Number(linha[3] || 0) });
   });
   return lista;
 }
@@ -600,12 +617,6 @@ function analisesLerCacheComparativoTurmas_() {
   return lista;
 }
 
-/**
- * Mensalidades por turma (valor REALMENTE pago pelos alunos, não o
- * valor devido), agrupado por turma e por mês. Usado só por
- * recalcularCacheAnalisesSIGA — retorna TODAS as turmas (o corte para
- * as top N usado na tela acontece na leitura do cache).
- */
 /**
  * Quanto cada aluno REALMENTE pagou (não o que devia) em cada mês —
  * soma TodosBoletos (só status PAGO) + Comprovante de pagamento, do
@@ -672,6 +683,133 @@ function analisesCalcularValorPagoPorAlunoMes_(ss, identidades) {
   return porAlunoMes;
 }
 
+/**
+ * Quanto a escola pagou de professor, por turma e por mês — soma
+ * "Valor a Pagar" da aba "Pagamentos Professores", agrupando pela
+ * própria coluna Turma e pelo mês de "Data da Aula" (não precisa de
+ * resolução de identidade: a aba já vem com a turma escrita em cada
+ * linha). Usado só pra calcular o lucro da tabela "Mensalidades por
+ * turma no tempo" (receita paga − custo do professor).
+ */
+function analisesCalcularCustoProfessorPorTurmaMes_(ss) {
+  const custoPorTurmaMes = new Map();
+  const aba = ss.getSheetByName('Pagamentos Professores');
+  if (!aba || aba.getLastRow() < 2) {
+    return custoPorTurmaMes;
+  }
+  const dados = aba.getDataRange().getValues();
+  const mapa = mapaGenericoPagUnif_(dados[0]);
+  for (let i = 1; i < dados.length; i++) {
+    const linha = dados[i];
+    const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
+    const dataAula = parseDataPagUnif_(campoPagUnif_(linha, mapa, ['DATA DA AULA', 'DATA_AULA']));
+    if (!turma || !dataAula) continue;
+    const valor = numeroPagUnif_(campoPagUnif_(linha, mapa, ['VALOR A PAGAR']));
+    if (valor <= 0) continue;
+    const chave = turma + '|' + analisesMesRotulo_(dataAula).chave;
+    custoPorTurmaMes.set(chave, (custoPorTurmaMes.get(chave) || 0) + valor);
+  }
+  return custoPorTurmaMes;
+}
+
+/**
+ * Diagnóstico manual — selecione esta função no seletor ao lado do botão
+ * "Executar" no editor do Apps Script e rode direto (sem precisar abrir
+ * a tela). Não grava nada, só lê TodosBoletos/Comprovante de pagamento e
+ * imprime no "Log de execução" quantas linhas foram identificadas (ligadas
+ * a um aluno da DimMatricula) e quantas não foram — se a maioria não for
+ * identificada, analisesCalcularValorPagoPorAlunoMes_ fica quase vazia e
+ * o valor pago acaba não aparecendo (ou aparecendo bem menor que deveria).
+ */
+function diagnosticarValorPagoAnalisesSIGA() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMat = ss.getSheetByName('DimMatricula');
+  const matriculas = lerMatriculasPagUnif_(abaMat);
+  const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+
+  const diagnostico = {
+    boletosLidos: 0,
+    boletosPagos: 0,
+    boletosPagosIdentificados: 0,
+    boletosPagosNaoIdentificados: 0,
+    comprovantesLidos: 0,
+    comprovantesComValor: 0,
+    comprovantesIdentificados: 0,
+    comprovantesNaoIdentificados: 0,
+    amostraNaoIdentificados: []
+  };
+
+  const abaBol = obterAbaTodosBoletosPagamentosSIGA_();
+  if (abaBol && abaBol.getLastRow() >= 2) {
+    const dados = abaBol.getDataRange().getValues();
+    diagnostico.boletosLidos = dados.length - 1;
+    const mapa = mapaCabecalhosPagamentosSIGA_(dados[0]);
+    for (let i = 1; i < dados.length; i++) {
+      const boleto = montarBoletoPagamentosSIGA_(dados[i], mapa, true);
+      if (boleto.statusNormalizado !== 'PAGO') continue;
+      diagnostico.boletosPagos++;
+      const identidade = resolverIdentidadePagamentoSIGA_(identidades, {
+        nome: boleto.nomePagante, documento: boleto.documento
+      }, false);
+      if (identidade) {
+        diagnostico.boletosPagosIdentificados++;
+      } else {
+        diagnostico.boletosPagosNaoIdentificados++;
+        if (diagnostico.amostraNaoIdentificados.length < 15) {
+          diagnostico.amostraNaoIdentificados.push({ origem: 'BOLETO', nome: boleto.nomePagante, documento: boleto.documento });
+        }
+      }
+    }
+  }
+
+  const abaComp = ss.getSheetByName('Comprovante de pagamento');
+  if (abaComp && abaComp.getLastRow() >= 2) {
+    const dados = abaComp.getDataRange().getValues();
+    diagnostico.comprovantesLidos = dados.length - 1;
+    const mapa = mapaGenericoPagUnif_(dados[0]);
+    for (let i = 1; i < dados.length; i++) {
+      const linha = dados[i];
+      const valor =
+        numeroPagUnif_(campoPagUnif_(linha, mapa, ['VALOR PAGO MENSALIDADE'])) +
+        numeroPagUnif_(campoPagUnif_(linha, mapa, [
+          'VALOR PAGO RESIDUO DE MENSALIDADE',
+          'VALOR PAGO RESÍDUO DE MENSALIDADE'
+        ]));
+      if (valor <= 0) continue;
+      diagnostico.comprovantesComValor++;
+      const identidade = resolverComprovantePagamentoSIGA_(identidades, linha, mapa);
+      if (identidade) {
+        diagnostico.comprovantesIdentificados++;
+      } else {
+        diagnostico.comprovantesNaoIdentificados++;
+        if (diagnostico.amostraNaoIdentificados.length < 15) {
+          diagnostico.amostraNaoIdentificados.push({
+            origem: 'COMPROVANTE',
+            nome: campoPagUnif_(linha, mapa, ['NOME DO ALUNO', 'NOME_ALUNO'])
+          });
+        }
+      }
+    }
+  }
+
+  const valorPagoPorAlunoMes = analisesCalcularValorPagoPorAlunoMes_(ss, identidades);
+  let totalValorPagoCalculado = 0;
+  valorPagoPorAlunoMes.forEach(v => { totalValorPagoCalculado += v; });
+  diagnostico.chavesAlunoMes = valorPagoPorAlunoMes.size;
+  diagnostico.totalValorPagoCalculado = arredPagUnif_(totalValorPagoCalculado);
+  diagnostico.amostraValorPago = Array.from(valorPagoPorAlunoMes.entries()).slice(0, 15)
+    .map(([chave, valor]) => ({ chave, valor: arredPagUnif_(valor) }));
+
+  console.log(JSON.stringify(diagnostico, null, 2));
+  return diagnostico;
+}
+
+/**
+ * Mensalidades por turma (valor REALMENTE pago pelos alunos, não o
+ * valor devido), agrupado por turma e por mês. Usado só por
+ * recalcularCacheAnalisesSIGA — retorna TODAS as turmas (o corte para
+ * as top N usado na tela acontece na leitura do cache).
+ */
 function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMes) {
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {

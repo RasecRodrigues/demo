@@ -121,8 +121,8 @@
   <section class="cartao">
     <div class="cartao-cabecalho">
       <div>
-        <h2>Mensalidades por turma no tempo</h2>
-        <span class="subtitulo">Valor efetivamente pago pelos alunos (boleto pago + comprovante), por turma e por mês. Ordenado pelo total do período (role para o lado para ver todos os meses).</span>
+        <h2>Lucro por turma no tempo</h2>
+        <span class="subtitulo">Lucro = valor efetivamente pago pelos alunos (boleto pago + comprovante) − valor pago aos professores dessa turma, por mês. Ordenado pelo total do período (role para o lado para ver todos os meses).</span>
       </div>
     </div>
     <div class="pagamentos-tabela-wrap">
@@ -861,7 +861,7 @@ function desenharGraficosAnalisesSIGA(resultado) {
     () => desenharGraficoMatriculasAnalisesSIGA(resultado.serieMatriculas || []),
     () => desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []),
     () => renderizarTurmasFiltradasAnalisesSIGA(resultado),
-    () => preencherTabelaMensalidadesTempoAnalisesSIGA(resultado.detalheMensalPorTurma || [], resultado.periodos || []),
+    () => preencherTabelaMensalidadesTempoAnalisesSIGA(resultado.lucroPorTurma || [], resultado.periodos || []),
     () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || [])
   ];
   passos.forEach(passo => {
@@ -1186,28 +1186,31 @@ let analisesOrdenacaoPivotTempo = { campo: 'total', direcao: 'desc' };
 function ordenarTabelaMensalidadesTempoAnalisesSIGA(campo) {
   analisesAlternarOrdenacaoPivot_(analisesOrdenacaoPivotTempo, campo);
   if (analisesDadosCache) {
-    preencherTabelaMensalidadesTempoAnalisesSIGA(analisesDadosCache.detalheMensalPorTurma || [], analisesDadosCache.periodos || []);
+    preencherTabelaMensalidadesTempoAnalisesSIGA(analisesDadosCache.lucroPorTurma || [], analisesDadosCache.periodos || []);
   }
 }
 
 /**
- * Mensalidades por turma no tempo: uma tabela com uma turma por linha e
- * um mês por coluna (mais uma coluna de Total) — substitui o gráfico de
- * linhas antigo, que ficava ilegível com muitas turmas competindo por
- * cor. Clique num cabeçalho de coluna pra ordenar por ele.
+ * Lucro por turma no tempo: uma tabela com uma turma por linha e um mês
+ * por coluna (mais uma coluna de Total) — substitui o gráfico de linhas
+ * antigo, que ficava ilegível com muitas turmas competindo por cor.
+ * Clique num cabeçalho de coluna pra ordenar por ele. Recebe
+ * resultado.lucroPorTurma (não detalheMensalPorTurma) — mesmo formato
+ * {turma, periodo, receita}, mas aqui "receita" já vem como lucro
+ * (receita paga − custo do professor), calculado em Analises.gs.
  */
-function preencherTabelaMensalidadesTempoAnalisesSIGA(detalheMensalPorTurma, periodosRotulos) {
+function preencherTabelaMensalidadesTempoAnalisesSIGA(lucroPorTurma, periodosRotulos) {
   const cabecalho = document.getElementById('cabecalhoTabelaMensalidadesTempo');
   const corpo = document.getElementById('corpoTabelaMensalidadesTempo');
   if (!cabecalho || !corpo) return;
 
-  if (!detalheMensalPorTurma.length) {
+  if (!lucroPorTurma.length) {
     cabecalho.innerHTML = '<th>Turma</th>';
-    corpo.innerHTML = '<tr><td class="estado-vazio">Sem dados de mensalidades no período.</td></tr>';
+    corpo.innerHTML = '<tr><td class="estado-vazio">Sem dados de lucro no período.</td></tr>';
     return;
   }
 
-  const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(detalheMensalPorTurma), analisesOrdenacaoPivotTempo);
+  const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(lucroPorTurma), analisesOrdenacaoPivotTempo);
 
   cabecalho.innerHTML =
     analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotTempo) +
