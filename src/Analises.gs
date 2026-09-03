@@ -342,36 +342,42 @@ function garantirCacheAnalisesSIGA_() {
   if (!lock.tryLock(30000)) {
     throw new Error('O cache de Análises está sendo calculado por outra requisição. Tente novamente em instantes.');
   }
-  let comparativoTurmas;
+  let nucleo;
   try {
     if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
       return; // outra execução já terminou de criar o cache enquanto esperávamos o lock
     }
-    comparativoTurmas = analisesRecalcularCacheNucleoSemLock_(ss);
+    nucleo = analisesRecalcularCacheNucleoSemLock_(ss);
   } finally {
     lock.releaseLock();
   }
-  if (comparativoTurmas) {
-    analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
+  if (nucleo) {
+    analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
+    analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas);
   }
 }
 
 /**
  * Entrada pública do recálculo — chamada pelo gatilho de tempo e pelo botão
- * "Recalcular dados". O lock só protege a parte RÁPIDA (criar/gravar as 3
- * abas — segundos). A etapa de frequência, que pode levar minutos, roda
- * DEPOIS de soltar o lock — se ela ficasse presa dentro do lock, qualquer
- * execução concorrente (o gatilho de 6h caindo junto de um clique manual,
- * por exemplo) esperaria só 30s e falharia com "Lock timeout: another
- * process was holding the lock for too long", mesmo a primeira execução
- * sendo legítima e ainda rodando. Escrever na mesma célula de frequência
- * duas vezes ao mesmo tempo não quebra nada (só refaz um trabalho), então
- * essa etapa não precisa de lock nenhum.
+ * "Recalcular dados". O lock só protege a parte RÁPIDA (criar/gravar as
+ * abas de Geral/Comparativo — segundos). Mensalidades por turma/aluno
+ * (que precisa varrer TodosBoletos + Comprovante de pagamento pra achar
+ * o valor REALMENTE pago) e frequência (que pode levar minutos) rodam
+ * DEPOIS de soltar o lock — se qualquer uma ficasse presa dentro do
+ * lock, qualquer execução concorrente (o gatilho de 6h caindo junto de
+ * um clique manual, por exemplo) esperaria só 30s e falharia com "Lock
+ * timeout: another process was holding the lock for too long", mesmo a
+ * primeira execução sendo legítima e ainda rodando (foi exatamente isso
+ * que voltou a acontecer quando o cálculo de valor pago/custo de
+ * professor foi colocado dentro do núcleo com lock). Regravar essas
+ * abas duas vezes ao mesmo tempo não quebra nada (só refaz um
+ * trabalho), então nenhuma delas precisa de lock.
  */
 function recalcularCacheAnalisesSIGA() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const comparativoTurmas = analisesRecalcularCacheNucleoComLock_(ss);
-  analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas);
+  const nucleo = analisesRecalcularCacheNucleoComLock_(ss);
+  analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
+  analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas);
 }
 
 function analisesRecalcularCacheNucleoComLock_(ss) {
@@ -385,11 +391,16 @@ function analisesRecalcularCacheNucleoComLock_(ss) {
 }
 
 /**
- * A parte rápida do recálculo (DimMatricula, TodosBoletos): calcula e
- * grava os números "principais" — ativos, saídas, receita, mensalidades.
- * Não depende de obterPainelFrequenciaTurma (isso fica pra depois, fora
- * do lock — ver recalcularCacheAnalisesSIGA). Sempre chamada com o lock
- * de script já adquirido — nunca chame direto.
+ * A parte rápida do recálculo (só DimMatricula + a série financeira
+ * geral, que já era assim antes): calcula e grava os números "gerais" —
+ * ativos, saídas, receita total, comparativo entre turmas. NÃO calcula
+ * mensalidades por turma/aluno nem custo de professor (isso é lento —
+ * varre TodosBoletos/Comprovante de pagamento/Pagamentos Professores —
+ * e roda depois, sem lock, em analisesAtualizarMensalidadesCacheSemLock_).
+ * Sempre chamada com o lock de script já adquirido — nunca chame direto.
+ * Retorna tudo que as etapas seguintes (mensalidades e frequência)
+ * precisam, já que elas rodam fora do lock e não podem recalcular do
+ * zero.
  */
 function analisesRecalcularCacheNucleoSemLock_(ss) {
   const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
@@ -411,18 +422,30 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   // Detalhamento e na Comparação entre turmas. Turma sem ninguém ativo
   // não aparece mais no gráfico/tabela de mensalidades.
   const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
+
+  analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
+  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
+
+  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+
+  return { comparativoTurmas, matriculas, identidades, periodos, turmasAtivas };
+}
+
+/**
+ * Mensalidades por turma (valor pago, lucro) e por aluno — a parte
+ * LENTA do recálculo, porque precisa varrer TodosBoletos + Comprovante
+ * de pagamento (valor pago) e Pagamentos Professores (custo). Roda
+ * SEM lock, depois que analisesRecalcularCacheNucleoComLock_ já soltou
+ * o dele — ver o comentário de recalcularCacheAnalisesSIGA.
+ */
+function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
+  const { matriculas, identidades, periodos, turmasAtivas } = nucleo;
   const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
   const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMesTurma);
   const custoProfessorPorTurmaMes = analisesCalcularCustoProfessorPorTurmaMes_(ss);
 
-  analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
-  analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
-
-  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
-
-  return comparativoTurmas;
 }
 
 function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
