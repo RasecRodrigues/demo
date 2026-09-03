@@ -1169,39 +1169,31 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
     const chaveMes = analisesMesRotulo_(ref).chave;
 
     matriculasPorAluno.forEach((matsAluno, chaveAluno) => {
-      const ativas = matsAluno.filter(m =>
-        analisesStatusAtivo_(m.status) && vigenteNoMesPagUnif_(m, ref)
-      );
-      if (!ativas.length) {
-        return;
-      }
-
-      // O valor exibido é o que foi REALMENTE pago (boleto pago +
-      // comprovante) nesse mês — nunca o valor devido, e atribuído à
-      // turma certa quando o próprio pagamento já identifica qual foi
-      // (ver analisesCalcularValorPagoPorAlunoMesTurma_). O valor devido
-      // de cada matrícula só entra aqui pra ratear a parte de turma
-      // desconhecida quando o aluno tem combo. Não usa
-      // obterTurmasEValorDevidoDimPagUnif_ porque ela só considera
-      // status ATIVO — aqui "ativas" já segue a regra própria desta
-      // função (analisesStatusAtivo_, que inclui EM ESPERA).
       const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
       if (!porTurmaPagamento) {
         return;
       }
 
-      // Dinheiro de verdade só pode ser atribuído a matrícula que já
-      // começou de fato (status ATIVO). EM ESPERA entra em "ativas" (pra
-      // contagem/valor devido nas outras tabelas), mas nunca pode roubar
-      // fatia de um pagamento real — foi exatamente isso que fez uma
-      // turma que ainda vai começar aparecer com lucro/pagamento.
-      const ativasParaRateio = ativas.filter(m => normalizarPagUnif_(m.status) === 'ATIVO');
-      if (!ativasParaRateio.length) {
+      // Dinheiro de verdade é atribuído por VIGÊNCIA da matrícula
+      // naquele mês — nunca pelo status ATUAL do aluno. Um aluno que já
+      // se formou/saiu (status hoje é CANCELADO/FORMADO/etc.) continua
+      // tendo pago de verdade nos meses em que esteve lá; exigir
+      // status === 'ATIVO' aqui fazia TODO o histórico de quem não está
+      // mais ativo HOJE sumir da tabela (era ~95% do valor pago real).
+      // m.inicio <= dataCalculo cobre o caso de uma matrícula que só
+      // começa no meio do mês atual — vigenteNoMesPagUnif_ sozinho, por
+      // trabalhar em granularidade de mês inteiro, consideraria o mês
+      // inteiro vigente mesmo antes do início real (foi isso que fez uma
+      // turma que ainda vai começar aparecer com pagamento antes).
+      const ativas = matsAluno.filter(m =>
+        vigenteNoMesPagUnif_(m, ref) && (!m.inicio || m.inicio <= dataCalculo)
+      );
+      if (!ativas.length) {
         return;
       }
 
-      const combo = ativasParaRateio.length > 1;
-      const turmasDoMes = ativasParaRateio
+      const combo = ativas.length > 1;
+      const turmasDoMes = ativas
         .map(m => ({
           turma: String(m.turma || '').trim(),
           valorDevido: Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0)
