@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>Portal do Aluno</title>
+
+  <?!= include('PortalAlunoStyles'); ?>
+</head>
+
+<body>
+  <section id="login" class="login">
+    <div class="login-card">
+      <span class="marca">SIGA</span>
+
+      <h1>Portal do Aluno</h1>
+      <p>Acesse suas notas e frequência.</p>
+
+      <label for="loginAluno">Nome completo</label>
+
+<div class="autocomplete-aluno-wrap">
+
+  <input
+    id="loginAluno"
+    type="text"
+    autocomplete="off"
+    placeholder="Comece a digitar o nome..."
+    oninput="buscarNomePortalAlunoSIGA()"
+    onfocus="buscarNomePortalAlunoSIGA()"
+  >
+
+  <div
+    id="autocompletePortalAluno"
+    class="autocomplete-portal-aluno oculto"
+  ></div>
+
+</div>
+
+      <label for="senhaAluno">CPF do aluno ou responsável</label>
+      <input
+        id="senhaAluno"
+        type="password"
+        inputmode="numeric"
+        autocomplete="current-password"
+        placeholder="Somente números"
+      >
+
+      <div id="msgLogin" class="msg oculto"></div>
+
+      <button
+        id="btnEntrar"
+        type="button"
+        onclick="entrarPortalAluno()"
+      >
+        Entrar
+      </button>
+    </div>
+  </section>
+
+  <main id="portal" class="portal oculto">
+    <header>
+      <div>
+        <span class="marca">SIGA</span>
+        <h1>Portal do Aluno</h1>
+      </div>
+
+      <button
+        type="button"
+        class="sair"
+        onclick="sairPortalAlunoTela()"
+      >
+        Sair
+      </button>
+    </header>
+
+    <section class="perfil card">
+      <div class="foto-wrap">
+        <img id="fotoPerfil" alt="Foto do aluno">
+
+        <label class="trocar">
+          Alterar foto
+
+          <input
+            id="arquivoFoto"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onchange="enviarFotoPortalAluno(this)"
+          >
+        </label>
+      </div>
+
+      <div>
+        <h2 id="nomePerfil"></h2>
+        <p id="idadePerfil"></p>
+        <div id="turmasPerfil" class="chips"></div>
+      </div>
+
+      <?!= include('PortalAlunoCamisas_'); ?>
+    </section>
+
+    <section class="cards">
+      <article class="card kpi">
+        <span>Frequência</span>
+        <strong id="freqPercentual">0%</strong>
+      </article>
+
+      <article class="card kpi">
+        <span>Presenças</span>
+        <strong id="freqPresentes">0</strong>
+      </article>
+
+      <article class="card kpi">
+        <span>Faltas</span>
+        <strong id="freqFaltas">0</strong>
+      </article>
+
+      <article class="card kpi">
+        <span>Aulas registradas</span>
+        <strong id="freqTotal">0</strong>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>Frequência por turma</h2>
+
+      <div class="tabela">
+        <table>
+          <thead>
+            <tr>
+              <th>Turma</th>
+              <th>Aulas</th>
+              <th>Presenças</th>
+              <th>Faltas</th>
+              <th>Frequência</th>
+            </tr>
+          </thead>
+
+          <tbody id="corpoFrequencia"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Notas</h2>
+
+      <p class="aviso-notas">Observação: Para avançar ao próximo módulo, o aluno deve obter nota igual ou superior a 7,0 em cada avaliação e média final igual ou superior a 7,0. Caso necessário, deverá realizar a recuperação para atualização das notas. A não realização da avaliação/recuperação implicará nota 0,0.</p>
+
+      <div class="tabela">
+        <table>
+          <thead>
+            <tr>
+              <th>Turma</th>
+              <th>Disciplina</th>
+              <th>Nota</th>
+              <th>Professor</th>
+            </tr>
+          </thead>
+
+          <tbody id="corpoNotasAluno"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <?!= include('PortalAlunoScripts'); ?>
+</body>
+</html>

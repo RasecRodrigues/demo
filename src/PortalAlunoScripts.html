@@ -1,0 +1,618 @@
+<script>
+const CHAVE_TOKEN_ALUNO='SIGA_PORTAL_ALUNO_TOKEN';let tokenAluno='',dadosPortalAlunoTela=null;
+document.addEventListener('DOMContentLoaded',()=>{const t=localStorage.getItem(CHAVE_TOKEN_ALUNO);if(t){tokenAluno=t;google.script.run.withSuccessHandler(r=>abrirPortalAlunoProgressivo(r?.perfil||null)).withFailureHandler(()=>localStorage.removeItem(CHAVE_TOKEN_ALUNO)).validarSessaoPortalAluno(t);}});
+function entrarPortalAluno(){const b=document.getElementById('btnEntrar');b.disabled=true;b.textContent='Entrando...';google.script.run.withSuccessHandler(r=>{tokenAluno=r.token;localStorage.setItem(CHAVE_TOKEN_ALUNO,tokenAluno);abrirPortalAlunoProgressivo(r.perfil||null);}).withFailureHandler(e=>{b.disabled=false;b.textContent='Entrar';mensagemLogin(e&&e.message?e.message:String(e));}).autenticarPortalAluno({login:document.getElementById('loginAluno').value,senha:document.getElementById('senhaAluno').value});}
+function abrirPortalAlunoProgressivo(perfil){document.getElementById('login').classList.add('oculto');document.getElementById('portal').classList.remove('oculto');dadosPortalAlunoTela={perfil:perfil||{nome:'Aluno',idade:'',foto:''},matriculas:[],frequencia:{total:0,presentes:0,faltas:0,percentual:0,porTurma:[]},notas:[]};renderPortalAluno(dadosPortalAlunoTela);document.getElementById('freqPercentual').textContent='...';document.getElementById('freqPresentes').textContent='...';document.getElementById('freqFaltas').textContent='...';document.getElementById('freqTotal').textContent='...';document.getElementById('corpoFrequencia').innerHTML='<tr><td colspan="5">Calculando frequência...</td></tr>';carregarPartesPortalAluno();}
+let sequenciaCargaPortalAluno = 0;
+function carregarPartesPortalAluno() {
+  const sessao = tokenAluno;
+  const sequencia = ++sequenciaCargaPortalAluno;
+  google.script.run.withSuccessHandler(d => {
+    if (!sessao || tokenAluno !== sessao || sequencia !== sequenciaCargaPortalAluno) return;
+    dadosPortalAlunoTela = d;
+    renderPortalAluno(d);
+    mostrarAtualizacaoPortalAluno(d);
+  }).withFailureHandler(e => {
+    if (tokenAluno !== sessao || sequencia !== sequenciaCargaPortalAluno) return;
+    ['freqPercentual','freqPresentes','freqFaltas','freqTotal'].forEach(id => document.getElementById(id).textContent = '—');
+    const mensagem = 'Não foi possível carregar os dados. Saia e entre novamente para tentar.';
+    document.getElementById('corpoFrequencia').innerHTML = '<tr><td colspan="5">' + escAluno(mensagem) + '</td></tr>';
+    document.getElementById('corpoNotasAluno').innerHTML = '<tr><td colspan="4">' + escAluno(mensagem) + '</td></tr>';
+    console.error(e);
+  }).obterDadosPortalAlunoComComprovantes(sessao);
+}
+function mostrarAtualizacaoPortalAluno(d) {
+  let aviso = document.getElementById('atualizacaoResumoPortalAluno');
+  if (!aviso) {
+    aviso = document.createElement('p');
+    aviso.id = 'atualizacaoResumoPortalAluno';
+    aviso.setAttribute('role','status');
+    document.getElementById('portal').appendChild(aviso);
+  }
+  const data = d.atualizadoEm ? new Date(d.atualizadoEm) : null;
+  aviso.textContent = data && !isNaN(data.getTime())
+    ? 'Dados atualizados em ' + data.toLocaleString('pt-BR') +
+      (d.resumoDesatualizado ? '. Atualização pendente; alterações recentes podem não aparecer ainda.' : '.')
+    : '';
+}
+function abrirPortalAluno(dados){if(dados){dadosPortalAlunoTela=dados;document.getElementById('login').classList.add('oculto');document.getElementById('portal').classList.remove('oculto');renderPortalAluno(dados);return;}abrirPortalAlunoProgressivo(null);}
+function renderPortalAluno(d){const p=d.perfil,f=d.frequencia;document.getElementById('nomePerfil').textContent=p.nome;document.getElementById('idadePerfil').textContent=p.idade+' anos';document.getElementById('fotoPerfil').src=p.foto||'data:image/svg+xml;charset=UTF-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#eee9ff"/><circle cx="60" cy="43" r="22" fill="#9b7bea"/><path d="M22 112c3-28 18-42 38-42s35 14 38 42" fill="#9b7bea"/></svg>');document.getElementById('turmasPerfil').innerHTML=d.matriculas.map(x=>'<span>'+escAluno(x)+'</span>').join('');document.getElementById('freqPercentual').textContent=f.percentual+'%';document.getElementById('freqPresentes').textContent=f.presentes;document.getElementById('freqFaltas').textContent=f.faltas;document.getElementById('freqTotal').textContent=f.total;document.getElementById('corpoFrequencia').innerHTML=f.porTurma.length?f.porTurma.map(x=>`<tr><td>${escAluno(x.turma)}</td><td>${x.total}</td><td>${x.presentes}</td><td>${x.faltas}</td><td><strong>${x.percentual}%</strong></td></tr>`).join(''):'<tr><td colspan="5">Ainda não há chamadas registradas.</td></tr>';document.getElementById('corpoNotasAluno').innerHTML=d.notas.length?d.notas.map(x=>`<tr><td>${escAluno(x.turma)}</td><td>${escAluno(x.disciplina)}</td><td class="nota">${escAluno(x.nota)}</td><td>${escAluno(x.professor)}</td></tr>`).join(''):'<tr><td colspan="4">Ainda não há notas lançadas.</td></tr>';renderFinanceiroPortalAluno(d.financeiro,d.resumoDesatualizado);}
+function enviarFotoPortalAluno(input) {
+  const f=input.files&&input.files[0];if(!f)return;
+  if(f.size>3*1024*1024){alert('A foto deve ter no máximo 3 MB.');return;}
+  const sessao=tokenAluno;
+  const r=new FileReader();
+  r.onload=()=>{
+    if(!sessao||sessao!==tokenAluno)return;
+    google.script.run.withSuccessHandler(x=>{
+      if(sessao!==tokenAluno)return;
+      if(dadosPortalAlunoTela)dadosPortalAlunoTela.perfil.foto=x.url;
+      document.getElementById('fotoPerfil').src=x.url;
+    }).withFailureHandler(e=>{if(sessao===tokenAluno)alert(e.message||e);})
+      .salvarFotoPerfilPortalAluno(sessao,{mimeType:f.type,base64:r.result});
+  };
+  r.onerror=()=>alert('Não foi possível ler a foto.');
+  r.readAsDataURL(f);
+}
+
+function turmasFinanceiroAlunoExibicao(nomes) {
+  const unicos=new Map();
+  (nomes||[]).forEach(nome=>String(nome||'').split(/\s*[+;,\n]\s*/).forEach(parte=>{
+    const n=parte.trim();if(!n||/^COMBO\b/i.test(n))return;
+    const chave=normalizarNomeAutocompletePortalAluno_(n);if(!unicos.has(chave))unicos.set(chave,n);
+  }));
+  return Array.from(unicos.values());
+}
+function renderFinanceiroPortalAluno(financeiro,desatualizado) {
+  document.getElementById('comprovantesAlunoPc')?.remove();
+  limparHistoricoPagamentosAluno();
+  let card=document.getElementById('financeiroPortalAluno');
+  if(!card){
+    card=document.createElement('section');card.id='financeiroPortalAluno';card.className='card';
+    const portal=document.getElementById('portal'),perfil=portal.querySelector('.perfil');
+    if(perfil)perfil.insertAdjacentElement('afterend',card);else portal.appendChild(card);
+  }
+  const estilo=`<style>
+    #financeiroPortalAluno .pa-pag-topo{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}
+    #financeiroPortalAluno .pa-pag-topo h2{margin:0}
+    #financeiroPortalAluno .pa-pag-titulo{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    #financeiroPortalAluno .pa-pag-indicadores{display:flex;align-items:center;gap:14px}
+    #financeiroPortalAluno .pa-pag-check{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border:2px solid #168352;border-radius:50%;color:#168352;font-size:22px;font-weight:700}
+    #financeiroPortalAluno .pa-pag-atualizar{border:0!important;background:transparent!important;box-shadow:none!important;color:#68758a!important;padding:6px!important;min-height:36px;min-width:36px;font-size:24px!important;cursor:pointer}
+    #financeiroPortalAluno .tabela{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    #financeiroPortalAluno table{width:100%;min-width:1180px;border-collapse:collapse;text-align:left}
+    #financeiroPortalAluno th{padding:14px 12px;font-size:13px;color:#536176;font-weight:700;border-bottom:1px solid #e1e5ed;white-space:nowrap}
+    #financeiroPortalAluno td{padding:16px 12px;border-bottom:1px solid #e8ebf1;vertical-align:middle;font-size:14px;line-height:1.5}
+    #financeiroPortalAluno .pa-pag-turmas{min-width:230px;max-width:310px;white-space:normal;overflow-wrap:anywhere}
+    #financeiroPortalAluno .pa-pag-data,#financeiroPortalAluno .pa-pag-valor{white-space:nowrap}
+    #financeiroPortalAluno .pa-pag-sub{display:block;color:#718096;font-size:12px;margin-top:3px;font-weight:400}
+    #financeiroPortalAluno .pa-pag-link{display:inline-block!important;border:0!important;box-shadow:none!important;background:transparent!important;padding:0!important;color:#6425e8!important;font-size:13px!important;font-weight:600!important;text-decoration:underline!important;text-underline-offset:3px;cursor:pointer;border-radius:0!important;min-height:30px}
+    #financeiroPortalAluno button:focus-visible{outline:2px solid #6425e8!important;outline-offset:3px}
+    #financeiroPortalAluno button:disabled{opacity:.5;cursor:wait}
+    #financeiroPortalAluno [hidden]{display:none!important}
+    #financeiroPortalAluno .pa-grupo td{padding:0;background:#f8f8ff}
+    #financeiroPortalAluno .pa-grupo-botao{display:flex!important;align-items:center;justify-content:space-between;gap:20px;width:100%;text-align:left;padding:18px 14px!important;border:0!important;border-radius:0!important;background:transparent!important;color:#14233b!important;box-shadow:none!important;cursor:pointer}
+    #financeiroPortalAluno .pa-grupo-nome{display:flex;gap:14px;align-items:center;font-size:16px;font-weight:700}
+    #financeiroPortalAluno .pa-seta{color:#718096;font-size:16px;transition:transform .15s}
+    #financeiroPortalAluno [aria-expanded="true"] .pa-seta{transform:rotate(90deg)}
+    #financeiroPortalAluno .pa-ativa{font-size:12px;color:#087b58;background:#e9fbf1;border-radius:20px;padding:5px 12px;font-weight:600}
+    #financeiroPortalAluno .pa-filho{background:#fafbfd}
+    #financeiroPortalAluno .pa-filho .pa-pag-turmas{padding-left:28px}
+    #financeiroPortalAluno .pa-ramo{color:#bdc7d5;margin-right:9px}
+    #financeiroPortalAluno .pa-hist-check{color:#168352;font-size:21px}
+    #financeiroPortalAluno .pa-pag-aviso{font-size:13px;color:#68758a;margin:12px 0 0}
+    #financeiroPortalAluno .pa-pag-aviso:empty{display:none}
+    #financeiroPortalAluno .pa-pag-chave{font-size:12px;word-break:break-all;display:block;user-select:text}
+    #financeiroPortalAluno .pa-comprovante-form{background:#f7f8fc;padding:16px;border:1px solid #e1e5ed;border-radius:10px}
+    #financeiroPortalAluno .pa-comprovante-form fieldset{border:0;padding:0;margin:12px 0;display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:14px}
+    #financeiroPortalAluno .pa-comprovante-form label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;margin:0}
+    #financeiroPortalAluno .pa-comprovante-form input,#financeiroPortalAluno .pa-comprovante-form select{box-sizing:border-box;width:100%;min-height:40px;padding:8px;border:1px solid #cfd6e4;border-radius:7px;font-size:14px;background:#fff}
+    #financeiroPortalAluno .pa-comprovante-arquivo{grid-column:1/-1}
+    #financeiroPortalAluno .pa-comprovante-acoes{display:flex;gap:20px;align-items:center}
+    @media(max-width:700px){#financeiroPortalAluno .pa-comprovante-form fieldset{grid-template-columns:1fr 1fr}}
+  </style>`;
+  const turmas=turmasFinanceiroAlunoExibicao(dadosPortalAlunoTela?.matriculas?.length?dadosPortalAlunoTela.matriculas:financeiro?.turmas||[]);
+  const competencia=String(financeiro?.competencia||'').split('-').reverse().join('/');
+  card.innerHTML=estilo+'<div class="pa-pag-topo"><div class="pa-pag-titulo"><h2>Pagamentos</h2><span id="indicadorTurmasAtivasAluno" class="pa-ativa"'+(turmas.length?'':' hidden')+'>'+(turmas.length>1?'Turmas ativas':'Turma ativa')+'</span></div><div class="pa-pag-indicadores">'+
+    (financeiro?.status==='PAGO'?'<span class="pa-pag-check" role="img" aria-label="Mensalidade de '+escAlunoAtributo_(competencia)+' quitada" title="Mensalidade de '+escAlunoAtributo_(competencia)+' quitada">✓</span>':'')+
+    '<button class="pa-pag-atualizar" type="button" aria-label="Atualizar pagamentos" title="Atualizar pagamentos" onclick="atualizarFinanceiroAlunoPc(this)">↻</button></div></div>'+
+    '<div class="tabela" role="region" aria-label="Pagamentos das turmas ativas" tabindex="0"><table aria-label="Pagamentos">'+
+    '<thead><tr><th>Turmas</th><th>Mês de referência</th><th>Mês de pagamento</th><th>Valor mensalidade</th><th>Valor Pago</th><th>Valor Faltante</th><th>Situação</th><th>Insira o comprovante</th></tr></thead><tbody>'+
+    (turmas.length?'<tr class="pa-grupo"><td colspan="8"><button id="abrirHistoricoPagamentosAluno" type="button" class="pa-grupo-botao" aria-expanded="false" aria-controls="historicoPagamentosAluno" onclick="alternarHistoricoPagamentosAluno()"><span class="pa-grupo-nome"><span class="pa-seta" aria-hidden="true">▸</span><span id="nomeGrupoPagamentosAluno">'+escAluno(turmas.join(' + '))+'</span></span></button></td></tr>':
+      '<tr><td colspan="8">'+(financeiro?'Não há turma ativa para exibir.':'Carregando turmas ativas...')+'</td></tr>')+
+    '</tbody><tbody id="historicoPagamentosAluno" hidden></tbody></table></div>'+
+    '<p id="mensagemBoletoPortalAluno" class="pa-pag-aviso" role="status" aria-live="polite"></p>';
+  if(desatualizado)document.getElementById('mensagemBoletoPortalAluno').textContent='Dados aguardando atualização. Use ↻ para consultar.';
+}
+
+async function copiarChavePixMensalidadePortalAluno(botao) {
+  const sessao=tokenAluno,fin=dadosPortalAlunoTela?.financeiro;
+  const msg=document.getElementById('mensagemBoletoPortalAluno');
+  if(!sessao||!fin||dadosPortalAlunoTela.comprovantePendenteMes||!['EM_ABERTO','PARCIAL'].includes(fin.status)||!(Number(fin.valorFaltante)>0)){
+    msg.textContent='Atualize os pagamentos antes de realizar outro pagamento.';return;
+  }
+  const chave='oficinadeteatroge@gmail.com';
+  botao.disabled=true;
+  try {
+    await navigator.clipboard.writeText(chave);
+    if(sessao===tokenAluno)msg.textContent='Chave Pix copiada. Confira o beneficiário e o valor no aplicativo do banco.';
+  }catch(e){
+    if(sessao!==tokenAluno)return;
+    msg.textContent='Selecione e copie a chave: ';
+    const campo=document.createElement('input');campo.readOnly=true;campo.value=chave;campo.setAttribute('aria-label','Chave Pix');msg.appendChild(campo);campo.focus();campo.select();
+  }finally{botao.disabled=false;}
+}
+
+function abrirBoletoPortalAlunoSeguro(idBoleto,botao) {
+  const sessao=tokenAluno;if(!sessao)return;
+  const mensagem=document.getElementById('mensagemBoletoPortalAluno');
+  mensagem.textContent='Conferindo pagamento e disponibilidade do boleto...';
+  const anterior=botao.textContent;botao.disabled=true;botao.textContent='Conferindo...';
+  const janela=window.open('','_blank');
+  if(janela){janela.opener=null;janela.document.body.textContent='Conferindo boleto no SIGA...';}
+  google.script.run.withSuccessHandler(r=>{
+    botao.disabled=false;botao.textContent=anterior;
+    if(tokenAluno!==sessao){if(janela)janela.close();return;}
+    try{
+      const url=new URL(r.url);if(url.protocol!=='https:'||url.username||url.password)throw new Error('Link inválido.');
+      if(janela&&!janela.closed){janela.location.replace(url.href);mensagem.textContent='Boleto aberto em outra aba.';}
+      else {
+        mensagem.textContent='Seu navegador bloqueou a abertura. ';
+        const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';
+        link.textContent='Abrir boleto conferido';mensagem.appendChild(link);
+      }
+    }catch(e){if(janela)janela.close();mensagem.textContent='Não foi possível abrir o link. Consulte a secretaria.';}
+  }).withFailureHandler(e=>{
+    if(janela)janela.close();botao.disabled=false;botao.textContent=anterior;
+    if(tokenAluno===sessao)mensagem.textContent=e&&e.message?e.message:'Não foi possível conferir o boleto.';
+  }).obterOpcoesPagamentoPortalAluno(sessao,idBoleto);
+}
+function sairPortalAlunoTela() {
+  const t=tokenAluno;tokenAluno='';dadosPortalAlunoTela=null;sequenciaCargaPortalAluno++;
+  document.getElementById('comprovantesAlunoPc')?.remove();limparHistoricoPagamentosAluno();
+  localStorage.removeItem(CHAVE_TOKEN_ALUNO);
+  document.getElementById('portal').classList.add('oculto');
+  document.getElementById('login').classList.remove('oculto');
+  document.getElementById('senhaAluno').value='';
+  const b=document.getElementById('btnEntrar');b.disabled=false;b.textContent='Entrar';
+  document.getElementById('msgLogin').classList.add('oculto');
+  if(t)google.script.run.withFailureHandler(e=>console.error(e)).sairPortalAluno(t);
+}
+function mensagemLogin(t){const e=document.getElementById('msgLogin');e.textContent=t;e.className='msg erro';}function escAluno(v){const d=document.createElement('div');d.textContent=v??'';return d.innerHTML;}
+/* =========================================================
+   AUTOCOMPLETE DO NOME — PORTAL DO ALUNO
+   ========================================================= */
+
+let nomesPortalAlunoSIGA = [];
+let nomesPortalAlunoCarregandoSIGA = false;
+let nomesPortalAlunoCarregadoSIGA = false;
+
+function carregarNomesPortalAlunoSIGA() {
+  if (
+    nomesPortalAlunoCarregadoSIGA ||
+    nomesPortalAlunoCarregandoSIGA
+  ) {
+    return;
+  }
+
+  nomesPortalAlunoCarregandoSIGA = true;
+
+  google.script.run
+    .withSuccessHandler(lista => {
+      nomesPortalAlunoSIGA =
+        Array.isArray(lista) ? lista : [];
+
+      nomesPortalAlunoCarregadoSIGA = true;
+      nomesPortalAlunoCarregandoSIGA = false;
+
+      buscarNomePortalAlunoSIGA();
+    })
+    .withFailureHandler(erro => {
+      console.error(
+        'Erro ao carregar nomes do Portal do Aluno:',
+        erro
+      );
+
+      nomesPortalAlunoSIGA = [];
+      nomesPortalAlunoCarregandoSIGA = false;
+    })
+    .listarNomesPortalAlunoSIGA();
+}
+
+
+function normalizarNomeAutocompletePortalAluno_(valor) {
+  return String(valor || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+}
+
+
+function buscarNomePortalAlunoSIGA() {
+  const input =
+    document.getElementById('loginAluno');
+
+  const lista =
+    document.getElementById(
+      'autocompletePortalAluno'
+    );
+
+  if (!input || !lista) {
+    return;
+  }
+
+  if (!nomesPortalAlunoCarregadoSIGA) {
+    carregarNomesPortalAlunoSIGA();
+
+    if (input.value.trim().length >= 2) {
+      lista.innerHTML = `
+        <div class="autocomplete-sem-resultado">
+          Carregando nomes...
+        </div>
+      `;
+
+      lista.classList.remove('oculto');
+    }
+
+    return;
+  }
+
+  const termo =
+    normalizarNomeAutocompletePortalAluno_(
+      input.value
+    );
+
+  if (termo.length < 2) {
+    lista.innerHTML = '';
+    lista.classList.add('oculto');
+    return;
+  }
+
+  /*
+   * Primeiro prioriza nomes que COMEÇAM com o texto digitado.
+   * Depois nomes que apenas CONTÊM o texto.
+   */
+  const encontrados =
+    nomesPortalAlunoSIGA
+      .filter(item => {
+        const nome =
+          normalizarNomeAutocompletePortalAluno_(
+            item.nomeAluno
+          );
+
+        return nome.includes(termo);
+      })
+      .sort((a, b) => {
+        const nomeA =
+          normalizarNomeAutocompletePortalAluno_(
+            a.nomeAluno
+          );
+
+        const nomeB =
+          normalizarNomeAutocompletePortalAluno_(
+            b.nomeAluno
+          );
+
+        const comecaA =
+          nomeA.startsWith(termo);
+
+        const comecaB =
+          nomeB.startsWith(termo);
+
+        if (comecaA !== comecaB) {
+          return comecaA ? -1 : 1;
+        }
+
+        return String(a.nomeAluno || '')
+          .localeCompare(
+            String(b.nomeAluno || ''),
+            'pt-BR'
+          );
+      })
+      .slice(0, 10);
+
+  if (!encontrados.length) {
+    lista.innerHTML = `
+      <div class="autocomplete-sem-resultado">
+        Nenhum aluno encontrado.
+      </div>
+    `;
+
+    lista.classList.remove('oculto');
+    return;
+  }
+
+  lista.innerHTML =
+    encontrados
+      .map(item => `
+        <button
+          type="button"
+          class="opcao-autocomplete-aluno"
+          data-nome="${escAlunoAtributo_(item.nomeAluno)}"
+        >
+          ${escAluno(item.nomeAluno)}
+        </button>
+      `)
+      .join('');
+
+  lista.classList.remove('oculto');
+
+  lista
+    .querySelectorAll(
+      '.opcao-autocomplete-aluno'
+    )
+    .forEach(botao => {
+      botao.addEventListener(
+        'mousedown',
+        evento => {
+          evento.preventDefault();
+
+          selecionarNomePortalAlunoSIGA(
+            botao.dataset.nome || ''
+          );
+        }
+      );
+    });
+}
+
+
+function selecionarNomePortalAlunoSIGA(nome) {
+  const input =
+    document.getElementById('loginAluno');
+
+  const lista =
+    document.getElementById(
+      'autocompletePortalAluno'
+    );
+
+  if (input) {
+    input.value = nome;
+  }
+
+  if (lista) {
+    lista.innerHTML = '';
+    lista.classList.add('oculto');
+  }
+
+  document
+    .getElementById('senhaAluno')
+    ?.focus();
+}
+
+
+function escAlunoAtributo_(valor) {
+  return String(valor || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+
+/* Fecha a lista ao clicar fora */
+
+document.addEventListener(
+  'click',
+  evento => {
+    const campo =
+      document.querySelector(
+        '.autocomplete-aluno-wrap'
+      );
+
+    if (
+      campo &&
+      !campo.contains(evento.target)
+    ) {
+      document
+        .getElementById(
+          'autocompletePortalAluno'
+        )
+        ?.classList.add('oculto');
+    }
+  }
+);
+
+
+/*
+ * Pré-carrega os nomes logo que o login aparece.
+ * Assim, quando o aluno começar a digitar,
+ * a lista provavelmente já estará pronta.
+ */
+
+document.addEventListener(
+  'DOMContentLoaded',
+  () => {
+    carregarNomesPortalAlunoSIGA();
+  }
+);
+// A árvore consulta somente ao expandir. O formulário pertence à linha do mês.
+let historicoPagamentosAlunoEstado=null;
+function limparHistoricoPagamentosAluno() {
+  historicoPagamentosAlunoEstado=null;
+  const painel=document.getElementById('historicoPagamentosAluno');
+  if(painel){painel.hidden=true;painel.innerHTML='';}
+}
+function alternarHistoricoPagamentosAluno() {
+  const painel=document.getElementById('historicoPagamentosAluno');
+  const botao=document.getElementById('abrirHistoricoPagamentosAluno');
+  if(!painel||!botao||!tokenAluno)return;
+  const abrir=painel.hidden;painel.hidden=!abrir;botao.setAttribute('aria-expanded',String(abrir));
+  if(!abrir)return;
+  const e=historicoPagamentosAlunoEstado;
+  if(e&&e.sessao===tokenAluno&&(e.carregando||e.formAberto||Date.now()-e.criadoEm<60000))return;
+  carregarHistoricoPagamentosAluno(false);
+}
+function carregarHistoricoPagamentosAluno(maisAntigos) {
+  const painel=document.getElementById('historicoPagamentosAluno');
+  if(!painel||!tokenAluno)return;
+  let estado=historicoPagamentosAlunoEstado;
+  if(estado&&estado.sessao===tokenAluno&&(estado.carregando||estado.formAberto||estado.enviando))return;
+  if(!maisAntigos||!estado||estado.sessao!==tokenAluno){
+    estado={sessao:tokenAluno,itens:[],carregando:false,carregado:false,proximoAntesDe:null,erro:'',criadoEm:Date.now(),formAberto:'',enviando:false};
+    historicoPagamentosAlunoEstado=estado;
+  }
+  if(maisAntigos&&!estado.proximoAntesDe)return;
+  estado.carregando=true;estado.erro='';renderHistoricoPagamentosAluno();
+  const sessao=tokenAluno,antesDe=maisAntigos?estado.proximoAntesDe:'';
+  google.script.run.withSuccessHandler(r=>{
+    if(tokenAluno!==sessao||historicoPagamentosAlunoEstado!==estado)return;
+    estado.carregando=false;estado.carregado=true;estado.criadoEm=Date.now();
+    const porMes=new Map(estado.itens.map(x=>[x.competencia,x]));
+    (r.itens||[]).filter(x=>/^\d{4}-(0[1-9]|1[0-2])$/.test(x.competencia)&&x.status!=='CANCELADO').forEach(x=>porMes.set(x.competencia,x));
+    estado.itens=Array.from(porMes.values()).sort((a,b)=>String(b.competencia).localeCompare(String(a.competencia)));
+    estado.proximoAntesDe=r.proximoAntesDe||null;estado.semCompetencia=r.semCompetencia===true;
+    estado.dataHoje=r.dataHoje||dadosPortalAlunoTela?.dataHojePortal||'';
+    if(Array.isArray(r.turmasAtivas)){
+      estado.turmasAtivas=turmasFinanceiroAlunoExibicao(r.turmasAtivas);
+      const nome=document.getElementById('nomeGrupoPagamentosAluno');
+      if(nome)nome.textContent=estado.turmasAtivas.join(' + ')||'Nenhuma turma ativa';
+      const indicador=document.getElementById('indicadorTurmasAtivasAluno');
+      if(indicador){indicador.hidden=!estado.turmasAtivas.length;indicador.textContent=estado.turmasAtivas.length>1?'Turmas ativas':'Turma ativa';}
+    }
+    renderHistoricoPagamentosAluno();
+  }).withFailureHandler(()=>{
+    if(tokenAluno!==sessao||historicoPagamentosAlunoEstado!==estado)return;
+    estado.carregando=false;estado.erro='Não foi possível carregar os pagamentos. Tente novamente.';
+    renderHistoricoPagamentosAluno();
+  }).obterHistoricoPagamentosPortalAluno(sessao,{antesDe,forcar:!maisAntigos});
+}
+function podeEnviarComprovanteHistoricoAluno(x) {
+  return !!x&&x.permiteComprovante===true&&!x.comprovantePendente&&
+    ['EM_ABERTO','PARCIAL'].includes(x.status)&&Number.isFinite(x.saldoConfirmado)&&x.saldoConfirmado>0;
+}
+function agruparMesesPagamentoAluno(pagamentos) {
+  const meses=new Map();
+  (pagamentos||[]).forEach(p=>{
+    const mes=String(p.data||'').slice(0,7);
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)||!Number.isFinite(p.valor)||p.valor<0)return;
+    meses.set(mes,(meses.get(mes)||0)+Math.round(p.valor*100));
+  });
+  return Array.from(meses,([mes,centavos])=>({mes,valor:centavos/100})).sort((a,b)=>a.mes.localeCompare(b.mes));
+}
+function renderHistoricoPagamentosAluno() {
+  const painel=document.getElementById('historicoPagamentosAluno'),e=historicoPagamentosAlunoEstado;
+  if(!painel||!e||e.sessao!==tokenAluno||e.enviando||e.formAberto)return;
+  const moeda=v=>v==null||v===''||!Number.isFinite(Number(v))?'A conferir':Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  const data=s=>String(s||'').split('-').reverse().join('/');
+  const rotulos={RECEBIMENTO_REGISTRADO:'',EM_ABERTO:'Em aberto',PARCIAL:'Parcial',ISENTO:'Isento',SEM_RECEBIMENTO:'Sem recebimento',EM_CONFERENCIA:'Em conferência'};
+  const linhas=e.itens.filter(x=>x.status!=='CANCELADO').map(x=>{
+    const pagamentos=agruparMesesPagamentoAluno(x.pagamentos);
+    const datas=pagamentos.map(p=>'<div>'+escAluno(data(p.mes))+
+      (pagamentos.length>1?' <span class="pa-pag-sub">'+escAluno(moeda(p.valor))+'</span>':'')+'</div>').join('')||'—';
+    const situacao=x.status==='QUITADO'?'<span class="pa-hist-check" role="img" aria-label="Quitado" title="Quitação confirmada">✓</span>':escAluno(rotulos[x.status]??'Em conferência');
+    const saldo=x.valorFaltante??x.valorASerPago??(['QUITADO','ISENTO'].includes(x.status)?0:x.saldoConfirmado);
+    const podeEnviar=podeEnviarComprovanteHistoricoAluno(x);
+    const comprovante=x.comprovantePendente?'<span class="pa-pag-sub">Em análise</span>':podeEnviar?'<button type="button" class="pa-pag-link" onclick="abrirComprovanteHistoricoAluno(\''+x.competencia+'\')">Inserir comprovante</button>':'—';
+    const fin=dadosPortalAlunoTela?.financeiro;
+    let acoes='';
+    // Boleto/Pix permanecem acessíveis no mês atual, sem acrescentar colunas.
+    if(fin&&x.competencia===fin.competencia&&podeEnviar&&!dadosPortalAlunoTela.comprovantePendenteMes){
+      acoes=(fin.boletos||[]).map(b=>'<div><button type="button" class="pa-pag-link" data-boleto="'+escAlunoAtributo_(b.id)+'" onclick="abrirBoletoPortalAlunoSeguro(this.dataset.boleto,this)">Baixar boleto</button></div>').join('')+
+        '<span class="pa-pag-chave">oficinadeteatroge@gmail.com</span><button type="button" class="pa-pag-link" onclick="copiarChavePixMensalidadePortalAluno(this)">Copiar chave Pix</button>';
+    }
+    return '<tr class="pa-filho"><td class="pa-pag-turmas"><span class="pa-ramo" aria-hidden="true">↳</span>'+escAluno(turmasFinanceiroAlunoExibicao(x.turmas).join(' + ')||'Turma não informada')+
+      '</td><td class="pa-pag-data">'+escAluno(data(x.competencia))+'</td><td class="pa-pag-data">'+datas+
+      '</td><td class="pa-pag-valor"><strong>'+escAluno(moeda(x.valorMensalidade))+'</strong></td><td class="pa-pag-valor"><strong>'+escAluno(moeda(x.totalPago))+'</strong></td><td class="pa-pag-valor"><strong>'+escAluno(moeda(saldo))+'</strong></td><td>'+situacao+acoes+'</td><td>'+comprovante+'</td></tr>'+
+      (podeEnviar?'<tr id="linhaComprovanteAluno-'+x.competencia+'" hidden><td colspan="8"><div id="formularioComprovanteAluno-'+x.competencia+'"></div></td></tr>':'');
+  }).join('');
+  const aviso=(texto,role)=>'<tr><td colspan="8"><span class="pa-pag-aviso"'+(role?' role="'+role+'"':'')+'>'+escAluno(texto)+'</span></td></tr>';
+  painel.innerHTML=linhas+
+    (e.carregando?aviso('Carregando pagamentos...','status'):'')+
+    (!e.carregando&&!e.erro&&e.carregado&&!linhas?aviso('Nenhum pagamento identificado para as turmas ativas neste período.'):'')+
+    (e.semCompetencia?aviso('Há registros sem mês identificado. Consulte a secretaria.'):'')+
+    (e.erro?aviso(e.erro,'alert'):'')+
+    (!e.carregando&&(e.erro||e.proximoAntesDe)?'<tr><td colspan="8"><button id="maisHistoricoPagamentosAluno" type="button" class="pa-pag-link" onclick="carregarHistoricoPagamentosAluno('+Boolean(e.proximoAntesDe)+')">'+(e.erro?'Tentar novamente':'Mais antigos')+'</button></td></tr>':'');
+}
+function abrirComprovanteHistoricoAluno(mes) {
+  const e=historicoPagamentosAlunoEstado;
+  if(!e||e.sessao!==tokenAluno||e.enviando||e.carregando||!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes))return;
+  const x=e.itens.find(r=>r.competencia===mes);
+  if(!podeEnviarComprovanteHistoricoAluno(x))return;
+  if(e.formAberto){
+    if(e.formAberto!==mes)document.getElementById('msgComprovanteHistoricoAluno')?.focus();
+    return; // Não descarta os dados de um formulário já aberto.
+  }
+  const linha=document.getElementById('linhaComprovanteAluno-'+mes),destino=document.getElementById('formularioComprovanteAluno-'+mes);
+  if(!linha||!destino)return;e.formAberto=mes;linha.hidden=false;
+  const mais=document.getElementById('maisHistoricoPagamentosAluno');if(mais)mais.disabled=true;
+  destino.innerHTML='<form class="pa-comprovante-form" data-competencia="'+mes+'" onsubmit="enviarComprovanteHistoricoAluno(event)"><strong>Comprovante · '+escAluno(mes.split('-').reverse().join('/'))+'</strong>'+
+    '<fieldset><label>Data do pagamento<input name="dataPagamento" type="date" required max="'+escAlunoAtributo_(e.dataHoje||'')+'"></label>'+
+    '<label>Valor do comprovante (R$)<input name="valor" type="number" inputmode="decimal" min="0.01" max="100000" step="0.01" required></label>'+
+    '<label>Forma de pagamento<select name="forma"><option>Pix</option><option>Boleto</option><option>Transferência</option></select></label>'+
+    '<label class="pa-comprovante-arquivo">Arquivo · PDF, JPG ou PNG até 3 MB<input name="arquivo" type="file" accept="application/pdf,image/jpeg,image/png" required></label></fieldset>'+
+    '<div class="pa-comprovante-acoes"><button type="submit" class="pa-pag-link">Enviar para validação</button><button type="button" class="pa-pag-link" onclick="cancelarComprovanteHistoricoAluno()">Cancelar</button></div>'+
+    '<p id="msgComprovanteHistoricoAluno" class="pa-pag-aviso" role="status" tabindex="-1">O valor será considerado após validação da secretaria.</p></form>';
+}
+function cancelarComprovanteHistoricoAluno() {
+  const e=historicoPagamentosAlunoEstado;if(!e||e.sessao!==tokenAluno||e.enviando)return;
+  e.formAberto='';renderHistoricoPagamentosAluno();
+}
+function enviarComprovanteHistoricoAluno(evento) {
+  evento.preventDefault();
+  const e=historicoPagamentosAlunoEstado,form=evento.currentTarget;
+  if(!e||e.sessao!==tokenAluno||e.enviando||!form.reportValidity())return;
+  const mes=form.dataset.competencia,x=e.itens.find(r=>r.competencia===mes);
+  if(e.formAberto!==mes||!podeEnviarComprovanteHistoricoAluno(x))return;
+  const msg=document.getElementById('msgComprovanteHistoricoAluno');
+  const arquivo=form.elements.arquivo.files[0];
+  if(!arquivo||arquivo.size>3*1024*1024||!['application/pdf','image/jpeg','image/png'].includes(arquivo.type)){
+    msg.textContent='Selecione PDF, JPG ou PNG de até 3 MB.';return;
+  }
+  const sessao=tokenAluno;
+  const dados={competencia:mes,dataPagamento:form.elements.dataPagamento.value,valor:Number(form.elements.valor.value),forma:form.elements.forma.value,observacao:''};
+  if(!['Pix','Boleto','Transferência'].includes(dados.forma)){
+    msg.textContent='Selecione Pix, boleto ou transferência.';return;
+  }
+  e.enviando=true;form.querySelectorAll('fieldset,button').forEach(n=>n.disabled=true);msg.textContent='Enviando comprovante...';
+  const valido=()=>tokenAluno===sessao&&historicoPagamentosAlunoEstado===e;
+  const falha=erro=>{
+    if(!valido())return;e.enviando=false;form.querySelectorAll('fieldset,button').forEach(n=>n.disabled=false);
+    msg.textContent=erro?.message||'Não foi possível enviar. Tente novamente.';
+  };
+  const leitor=new FileReader();leitor.onerror=()=>falha(new Error('Não foi possível ler o arquivo.'));
+  leitor.onload=()=>{
+    if(!valido())return;
+    dados.arquivo={tipo:arquivo.type,base64:String(leitor.result).split(',')[1]};
+    google.script.run.withSuccessHandler(r=>{
+      if(!valido())return;e.enviando=false;e.formAberto='';
+      const pendente=['PENDENTE','PROCESSANDO'].includes(r.comprovante?.status);
+      if(pendente){
+        x.comprovantePendente=true;x.permiteComprovante=false;
+        if(dadosPortalAlunoTela?.financeiro?.competencia===mes)dadosPortalAlunoTela.comprovantePendenteMes=true;
+        renderHistoricoPagamentosAluno();
+      }else carregarHistoricoPagamentosAluno(false);
+      document.getElementById('mensagemBoletoPortalAluno').textContent=pendente?'Comprovante recebido. Aguarde a validação da secretaria.':'Este comprovante já foi registrado. Atualizando pagamentos...';
+    }).withFailureHandler(falha).enviarComprovanteMensalidadePortalAluno(sessao,dados);
+  };
+  leitor.readAsDataURL(arquivo);
+}
+function atualizarFinanceiroAlunoPc(botao) {
+  const sessao=tokenAluno;if(!sessao)return;botao.disabled=true;
+  google.script.run.withSuccessHandler(r=>{
+    if(tokenAluno!==sessao)return;dadosPortalAlunoTela.financeiro=r.financeiro;dadosPortalAlunoTela.comprovantePendenteMes=r.pendente;
+    renderFinanceiroPortalAluno(r.financeiro,false);
+  }).withFailureHandler(e=>{botao.disabled=false;if(tokenAluno===sessao)document.getElementById('mensagemBoletoPortalAluno').textContent=e.message||'Não foi possível atualizar.';})
+    .atualizarFinanceiroComprovantesPortalAluno(sessao);
+}
+function copiarPixAlunoPc(idBoleto,botao) {
+  const sessao=tokenAluno;if(!sessao)return;botao.disabled=true;
+  const msg=document.getElementById('mensagemBoletoPortalAluno');msg.textContent='Conferindo cobrança...';
+  google.script.run.withSuccessHandler(r=>{
+    botao.disabled=false;if(tokenAluno!==sessao)return;
+    if(!r.pix){msg.textContent='Pix copia e cola não disponível nessa importação. Abra o boleto ou consulte a secretaria.';return;}
+    msg.textContent='';
+    const campo=document.createElement('textarea');campo.readOnly=true;campo.value=r.pix;campo.setAttribute('aria-label','Pix copia e cola');campo.style.width='100%';msg.appendChild(campo);
+    const copiar=document.createElement('button');copiar.type='button';copiar.textContent='Copiar código Pix';msg.appendChild(copiar);
+    const aviso=document.createElement('span');msg.appendChild(aviso);
+    // Novo clique preserva a permissão do navegador para a área de transferência.
+    copiar.onclick=async()=>{
+      if(tokenAluno!==sessao)return;
+      try{await navigator.clipboard.writeText(campo.value);if(tokenAluno===sessao)aviso.textContent=' Código copiado. Confira beneficiário e valor no banco antes de pagar.';}
+      catch(e){campo.focus();campo.select();aviso.textContent=' Selecione e copie o código acima.';}
+    };
+  }).withFailureHandler(e=>{botao.disabled=false;if(tokenAluno===sessao)msg.textContent=e.message||'Não foi possível consultar o Pix.';})
+    .obterOpcoesPagamentoPortalAluno(sessao,idBoleto);
+}
+</script>
