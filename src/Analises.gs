@@ -1076,6 +1076,58 @@ function diagnosticarValorPagoAnalisesSIGA() {
 }
 
 /**
+ * Diagnóstico manual — rode direto pelo editor do Apps Script. Diferente
+ * de diagnosticarValorPagoAnalisesSIGA (que calcula ao vivo, sem tocar
+ * no cache), esta função compara TRÊS números pro mesmo total:
+ *   1) o cálculo AO VIVO (igual ao diagnóstico de identificação);
+ *   2) o que está GRAVADO nas abas AnalisesCache_Turma/PagamentoAluno
+ *      agora (resultado da última vez que "Recalcular dados" rodou);
+ *   3) o que calcularMensalidadesPorTurmaAnalisesSIGA_ realmente mantém
+ *      depois de aplicar o filtro extra (só matrícula com status ATIVO
+ *      de fato, só turma com aluno ativo agora).
+ * Se (1) for bem maior que (2)/(3), o problema é esse filtro cortando
+ * pagamento de aluno que já saiu da turma — não a identificação.
+ */
+function diagnosticarCacheMensalidadesAnalisesSIGA() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMat = ss.getSheetByName('DimMatricula');
+  const matriculas = lerMatriculasPagUnif_(abaMat);
+  const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+
+  const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
+  let totalAoVivo = 0;
+  valorPagoPorAlunoMesTurma.forEach(porTurma => porTurma.forEach(v => { totalAoVivo += v; }));
+
+  const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
+  const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
+  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMesTurma);
+  let totalAposFiltroTurma = 0;
+  mensalidadesPorTurma.resumoPorTurma.forEach(x => { totalAposFiltroTurma += Number(x.receita || 0); });
+
+  const cacheTurma = analisesLerCacheTurma_();
+  let totalGravadoCacheTurma = 0;
+  cacheTurma.forEach(item => { totalGravadoCacheTurma += Number(item.receita || 0); });
+
+  const cachePagamentoAluno = analisesLerCachePagamentoAluno_();
+  let totalGravadoCachePagamentoAluno = 0;
+  cachePagamentoAluno.forEach(porTurma => porTurma.forEach(v => { totalGravadoCachePagamentoAluno += v; }));
+
+  const diagnostico = {
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM),
+    totalAoVivo_semNenhumFiltro: arredPagUnif_(totalAoVivo),
+    totalAposFiltroTurmaAtiva_calculadoAgora: arredPagUnif_(totalAposFiltroTurma),
+    totalGravadoNoCache_AnalisesCache_Turma: arredPagUnif_(totalGravadoCacheTurma),
+    totalGravadoNoCache_AnalisesCache_PagamentoAluno: arredPagUnif_(totalGravadoCachePagamentoAluno),
+    linhasCacheTurma: cacheTurma.length,
+    chavesCachePagamentoAluno: cachePagamentoAluno.size
+  };
+
+  console.log(JSON.stringify(diagnostico, null, 2));
+  return diagnostico;
+}
+
+/**
  * Mensalidades por turma (valor REALMENTE pago pelos alunos, não o
  * valor devido), agrupado por turma e por mês. Usado só por
  * recalcularCacheAnalisesSIGA — retorna TODAS as turmas (o corte para
