@@ -908,11 +908,19 @@ function analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades) {
 /**
  * Junta o mapa turma->valor de um aluno num mês (de
  * analisesCalcularValorPagoPorAlunoMesTurma_) com a lista de turmas dele
- * naquele mês (cada uma com seu valorDevido, só usado como PROPORÇÃO
- * pra ratear a parte de turma desconhecida). Um pagamento cuja turma é
- * conhecida mas não é nenhuma das turmas atuais do aluno (ex.: turma
- * antiga que ele já deixou) é descartado aqui — nunca vaza pra outra
- * turma. Retorna Map<turma, valorPago>.
+ * naquele mês vigentes NAQUELE MÊS (cada uma com seu valorDevido, usado
+ * como PROPORÇÃO pra ratear a parte de turma que não bate com nenhuma
+ * delas). Retorna Map<turma, valorPago>.
+ *
+ * Um pagamento cuja turma não bate com nenhuma das turmas vigentes do
+ * aluno naquele mês SEMPRE é rateado, nunca descartado — isso inclui
+ * tanto turma vazia (não identificada) quanto uma turma preenchida que
+ * não é o nome de uma turma de verdade, como "COMBO TC" na aba
+ * Comprovante de pagamento (é o nome do PACOTE combo de pagamento, não
+ * o TURMA de uma matrícula da DimMatricula — nunca vai bater com
+ * nomesTurmasDoMes). Descartar esse caso — como este código já fez no
+ * passado — apagava por completo o pagamento de quem paga em pacote
+ * combo, mesmo ele tendo uma turma vigente pra ratear.
  */
 function analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes) {
   const resultado = new Map();
@@ -925,11 +933,9 @@ function analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes) {
   porTurmaPagamento.forEach((valor, turma) => {
     if (turma && nomesTurmasDoMes.has(turma)) {
       resultado.set(turma, (resultado.get(turma) || 0) + valor);
-    } else if (!turma) {
+    } else {
       valorDesconhecido += valor;
     }
-    // turma conhecida mas que não é nenhuma das turmas atuais do aluno:
-    // descarta de propósito, não atribui a nenhuma turma atual.
   });
 
   if (valorDesconhecido > 0) {
@@ -1123,6 +1129,62 @@ function diagnosticarCacheMensalidadesAnalisesSIGA() {
     chavesCachePagamentoAluno: cachePagamentoAluno.size
   };
 
+  console.log(JSON.stringify(diagnostico, null, 2));
+  return diagnostico;
+}
+
+/**
+ * Diagnóstico manual pra UM aluno específico — rode direto pelo editor
+ * do Apps Script passando um trecho do nome (ex.: "Franciny Ribeiro") e,
+ * opcionalmente, uma chave de mês "yyyy-MM" (ex.: "2026-08"; sem isso,
+ * mostra todos os meses). Imprime: 1) todas as linhas da DimMatricula
+ * que batem com esse nome (turma, status, início, fim — pra ver se tem
+ * linha antiga sem DATA_CANCELAMENTO/FINALIZACAO preenchida, o que a
+ * faria contar como "vigente pra sempre" e diluir o pagamento entre
+ * turmas); 2) todo pagamento (boleto/comprovante) encontrado pra esse
+ * aluno, com a turma exatamente como foi extraída de cada um — pra ver
+ * se a grafia bate com o campo TURMA da DimMatricula ou se é um rótulo
+ * de pacote (ex.: "COMBO TC") que precisa cair no rateio proporcional
+ * (analisesAtribuirPagamentoPorTurma_) em vez de bater direto.
+ */
+function diagnosticarAlunoAnalisesSIGA(nomeParcial, mesChave) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMat = ss.getSheetByName('DimMatricula');
+  const matriculas = lerMatriculasPagUnif_(abaMat);
+  const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+
+  const termo = normalizarPagUnif_(nomeParcial || '');
+  const matsDoAluno = matriculas.filter(m =>
+    normalizarPagUnif_(m.nome || '').includes(termo) ||
+    normalizarPagUnif_(m.nomeSocial || '').includes(termo)
+  );
+
+  const matriculasInfo = matsDoAluno.map(m => ({
+    chaveAluno: m.chaveAluno,
+    nome: m.nome,
+    turma: m.turma,
+    status: m.status,
+    inicio: m.inicio ? Utilities.formatDate(m.inicio, Session.getScriptTimeZone(), 'yyyy-MM-dd') : null,
+    fim: m.fim ? Utilities.formatDate(m.fim, Session.getScriptTimeZone(), 'yyyy-MM-dd') : '(SEM FIM — vigente pra sempre)'
+  }));
+
+  const chavesAluno = new Set(matsDoAluno.map(m => m.chaveAluno).filter(Boolean));
+
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+  const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
+
+  const pagamentos = [];
+  valorPagoPorAlunoMesTurma.forEach((porTurma, chaveAlunoMes) => {
+    const [chaveAluno, mes] = chaveAlunoMes.split('|');
+    if (!chavesAluno.has(chaveAluno)) return;
+    if (mesChave && mes !== mesChave) return;
+    porTurma.forEach((valor, turma) => {
+      pagamentos.push({ mes, turma: turma || '(turma desconhecida no pagamento)', valor: arredPagUnif_(valor) });
+    });
+  });
+  pagamentos.sort((a, b) => a.mes.localeCompare(b.mes));
+
+  const diagnostico = { matriculas: matriculasInfo, pagamentosEncontrados: pagamentos };
   console.log(JSON.stringify(diagnostico, null, 2));
   return diagnostico;
 }
