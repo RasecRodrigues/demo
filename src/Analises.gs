@@ -391,16 +391,15 @@ function analisesRecalcularCacheNucleoComLock_(ss) {
 }
 
 /**
- * A parte rápida do recálculo (só DimMatricula + a série financeira
- * geral, que já era assim antes): calcula e grava os números "gerais" —
- * ativos, saídas, receita total, comparativo entre turmas. NÃO calcula
- * mensalidades por turma/aluno nem custo de professor (isso é lento —
- * varre TodosBoletos/Comprovante de pagamento/Pagamentos Professores —
- * e roda depois, sem lock, em analisesAtualizarMensalidadesCacheSemLock_).
- * Sempre chamada com o lock de script já adquirido — nunca chame direto.
- * Retorna tudo que as etapas seguintes (mensalidades e frequência)
- * precisam, já que elas rodam fora do lock e não podem recalcular do
- * zero.
+ * A parte rápida do recálculo (só DimMatricula, sem tocar em nenhuma
+ * aba de pagamento): calcula e grava só o comparativo entre turmas.
+ * Nem a receita geral nem mensalidades por turma/aluno são calculadas
+ * aqui — as duas dependem de varrer TodosBoletos/Comprovante de
+ * pagamento (a maior aba do sistema) e rodam depois, sem lock, em
+ * analisesAtualizarMensalidadesCacheSemLock_. Sempre chamada com o lock
+ * de script já adquirido — nunca chame direto. Retorna tudo que a etapa
+ * seguinte precisa, já que ela roda fora do lock e não pode recalcular
+ * do zero.
  */
 function analisesRecalcularCacheNucleoSemLock_(ss) {
   const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
@@ -415,7 +414,6 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
 
   const serieMatriculas = calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos);
-  const serieFinanceira = calcularSerieFinanceiraAnalisesSIGA_(ss, periodos);
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
   // Só turmas com aluno ativo agora — mesmo filtro já usado no
@@ -423,29 +421,38 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   // não aparece mais no gráfico/tabela de mensalidades.
   const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
 
-  analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
 
-  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
-
-  return { comparativoTurmas, matriculas, identidades, periodos, turmasAtivas };
+  return { comparativoTurmas, matriculas, identidades, periodos, turmasAtivas, serieMatriculas };
 }
 
 /**
- * Mensalidades por turma (valor pago, lucro) e por aluno — a parte
- * LENTA do recálculo, porque precisa varrer TodosBoletos + Comprovante
- * de pagamento (valor pago) e Pagamentos Professores (custo). Roda
- * SEM lock, depois que analisesRecalcularCacheNucleoComLock_ já soltou
- * o dele — ver o comentário de recalcularCacheAnalisesSIGA.
+ * Receita geral + mensalidades por turma/aluno + custo de professor — a
+ * parte LENTA do recálculo. Antes disso virar duas funções separadas
+ * (uma pra receita geral, outra pro valor pago por turma), cada uma
+ * varria TodosBoletos + Comprovante de pagamento do zero — ler a maior
+ * aba do sistema duas vezes deixava o recálculo lento a ponto de,
+ * somado com a etapa de frequência logo em seguida, correr risco de
+ * estourar o limite de execução do Apps Script (~6 min) e ser
+ * interrompido no meio, deixando abas de cache atualizadas e outras
+ * não (números discrepantes entre as tabelas). Agora
+ * analisesCalcularFinanceiroEValorPagoSIGA_ faz as duas coisas numa
+ * única passada pelas abas. Roda SEM lock, depois que
+ * analisesRecalcularCacheNucleoComLock_ já soltou o dele — ver o
+ * comentário de recalcularCacheAnalisesSIGA.
  */
 function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
-  const { matriculas, identidades, periodos, turmasAtivas } = nucleo;
-  const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
+  const { matriculas, identidades, periodos, turmasAtivas, serieMatriculas } = nucleo;
+  const { serieFinanceira, valorPagoPorAlunoMesTurma } =
+    analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
   const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMesTurma);
   const custoProfessorPorTurmaMes = analisesCalcularCustoProfessorPorTurmaMes_(ss);
 
+  analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
+
+  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
 }
 
 function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
@@ -702,6 +709,117 @@ function analisesLerCachePagamentoAluno_() {
     mapa.get(chaveAlunoMes).set(turma, Number(linha[2] || 0));
   });
   return mapa;
+}
+
+/**
+ * Faz numa ÚNICA passada por TodosBoletos + Comprovante de pagamento o
+ * que antes eram DUAS varreduras separadas (calcularSerieFinanceiraAnalisesSIGA_
+ * e analisesCalcularValorPagoPorAlunoMesTurma_): a série financeira
+ * mensal — por DATA DE PAGAMENTO, pro gráfico "Receita financeira" — e
+ * o valor pago por aluno/mês/turma — por COMPETÊNCIA (vencimento do
+ * boleto / período de referência do comprovante), pras tabelas de
+ * mensalidades por turma. Ler a maior aba do sistema duas vezes deixava
+ * o recálculo lento o bastante pra, somado com a etapa de frequência
+ * logo depois, arriscar estourar o limite de execução do Apps Script.
+ * Usada só pelo recálculo do cache — o diagnóstico manual
+ * (diagnosticarValorPagoAnalisesSIGA) continua usando a função mais
+ * simples abaixo, que não precisa da série financeira.
+ */
+function analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades) {
+  const porMesFinanceiro = new Map();
+  periodos.forEach(p => porMesFinanceiro.set(analisesMesRotulo_(p).chave, 0));
+
+  const porAlunoMes = new Map();
+  const somarValorPago = (chaveAluno, mesISO, turma, valor) => {
+    if (!chaveAluno || !mesISO || !(valor > 0)) return;
+    const chave = chaveAluno + '|' + mesISO;
+    if (!porAlunoMes.has(chave)) {
+      porAlunoMes.set(chave, new Map());
+    }
+    const porTurma = porAlunoMes.get(chave);
+    porTurma.set(turma, (porTurma.get(turma) || 0) + valor);
+  };
+
+  const abaComp = ss.getSheetByName('Comprovante de pagamento');
+  if (abaComp && abaComp.getLastRow() >= 2) {
+    const dados = abaComp.getDataRange().getValues();
+    const mapa = mapaGenericoPagUnif_(dados[0]);
+
+    dados.slice(1).forEach(linha => {
+      const valorMensalidade =
+        numeroPagUnif_(campoPagUnif_(linha, mapa, ['VALOR PAGO MENSALIDADE'])) +
+        numeroPagUnif_(campoPagUnif_(linha, mapa, [
+          'VALOR PAGO RESIDUO DE MENSALIDADE',
+          'VALOR PAGO RESÍDUO DE MENSALIDADE'
+        ]));
+
+      const dataPagamento = parseDataPagUnif_(
+        campoPagUnif_(linha, mapa, ['Data do Pagamento', 'DATA DO PAGAMENTO'])
+      );
+      if (dataPagamento) {
+        const chaveFin = analisesMesRotulo_(dataPagamento).chave;
+        if (porMesFinanceiro.has(chaveFin)) {
+          const valorFinanceiro =
+            numeroPagUnif_(campoPagUnif_(linha, mapa, ['Valor total pago'])) || valorMensalidade;
+          porMesFinanceiro.set(chaveFin, porMesFinanceiro.get(chaveFin) + valorFinanceiro);
+        }
+      }
+
+      if (valorMensalidade > 0) {
+        const ref = inicioMesPagUnif_(campoPagUnif_(linha, mapa, [
+          'PAGAMENTO REFERENTE A QUAL PERIODO?',
+          'PAGAMENTO REFERENTE A QUAL PERÍODO?',
+          'PERIODO DE REFERENCIA',
+          'PERÍODO DE REFERÊNCIA'
+        ]));
+        if (ref) {
+          const identidade = resolverComprovantePagamentoSIGA_(identidades, linha, mapa);
+          if (identidade) {
+            const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
+            somarValorPago(identidade.chaveAluno, analisesMesRotulo_(ref).chave, turma, valorMensalidade);
+          }
+        }
+      }
+    });
+  }
+
+  const abaBol = obterAbaTodosBoletosPagamentosSIGA_();
+  if (abaBol && abaBol.getLastRow() >= 2) {
+    const dados = abaBol.getDataRange().getValues();
+    const mapa = mapaCabecalhosPagamentosSIGA_(dados[0]);
+
+    dados.slice(1).forEach(linha => {
+      const boleto = montarBoletoPagamentosSIGA_(linha, mapa, true);
+      if (boleto.statusNormalizado !== 'PAGO') return;
+      const valor = Number(boleto.totalPago || boleto.valorTotal || 0);
+
+      const dataPagamento = dataPagamentosSIGA_(boleto.dataPagamento);
+      if (dataPagamento) {
+        const chaveFin = analisesMesRotulo_(dataPagamento).chave;
+        if (porMesFinanceiro.has(chaveFin)) {
+          porMesFinanceiro.set(chaveFin, porMesFinanceiro.get(chaveFin) + valor);
+        }
+      }
+
+      const vencimento = dataPagamentosSIGA_(boleto.vencimentoOriginal || boleto.vencimento);
+      if (vencimento) {
+        const identidade = resolverIdentidadePagamentoSIGA_(identidades, {
+          nome: boleto.nomePagante, documento: boleto.documento
+        }, false);
+        if (identidade) {
+          const turma = separarAlunoTurmaPagUnif_(boleto.nomePagante || '').turma;
+          somarValorPago(identidade.chaveAluno, analisesMesRotulo_(vencimento).chave, turma, valor);
+        }
+      }
+    });
+  }
+
+  const serieFinanceira = periodos.map(p => {
+    const chave = analisesMesRotulo_(p).chave;
+    return { periodo: analisesMesRotulo_(p).rotulo, receita: arredPagUnif_(porMesFinanceiro.get(chave) || 0) };
+  });
+
+  return { serieFinanceira, valorPagoPorAlunoMesTurma: porAlunoMes };
 }
 
 /**
@@ -1166,75 +1284,3 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas, incluirTodas) {
   return incluirTodas ? lista : lista.slice(0, 20);
 }
 
-function calcularSerieFinanceiraAnalisesSIGA_(ss, periodos) {
-  const porMes = new Map();
-  periodos.forEach(p => porMes.set(analisesMesRotulo_(p).chave, 0));
-
-  const abaComp = ss.getSheetByName('Comprovante de pagamento');
-  if (abaComp && abaComp.getLastRow() >= 2) {
-    const dados = abaComp.getDataRange().getValues();
-    const mapa = mapaGenericoPagUnif_(dados[0]);
-
-    dados.slice(1).forEach(linha => {
-      const dataPagamento = parseDataPagUnif_(
-        campoPagUnif_(linha, mapa, ['Data do Pagamento', 'DATA DO PAGAMENTO'])
-      );
-      if (!dataPagamento) {
-        return;
-      }
-
-      const chave = analisesMesRotulo_(dataPagamento).chave;
-      if (!porMes.has(chave)) {
-        return;
-      }
-
-      const valor =
-        numeroPagUnif_(campoPagUnif_(linha, mapa, ['Valor total pago'])) ||
-        (
-          numeroPagUnif_(campoPagUnif_(linha, mapa, ['Valor pago Mensalidade'])) +
-          numeroPagUnif_(campoPagUnif_(linha, mapa, [
-            'Valor pago resíduo de mensalidade',
-            'VALOR PAGO RESIDUO DE MENSALIDADE'
-          ]))
-        );
-
-      porMes.set(chave, porMes.get(chave) + valor);
-    });
-  }
-
-  const abaBol = obterAbaTodosBoletosPagamentosSIGA_();
-  if (abaBol && abaBol.getLastRow() >= 2) {
-    const dados = abaBol.getDataRange().getValues();
-    const mapa = mapaCabecalhosPagamentosSIGA_(dados[0]);
-
-    dados.slice(1).forEach(linha => {
-      const boleto = montarBoletoPagamentosSIGA_(linha, mapa, true);
-      if (boleto.statusNormalizado !== 'PAGO') {
-        return;
-      }
-
-      const dataPagamento = dataPagamentosSIGA_(boleto.dataPagamento);
-      if (!dataPagamento) {
-        return;
-      }
-
-      const chave = analisesMesRotulo_(dataPagamento).chave;
-      if (!porMes.has(chave)) {
-        return;
-      }
-
-      porMes.set(
-        chave,
-        porMes.get(chave) + Number(boleto.totalPago || boleto.valorTotal || 0)
-      );
-    });
-  }
-
-  return periodos.map(p => {
-    const chave = analisesMesRotulo_(p).chave;
-    return {
-      periodo: analisesMesRotulo_(p).rotulo,
-      receita: arredPagUnif_(porMes.get(chave) || 0)
-    };
-  });
-}
