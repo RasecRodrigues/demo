@@ -268,7 +268,10 @@
 #tela-analises .analises-tabela-pivot thead th:first-child{background:#f4f3ef;z-index:3}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos:hover{background:#f7f6f2}
-#tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{padding:12px 14px}
+#tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{
+  padding:14px 14px 14px 20px;
+  border-left:3px solid #d8d6cc;
+}
 
 .analises-link-turma{
   background:none;border:none;padding:0;margin:0;cursor:pointer;
@@ -277,13 +280,26 @@
 }
 .analises-link-turma:hover{color:#195aa8}
 
+.analises-subtabela-alunos-wrap{
+  overflow-x:auto;
+  border:1px solid #e7e6e0;
+  border-radius:8px;
+  background:#fff;
+}
 .analises-subtabela-alunos{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
 .analises-subtabela-alunos th{
   text-align:left;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
-  color:#898781;padding:4px 10px;
+  color:#898781;padding:8px 12px;background:#fbfaf7;border-bottom:1px solid #e7e6e0;
 }
 .analises-subtabela-alunos th:not(:first-child),.analises-subtabela-alunos td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
-.analises-subtabela-alunos td{padding:5px 10px;border-top:1px solid #e7e6e0;color:#0b0b0b}
+.analises-subtabela-alunos td{padding:7px 12px;border-top:1px solid #eeede7;color:#0b0b0b}
+.analises-subtabela-alunos tbody tr:first-child td{border-top:none}
+.analises-subtabela-alunos tbody tr:nth-child(even) td{background:#fbfaf7}
+.analises-subtabela-alunos th:first-child,.analises-subtabela-alunos td:first-child{
+  position:sticky;left:0;background:#fff;box-shadow:1px 0 0 #e7e6e0;
+}
+.analises-subtabela-alunos tbody tr:nth-child(even) td:first-child{background:#fbfaf7}
+.analises-subtabela-alunos thead th:first-child{background:#fbfaf7;z-index:1}
 
 /* Filtro por modalidade (Teatro, Canto, Formação...) — deriva da própria
    lista de turmas, sem taxonomia fixa; afeta os dois gráficos de turma e
@@ -1398,10 +1414,12 @@ function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan) {
     </tr>`;
   }).join('');
   linhaDetalhe.innerHTML = `<td colspan="${colspan}">
-    <table class="analises-subtabela-alunos">
-      <thead><tr>${cabecalho}</tr></thead>
-      <tbody>${linhas}</tbody>
-    </table>
+    <div class="analises-subtabela-alunos-wrap">
+      <table class="analises-subtabela-alunos">
+        <thead><tr>${cabecalho}</tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+    </div>
   </td>`;
 }
 

@@ -180,7 +180,7 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
   const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
-  const valorPagoPorAlunoMes = analisesCalcularValorPagoPorAlunoMes_(ss, identidades);
+  const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
 
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
@@ -222,14 +222,16 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       if (!matriculaDaTurma) return;
 
       // Valor REALMENTE pago pelo aluno nesse mês (boleto pago +
-      // comprovante) — repartido entre as turmas do aluno na mesma
-      // proporção do valor devido de cada uma, só pra dividir entre
-      // turmas quando ele tem combo (mais de uma matrícula ativa). Não
-      // usa obterTurmasEValorDevidoDimPagUnif_ porque ela só considera
-      // status ATIVO — aqui "ativas" já inclui SUSPENSO, por regra
-      // própria desta função.
-      const valorPagoMes = Number(valorPagoPorAlunoMes.get(chaveAluno + '|' + chaveMes) || 0);
-      if (!(valorPagoMes > 0)) return;
+      // comprovante), atribuído à turma certa quando o próprio pagamento
+      // já identifica qual foi (turma na Comprovante de pagamento, ou
+      // "Nome - Turma" no boleto); só cai no rateio proporcional (por
+      // valor devido) a parte de turma desconhecida. Isso evita que o
+      // pagamento de uma turma que o aluno já deixou apareça como se
+      // fosse desta. Não usa obterTurmasEValorDevidoDimPagUnif_ porque
+      // ela só considera status ATIVO — aqui "ativas" já inclui
+      // SUSPENSO, por regra própria desta função.
+      const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
+      if (!porTurmaPagamento) return;
 
       const combo = ativas.length > 1;
       const turmasDoMes = ativas
@@ -238,14 +240,12 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
           valorDevido: Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0)
         }))
         .filter(d => d.turma);
-      const detalheTurma = turmasDoMes.find(d => d.turma === turmaAlvo);
-      if (!detalheTurma) return;
+      if (!turmasDoMes.length) return;
 
-      const totalDevido = turmasDoMes.reduce((s, d) => s + d.valorDevido, 0);
-      const proporcao = totalDevido > 0
-        ? detalheTurma.valorDevido / totalDevido
-        : 1 / turmasDoMes.length;
-      const valor = valorPagoMes * proporcao;
+      const atribuicao = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes);
+      const valor = atribuicao.get(turmaAlvo) || 0;
+      if (!(valor > 0)) return;
+
       const nome = matriculaDaTurma.nome || matriculaDaTurma.idAluno || '(sem nome)';
 
       if (!totalPorAluno.has(chaveAluno)) {
@@ -404,8 +404,8 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   // Detalhamento e na Comparação entre turmas. Turma sem ninguém ativo
   // não aparece mais no gráfico/tabela de mensalidades.
   const turmasAtivas = new Set(comparativoTurmas.filter(x => x.ativos > 0).map(x => x.turma));
-  const valorPagoPorAlunoMes = analisesCalcularValorPagoPorAlunoMes_(ss, identidades);
-  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMes);
+  const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
+  const mensalidadesPorTurma = calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMesTurma);
   const custoProfessorPorTurmaMes = analisesCalcularCustoProfessorPorTurmaMes_(ss);
 
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
@@ -628,16 +628,30 @@ function analisesLerCacheComparativoTurmas_() {
  * Quanto cada aluno REALMENTE pagou (não o que devia) em cada mês —
  * soma TodosBoletos (só status PAGO) + Comprovante de pagamento, do
  * mesmo jeito que a tela de Pagamentos (montarBaseMensalidadesPagasSIGA_
- * em Pagamentos.gs), mas indexado por chaveAluno+mês pra poder repartir
- * entre as turmas de um aluno combo. Chave do mapa: chaveAluno + '|' +
- * 'yyyy-MM'.
+ * em Pagamentos.gs). Quando dá pra saber a turma do PRÓPRIO pagamento —
+ * "Comprovante de pagamento" tem coluna Turma; em TodosBoletos o Nome
+ * do Pagante costuma vir como "Nome - Turma" (mesmo padrão já usado em
+ * separarAlunoTurmaPagUnif_/listarInadimplentesPagamentosSIGA em
+ * Pagamentos.gs) — o valor fica registrado sob essa turma. Quando não
+ * dá pra saber, fica sob a chave '' (turma desconhecida).
+ *
+ * Sem isso, um aluno com mais de uma matrícula no mesmo mês (ex.: saiu
+ * de uma turma X e entrou noutra) teria o pagamento de UMA turma
+ * repartido proporcionalmente entre as duas — gerando uma entrada falsa
+ * na turma que ele não pagou naquele mês.
+ *
+ * Retorna Map<chaveAluno + '|' + 'yyyy-MM', Map<turma-ou-'', valor>>.
  */
-function analisesCalcularValorPagoPorAlunoMes_(ss, identidades) {
+function analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades) {
   const porAlunoMes = new Map();
-  const somar = (chaveAluno, mesISO, valor) => {
+  const somar = (chaveAluno, mesISO, turma, valor) => {
     if (!chaveAluno || !mesISO || !(valor > 0)) return;
     const chave = chaveAluno + '|' + mesISO;
-    porAlunoMes.set(chave, (porAlunoMes.get(chave) || 0) + valor);
+    if (!porAlunoMes.has(chave)) {
+      porAlunoMes.set(chave, new Map());
+    }
+    const porTurma = porAlunoMes.get(chave);
+    porTurma.set(turma, (porTurma.get(turma) || 0) + valor);
   };
 
   const abaBol = obterAbaTodosBoletosPagamentosSIGA_();
@@ -653,9 +667,11 @@ function analisesCalcularValorPagoPorAlunoMes_(ss, identidades) {
         nome: boleto.nomePagante, documento: boleto.documento
       }, false);
       if (!identidade) continue;
+      const turma = separarAlunoTurmaPagUnif_(boleto.nomePagante || '').turma;
       somar(
         identidade.chaveAluno,
         analisesMesRotulo_(vencimento).chave,
+        turma,
         Number(boleto.totalPago || boleto.valorTotal || 0)
       );
     }
@@ -683,11 +699,52 @@ function analisesCalcularValorPagoPorAlunoMes_(ss, identidades) {
       if (!ref) continue;
       const identidade = resolverComprovantePagamentoSIGA_(identidades, linha, mapa);
       if (!identidade) continue;
-      somar(identidade.chaveAluno, analisesMesRotulo_(ref).chave, valor);
+      const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
+      somar(identidade.chaveAluno, analisesMesRotulo_(ref).chave, turma, valor);
     }
   }
 
   return porAlunoMes;
+}
+
+/**
+ * Junta o mapa turma->valor de um aluno num mês (de
+ * analisesCalcularValorPagoPorAlunoMesTurma_) com a lista de turmas dele
+ * naquele mês (cada uma com seu valorDevido, só usado como PROPORÇÃO
+ * pra ratear a parte de turma desconhecida). Um pagamento cuja turma é
+ * conhecida mas não é nenhuma das turmas atuais do aluno (ex.: turma
+ * antiga que ele já deixou) é descartado aqui — nunca vaza pra outra
+ * turma. Retorna Map<turma, valorPago>.
+ */
+function analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes) {
+  const resultado = new Map();
+  if (!porTurmaPagamento || !porTurmaPagamento.size || !turmasDoMes.length) {
+    return resultado;
+  }
+  const nomesTurmasDoMes = new Set(turmasDoMes.map(d => d.turma));
+
+  let valorDesconhecido = 0;
+  porTurmaPagamento.forEach((valor, turma) => {
+    if (turma && nomesTurmasDoMes.has(turma)) {
+      resultado.set(turma, (resultado.get(turma) || 0) + valor);
+    } else if (!turma) {
+      valorDesconhecido += valor;
+    }
+    // turma conhecida mas que não é nenhuma das turmas atuais do aluno:
+    // descarta de propósito, não atribui a nenhuma turma atual.
+  });
+
+  if (valorDesconhecido > 0) {
+    const totalDevido = turmasDoMes.reduce((s, d) => s + Number(d.valorDevido || 0), 0);
+    turmasDoMes.forEach(d => {
+      const proporcao = totalDevido > 0
+        ? Number(d.valorDevido || 0) / totalDevido
+        : 1 / turmasDoMes.length;
+      resultado.set(d.turma, (resultado.get(d.turma) || 0) + valorDesconhecido * proporcao);
+    });
+  }
+
+  return resultado;
 }
 
 /**
@@ -725,8 +782,9 @@ function analisesCalcularCustoProfessorPorTurmaMes_(ss) {
  * a tela). Não grava nada, só lê TodosBoletos/Comprovante de pagamento e
  * imprime no "Log de execução" quantas linhas foram identificadas (ligadas
  * a um aluno da DimMatricula) e quantas não foram — se a maioria não for
- * identificada, analisesCalcularValorPagoPorAlunoMes_ fica quase vazia e
- * o valor pago acaba não aparecendo (ou aparecendo bem menor que deveria).
+ * identificada, analisesCalcularValorPagoPorAlunoMesTurma_ fica quase
+ * vazia e o valor pago acaba não aparecendo (ou aparecendo bem menor
+ * que deveria).
  */
 function diagnosticarValorPagoAnalisesSIGA() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -799,13 +857,21 @@ function diagnosticarValorPagoAnalisesSIGA() {
     }
   }
 
-  const valorPagoPorAlunoMes = analisesCalcularValorPagoPorAlunoMes_(ss, identidades);
+  const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
   let totalValorPagoCalculado = 0;
-  valorPagoPorAlunoMes.forEach(v => { totalValorPagoCalculado += v; });
-  diagnostico.chavesAlunoMes = valorPagoPorAlunoMes.size;
+  valorPagoPorAlunoMesTurma.forEach(porTurma => {
+    porTurma.forEach(v => { totalValorPagoCalculado += v; });
+  });
+  diagnostico.chavesAlunoMes = valorPagoPorAlunoMesTurma.size;
   diagnostico.totalValorPagoCalculado = arredPagUnif_(totalValorPagoCalculado);
-  diagnostico.amostraValorPago = Array.from(valorPagoPorAlunoMes.entries()).slice(0, 15)
-    .map(([chave, valor]) => ({ chave, valor: arredPagUnif_(valor) }));
+  diagnostico.amostraValorPago = Array.from(valorPagoPorAlunoMesTurma.entries()).slice(0, 15)
+    .map(([chave, porTurma]) => ({
+      chave,
+      porTurma: Array.from(porTurma.entries()).map(([turma, valor]) => ({
+        turma: turma || '(desconhecida)',
+        valor: arredPagUnif_(valor)
+      }))
+    }));
 
   console.log(JSON.stringify(diagnostico, null, 2));
   return diagnostico;
@@ -817,7 +883,7 @@ function diagnosticarValorPagoAnalisesSIGA() {
  * recalcularCacheAnalisesSIGA — retorna TODAS as turmas (o corte para
  * as top N usado na tela acontece na leitura do cache).
  */
-function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMes) {
+function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasAtivas, valorPagoPorAlunoMesTurma) {
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
     const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
@@ -861,14 +927,16 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
       }
 
       // O valor exibido é o que foi REALMENTE pago (boleto pago +
-      // comprovante) nesse mês — nunca o valor devido. O valor devido de
-      // cada matrícula só entra aqui pra achar a PROPORÇÃO entre as
-      // turmas quando o aluno tem combo (mais de uma matrícula ativa).
-      // Não usa obterTurmasEValorDevidoDimPagUnif_ porque ela só considera
+      // comprovante) nesse mês — nunca o valor devido, e atribuído à
+      // turma certa quando o próprio pagamento já identifica qual foi
+      // (ver analisesCalcularValorPagoPorAlunoMesTurma_). O valor devido
+      // de cada matrícula só entra aqui pra ratear a parte de turma
+      // desconhecida quando o aluno tem combo. Não usa
+      // obterTurmasEValorDevidoDimPagUnif_ porque ela só considera
       // status ATIVO — aqui "ativas" já segue a regra própria desta
       // função (analisesStatusAtivo_, que inclui EM ESPERA).
-      const valorPagoMes = Number(valorPagoPorAlunoMes.get(chaveAluno + '|' + chaveMes) || 0);
-      if (!(valorPagoMes > 0)) {
+      const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
+      if (!porTurmaPagamento) {
         return;
       }
 
@@ -893,17 +961,13 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
         return;
       }
 
-      const totalDevido = turmasDoMes.reduce((s, d) => s + Number(d.valorDevido || 0), 0);
-      turmasDoMes.forEach(d => {
-        const proporcao = totalDevido > 0
-          ? Number(d.valorDevido || 0) / totalDevido
-          : 1 / turmasDoMes.length;
-        const parcela = valorPagoMes * proporcao;
-
-        if (!receitaPorTurmaMes.has(d.turma)) {
-          receitaPorTurmaMes.set(d.turma, new Map());
+      const atribuicao = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes);
+      atribuicao.forEach((parcela, turma) => {
+        if (!(parcela > 0)) return;
+        if (!receitaPorTurmaMes.has(turma)) {
+          receitaPorTurmaMes.set(turma, new Map());
         }
-        const mapaMes = receitaPorTurmaMes.get(d.turma);
+        const mapaMes = receitaPorTurmaMes.get(turma);
         mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + parcela);
       });
     });
