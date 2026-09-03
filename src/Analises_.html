@@ -277,12 +277,12 @@
 }
 .analises-link-turma:hover{color:#195aa8}
 
-.analises-subtabela-alunos{width:100%;border-collapse:collapse;font-size:12.5px}
+.analises-subtabela-alunos{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
 .analises-subtabela-alunos th{
   text-align:left;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   color:#898781;padding:4px 10px;
 }
-.analises-subtabela-alunos th:last-child,.analises-subtabela-alunos td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.analises-subtabela-alunos th:not(:first-child),.analises-subtabela-alunos td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
 .analises-subtabela-alunos td{padding:5px 10px;border-top:1px solid #e7e6e0;color:#0b0b0b}
 
 /* Filtro por modalidade (Teatro, Canto, Formação...) — deriva da própria
@@ -1363,19 +1363,43 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
     });
 }
 
+/**
+ * Alunos de uma turma, um por linha, com um MÊS por coluna (mais uma
+ * coluna de Total quando há mais de um mês) — mesmo formato de pivô das
+ * duas tabelas de turma. Quando um mês específico está selecionado no
+ * filtro "Mês", só existe uma coluna de qualquer forma, então o Total
+ * não aparece (seria redundante com a única coluna de mês).
+ */
 function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan) {
   const mesFiltroRotulo = document.getElementById('analisesMensalidadesMes')?.value || '';
-  const rotuloColuna = mesFiltroRotulo ? `Valor em ${escAnalisesSIGA(mesFiltroRotulo)}` : 'Valor no período';
 
   if (!alunos.length) {
     linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Nenhum aluno ativo ou suspenso encontrado nessa turma${mesFiltroRotulo ? ' em ' + escAnalisesSIGA(mesFiltroRotulo) : ' no período'}.</div></td>`;
     return;
   }
 
-  const linhas = alunos.map(a => `<tr><td>${escAnalisesSIGA(a.aluno)}</td><td>${moedaAnalisesSIGA(a.total)}</td></tr>`).join('');
+  const periodosRotulos = Array.from(new Set(
+    alunos.flatMap(a => (a.porMes || []).map(p => p.periodo))
+  )).sort((a, b) => String(analisesRotuloParaChave_(a)).localeCompare(String(analisesRotuloParaChave_(b))));
+
+  const mostrarTotal = periodosRotulos.length > 1;
+
+  const cabecalho =
+    '<th>Aluno (ativo/suspenso)</th>' +
+    periodosRotulos.map(p => `<th>${escAnalisesSIGA(p)}</th>`).join('') +
+    (mostrarTotal ? '<th>Total</th>' : '');
+
+  const linhas = alunos.map(a => {
+    const porMesMapa = new Map((a.porMes || []).map(p => [p.periodo, p.valor]));
+    return `<tr>
+      <td>${escAnalisesSIGA(a.aluno)}</td>
+      ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(porMesMapa.get(p) || 0)}</td>`).join('')}
+      ${mostrarTotal ? `<td style="font-weight:700">${moedaAnalisesSIGA(a.total)}</td>` : ''}
+    </tr>`;
+  }).join('');
   linhaDetalhe.innerHTML = `<td colspan="${colspan}">
     <table class="analises-subtabela-alunos">
-      <thead><tr><th>Aluno (ativo/suspenso)</th><th>${rotuloColuna}</th></tr></thead>
+      <thead><tr>${cabecalho}</tr></thead>
       <tbody>${linhas}</tbody>
     </table>
   </td>`;

@@ -249,14 +249,21 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       const nome = matriculaDaTurma.nome || matriculaDaTurma.idAluno || '(sem nome)';
 
       if (!totalPorAluno.has(chaveAluno)) {
-        totalPorAluno.set(chaveAluno, { aluno: nome, total: 0 });
+        totalPorAluno.set(chaveAluno, { aluno: nome, total: 0, porMes: new Map() });
       }
-      totalPorAluno.get(chaveAluno).total += valor;
+      const registro = totalPorAluno.get(chaveAluno);
+      registro.total += valor;
+      const rotuloMes = analisesChaveParaRotulo_(chaveMes);
+      registro.porMes.set(rotuloMes, (registro.porMes.get(rotuloMes) || 0) + valor);
     });
   });
 
   const alunos = Array.from(totalPorAluno.values())
-    .map(x => ({ aluno: x.aluno, total: arredPagUnif_(x.total) }))
+    .map(x => ({
+      aluno: x.aluno,
+      total: arredPagUnif_(x.total),
+      porMes: Array.from(x.porMes.entries()).map(([periodo, valor]) => ({ periodo, valor: arredPagUnif_(valor) }))
+    }))
     .sort((a, b) => b.total - a.total);
 
   return { sucesso: true, turma: turmaAlvo, alunos };
@@ -825,6 +832,14 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
   const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const receitaPorTurmaMes = new Map();
 
+  // Toda turma ativa aparece na tabela, mesmo com R$ 0,00 no mês — sem
+  // isso, uma turma cujos pagamentos não foram identificados (ou que
+  // simplesmente não teve nenhum pagamento ainda) some da lista em vez
+  // de aparecer zerada, o que parece a turma ter "desaparecido".
+  if (turmasAtivas) {
+    turmasAtivas.forEach(t => receitaPorTurmaMes.set(t, new Map()));
+  }
+
   periodos.forEach(ref => {
     let dataCalculo;
     if (ref < inicioMesAtual) {
@@ -857,8 +872,18 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
         return;
       }
 
-      const combo = ativas.length > 1;
-      const turmasDoMes = ativas
+      // Dinheiro de verdade só pode ser atribuído a matrícula que já
+      // começou de fato (status ATIVO). EM ESPERA entra em "ativas" (pra
+      // contagem/valor devido nas outras tabelas), mas nunca pode roubar
+      // fatia de um pagamento real — foi exatamente isso que fez uma
+      // turma que ainda vai começar aparecer com lucro/pagamento.
+      const ativasParaRateio = ativas.filter(m => normalizarPagUnif_(m.status) === 'ATIVO');
+      if (!ativasParaRateio.length) {
+        return;
+      }
+
+      const combo = ativasParaRateio.length > 1;
+      const turmasDoMes = ativasParaRateio
         .map(m => ({
           turma: String(m.turma || '').trim(),
           valorDevido: Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0)
