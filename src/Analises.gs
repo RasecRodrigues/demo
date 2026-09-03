@@ -20,7 +20,8 @@
 const ANALISES_CACHE_SHEETS = {
   GERAL: 'AnalisesCache_Geral',
   TURMA: 'AnalisesCache_Turma',
-  COMPARATIVO: 'AnalisesCache_ComparativoTurmas'
+  COMPARATIVO: 'AnalisesCache_ComparativoTurmas',
+  PAGAMENTO_ALUNO: 'AnalisesCache_PagamentoAluno'
 };
 const ANALISES_CACHE_PROP_ATUALIZADO_EM = 'ANALISES_CACHE_ATUALIZADO_EM';
 const ANALISES_CACHE_MESES_MAX = 36;
@@ -177,10 +178,16 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // Lê do cache (AnalisesCache_PagamentoAluno) em vez de varrer
+  // TodosBoletos + Comprovante de pagamento na hora — isso fazia cada
+  // clique numa turma demorar muito (a mesma razão pela qual as outras
+  // tabelas de Análises já usam cache). garantirCacheAnalisesSIGA_
+  // recalcula na hora só se o cache ainda não existir de jeito nenhum.
+  garantirCacheAnalisesSIGA_();
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
-  const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
-  const valorPagoPorAlunoMesTurma = analisesCalcularValorPagoPorAlunoMesTurma_(ss, identidades);
+  criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+  const valorPagoPorAlunoMesTurma = analisesLerCachePagamentoAluno_();
 
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
@@ -411,6 +418,7 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira);
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
   analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, new Map());
+  analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
 
@@ -538,6 +546,28 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfesso
   }
 }
 
+/**
+ * Cache do valor pago por aluno/mês/turma — usado só pelo detalhamento
+ * de alunos (clique numa turma). Sem isso, cada clique tinha que varrer
+ * TodosBoletos (a maior aba do sistema) + Comprovante de pagamento na
+ * hora, o que ficava lento demais pra uma ação de UI. Uma linha por
+ * combinação chaveAluno+mês+turma; Turma pode vir vazia (pagamento cuja
+ * turma não pôde ser identificada — ver analisesAtribuirPagamentoPorTurma_).
+ */
+function analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma) {
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO, ['ChaveAlunoMes', 'Turma', 'Valor']);
+  const linhas = [];
+  valorPagoPorAlunoMesTurma.forEach((porTurma, chaveAlunoMes) => {
+    porTurma.forEach((valor, turma) => {
+      if (!(valor > 0)) return;
+      linhas.push([chaveAlunoMes, turma, arredPagUnif_(valor)]);
+    });
+  });
+  if (linhas.length) {
+    aba.getRange(2, 1, linhas.length, linhas[0].length).setValues(linhas);
+  }
+}
+
 function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequenciaPorTurma) {
   const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.COMPARATIVO, ['Turma', 'Ativos', 'Saidas', 'Total', 'TaxaEvasao', 'FrequenciaMedia']);
   const linhas = comparativoTurmas.map(x => {
@@ -622,6 +652,33 @@ function analisesLerCacheComparativoTurmas_() {
     });
   });
   return lista;
+}
+
+/**
+ * Lê o cache gravado por analisesGravarCachePagamentoAluno_. Retorna o
+ * mesmo formato de analisesCalcularValorPagoPorAlunoMesTurma_:
+ * Map<chaveAluno + '|' + 'yyyy-MM', Map<turma-ou-'', valor>>.
+ */
+function analisesLerCachePagamentoAluno_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO);
+  const mapa = new Map();
+  if (!aba || aba.getLastRow() < 2) {
+    return mapa;
+  }
+  const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 3).getValues();
+  dados.forEach(linha => {
+    const chaveAlunoMes = String(linha[0] || '').trim();
+    if (!chaveAlunoMes) {
+      return;
+    }
+    const turma = String(linha[1] || '').trim();
+    if (!mapa.has(chaveAlunoMes)) {
+      mapa.set(chaveAlunoMes, new Map());
+    }
+    mapa.get(chaveAlunoMes).set(turma, Number(linha[2] || 0));
+  });
+  return mapa;
 }
 
 /**
