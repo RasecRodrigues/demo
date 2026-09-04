@@ -1,0 +1,622 @@
+{
+  "name": "Cora - TodosBoletos DEFINITIVO em lotes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1328,
+        3856
+      ],
+      "id": "f4053df9-7162-460a-8be9-e8160bfe03b4",
+      "name": "Executar diariamente"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1264,
+        3648
+      ],
+      "id": "f41a4589-4109-42e3-9c8c-bd3e9c63e8cc",
+      "name": "Executar manualmente"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://matls-clients.api.cora.com.br/token",
+        "provideSslCertificates": true,
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "client_id",
+              "value": "int-2dw3y5U5vL9yjpJLuADNKJ"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        3968
+      ],
+      "id": "6ef694cf-d7a5-4703-957b-aa035dce0623",
+      "name": "Cora - Obter token",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpSslAuth": {
+          "id": "oqL3DWwj9NT0OIVU",
+          "name": "SSL Certificates account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let paginaAnterior = 0;\n\ntry {\n  paginaAnterior = $('Proxima pagina').last().json.page;\n} catch (e) {\n  paginaAnterior = 0;\n}\n\nreturn [\n  {\n    json: {\n      page: paginaAnterior + 1\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        3968
+      ],
+      "id": "4fb8a463-45b7-413f-b923-947ecd704f09",
+      "name": "Proxima pagina"
+    },
+    {
+      "parameters": {
+        "url": "https://matls-clients.api.cora.com.br/v2/invoices",
+        "provideSslCertificates": true,
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "page",
+              "value": "={{ $json.page }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "authorization",
+              "value": "=Bearer {{ $('Cora - Obter token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        3968
+      ],
+      "id": "067736ba-9df1-47b3-959d-3cd50ac98ea5",
+      "name": "Cora - Listar boletos",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpSslAuth": {
+          "id": "oqL3DWwj9NT0OIVU",
+          "name": "SSL Certificates account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -240,
+        3840
+      ],
+      "id": "41adca70-7a02-4224-be8d-6c3170e2419a",
+      "name": "Separar boletos"
+    },
+    {
+      "parameters": {
+        "url": "=https://matls-clients.api.cora.com.br/v2/invoices/{{ $json.id }}",
+        "provideSslCertificates": true,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "authorization",
+              "value": "=Bearer {{ $('Cora - Obter token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        3840
+      ],
+      "id": "5e87a5b9-833e-4d6a-9fbd-921efc755a83",
+      "name": "Cora - Detalhes do boleto",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpSslAuth": {
+          "id": "oqL3DWwj9NT0OIVU",
+          "name": "SSL Certificates account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-items",
+              "leftValue": "={{ Array.isArray($json.items) ? $json.items.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        4080
+      ],
+      "id": "01e12ad3-5fcf-45cd-9faf-05bce4f5bf2b",
+      "name": "Pagina possui boletos?"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        4080
+      ],
+      "id": "1302239b-9b98-4a29-bf03-73c98c15f499",
+      "name": "Aguardar proxima pagina",
+      "webhookId": "10b52f61-e540-4b28-8011-acde00000012"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1IFy2_f53EF-2fYrlqtjYqA09F7W10O9dFGrv1MqFa98",
+          "mode": "list",
+          "cachedResultName": "cobranca_cage",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1IFy2_f53EF-2fYrlqtjYqA09F7W10O9dFGrv1MqFa98/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 635773786,
+          "mode": "list",
+          "cachedResultName": "TodosBoletos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1IFy2_f53EF-2fYrlqtjYqA09F7W10O9dFGrv1MqFa98/edit#gid=635773786"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -960,
+        3728
+      ],
+      "id": "c5bdea44-6017-48a1-b6a3-162b175ff757",
+      "name": "Ler TodosBoletos uma vez",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SAXUQyiSx4YmRwCR",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { iniciar: true, linhasExistentes: $input.all().length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        3728
+      ],
+      "id": "b51f23de-814b-4031-9bc3-6875c3d6eb61",
+      "name": "Iniciar sincronizacao"
+    },
+    {
+      "parameters": {
+        "jsCode": "const entradasDetalhes = $input.all();\n\nconst itens = entradasDetalhes.map((item, index) => {\n  const detalhes = item.json || {};\n\n  let resumo = {};\n\n  try {\n    resumo =\n      $('Separar boletos')\n        .itemMatching(index)\n        .json || {};\n  } catch (erro) {\n    resumo = {};\n  }\n\n  // Une os dados da listagem com os detalhes.\n  const boletoCompleto = {\n    ...resumo,\n    ...detalhes,\n  };\n\n  // Se o detalhe trouxe campo vazio, preserva o valor da listagem.\n  const camposDaListagem = [\n    'status',\n    'created_at',\n    'total_amount',\n    'customer_name',\n    'customer_document',\n    'due_date',\n    'payment_form',\n    'paid_at',\n    'total_paid',\n    'fine_paid',\n    'interest_paid',\n    'discount_paid',\n  ];\n\n  for (const campo of camposDaListagem) {\n    const valorDetalhe = detalhes[campo];\n    const valorResumo = resumo[campo];\n\n    if (\n      (\n        valorDetalhe === null ||\n        valorDetalhe === undefined ||\n        valorDetalhe === ''\n      ) &&\n      valorResumo !== null &&\n      valorResumo !== undefined &&\n      valorResumo !== ''\n    ) {\n      boletoCompleto[campo] = valorResumo;\n    }\n  }\n\n  // Preserva as estruturas completas necessárias para o link.\n  boletoCompleto.payment_options =\n    detalhes.payment_options ||\n    resumo.payment_options ||\n    {};\n\n  boletoCompleto.payment_terms =\n    detalhes.payment_terms ||\n    resumo.payment_terms ||\n    {};\n\n  boletoCompleto.services =\n    detalhes.services ||\n    resumo.services ||\n    [];\n\n  return boletoCompleto;\n});\n\nconst linhasAtuais = $('Ler TodosBoletos uma vez').all();\n\n/* =========================================================\n   MAPA: ID DO BOLETO → NÚMERO DA LINHA\n========================================================= */\n\nconst linhaPorId = new Map();\n\nfor (let i = 0; i < linhasAtuais.length; i++) {\n  const registro = linhasAtuais[i].json || {};\n  const id = String(registro.id || '').trim();\n\n  if (id) {\n    linhaPorId.set(\n      id,\n      Number(registro.row_number) || i + 2\n    );\n  }\n}\n\n/* =========================================================\n   FUNÇÕES AUXILIARES\n========================================================= */\n\nconst primeiroValor = (...valores) => {\n  for (const valor of valores) {\n    if (\n      valor !== null &&\n      valor !== undefined &&\n      valor !== ''\n    ) {\n      return valor;\n    }\n  }\n\n  return '';\n};\n\nconst texto = valor => {\n  if (valor === null || valor === undefined) {\n    return '';\n  }\n\n  // Evita enviar objetos como [object Object].\n  if (typeof valor === 'object') {\n    return '';\n  }\n\n  return String(valor);\n};\n\nconst dinheiro = valor => {\n  if (\n    valor === null ||\n    valor === undefined ||\n    valor === ''\n  ) {\n    return '';\n  }\n\n  const numero = Number(valor);\n\n  if (!Number.isFinite(numero)) {\n    return '';\n  }\n\n  return (numero / 100).toLocaleString('pt-BR', {\n    minimumFractionDigits: 2,\n    maximumFractionDigits: 2,\n  });\n};\n\n/* =========================================================\n   NOME DO PAGANTE\n========================================================= */\n\nconst extrairNome = boleto => {\n  return texto(\n    primeiroValor(\n      boleto.customer_name,\n      boleto.customer?.name,\n      boleto.customer?.legal_name,\n      boleto.payer?.name,\n      boleto.payer?.legal_name\n    )\n  );\n};\n\n/* =========================================================\n   DOCUMENTO DO CLIENTE\n========================================================= */\n\nconst extrairDocumento = boleto => {\n  const documento = primeiroValor(\n    boleto.customer_document,\n    boleto.customer?.document,\n    boleto.payer?.document\n  );\n\n  if (\n    documento === null ||\n    documento === undefined ||\n    documento === ''\n  ) {\n    return texto(\n      primeiroValor(\n        boleto.customer?.document_number,\n        boleto.customer?.tax_id,\n        boleto.payer?.document_number,\n        boleto.payer?.tax_id\n      )\n    );\n  }\n\n  // Quando já é texto ou número.\n  if (typeof documento !== 'object') {\n    return String(documento);\n  }\n\n  // Quando o documento é devolvido como objeto.\n  return texto(\n    primeiroValor(\n      documento.identity,\n      documento.number,\n      documento.document_number,\n      documento.value,\n      documento.tax_id,\n      documento.cpf,\n      documento.cnpj\n    )\n  );\n};\n\n/* =========================================================\n   LINK DO BOLETO\n========================================================= */\n\nconst extrairLinkBoleto = boleto => {\n  const somenteLink = valor => {\n    if (typeof valor !== 'string') {\n      return '';\n    }\n\n    const link = valor.trim();\n\n    return /^https?:\\/\\//i.test(link) ? link : '';\n  };\n\n  const procurarEmObjeto = objeto => {\n    if (!objeto) return '';\n\n    if (typeof objeto === 'string') {\n      return somenteLink(objeto);\n    }\n\n    if (Array.isArray(objeto)) {\n      for (const item of objeto) {\n        const encontrado = procurarEmObjeto(item);\n\n        if (encontrado) return encontrado;\n      }\n\n      return '';\n    }\n\n    if (typeof objeto !== 'object') {\n      return '';\n    }\n\n    const camposPreferenciais = [\n      'url',\n      'payment_url',\n      'pdf_url',\n      'download_url',\n      'bank_slip_url',\n      'boleto_url',\n      'invoice_url',\n      'checkout_url',\n      'link',\n    ];\n\n    for (const campo of camposPreferenciais) {\n      const encontrado = somenteLink(objeto[campo]);\n\n      if (encontrado) return encontrado;\n    }\n\n    for (const valor of Object.values(objeto)) {\n      const encontrado = procurarEmObjeto(valor);\n\n      if (encontrado) return encontrado;\n    }\n\n    return '';\n  };\n\n  const estruturas = [\n    boleto.payment_options?.bank_slip,\n    boleto.payment_options?.boleto,\n    boleto.bank_slip,\n    boleto.boleto,\n    boleto.payment_options,\n  ];\n\n  for (const estrutura of estruturas) {\n    const encontrado = procurarEmObjeto(estrutura);\n\n    if (encontrado) return encontrado;\n  }\n\n  return primeiroValor(\n    somenteLink(boleto.bank_slip_url),\n    somenteLink(boleto.boleto_url),\n    somenteLink(boleto.payment_url),\n    somenteLink(boleto.invoice_url),\n    somenteLink(boleto.pdf_url),\n    somenteLink(boleto.download_url)\n  );\n};\n\n/* =========================================================\n   NOME DA COBRANCA E DESCRICAO\n\n   A Cora devolve esses dois campos dentro de \"services\",\n   que so vem no detalhe do boleto (nao vem na listagem).\n========================================================= */\n\nconst listaDeServicos = boleto => {\n  const servicos = boleto.services || boleto.service;\n\n  if (!servicos) {\n    return [];\n  }\n\n  return Array.isArray(servicos) ? servicos : [servicos];\n};\n\nconst juntarServicos = (boleto, campo) => {\n  const valores = listaDeServicos(boleto)\n    .map(servico => texto(servico && servico[campo]).trim())\n    .filter(valor => valor !== '');\n\n  // Um boleto pode ter mais de um servico: junta sem repetir.\n  return Array.from(new Set(valores)).join(' | ');\n};\n\nconst extrairNomeCobranca = boleto => {\n  return texto(\n    primeiroValor(\n      juntarServicos(boleto, 'name'),\n      boleto.name,\n      boleto.service_name,\n      boleto.code\n    )\n  );\n};\n\nconst extrairDescricao = boleto => {\n  return texto(\n    primeiroValor(\n      juntarServicos(boleto, 'description'),\n      boleto.description,\n      boleto.notes\n    )\n  );\n};\n\n/* =========================================================\n   DATAS E DIAS VENCIDOS\n========================================================= */\n\nconst dataUTC = valor => {\n  if (!valor) return null;\n\n  const partes = String(valor)\n    .slice(0, 10)\n    .split('-')\n    .map(Number);\n\n  if (\n    partes.length !== 3 ||\n    partes.some(numero => !Number.isFinite(numero))\n  ) {\n    return null;\n  }\n\n  const [ano, mes, dia] = partes;\n\n  return Date.UTC(ano, mes - 1, dia);\n};\n\nconst diasVencidos = boleto => {\n  const status = String(boleto.status || '').toUpperCase();\n\n  if (\n    [\n      'CANCELLED',\n      'DRAFT',\n      'RECURRENCE_DRAFT',\n    ].includes(status)\n  ) {\n    return '';\n  }\n\n  const vencimentoTexto = primeiroValor(\n    boleto.payment_terms?.due_date,\n    boleto.due_date\n  );\n\n  const vencimento = dataUTC(vencimentoTexto);\n\n  if (vencimento === null) {\n    return '';\n  }\n\n  const dataPagamento = primeiroValor(\n    boleto.paid_at,\n    boleto.payment?.paid_at\n  );\n\n  let dataFinal;\n\n  if (dataPagamento) {\n    dataFinal = dataUTC(dataPagamento);\n\n    if (dataFinal === null) {\n      return '';\n    }\n  } else if (status === 'PAID') {\n    // Evita calcular até hoje quando está pago,\n    // mas a Cora não informou a data.\n    return '';\n  } else {\n    const hoje = new Date();\n\n    dataFinal = Date.UTC(\n      hoje.getFullYear(),\n      hoje.getMonth(),\n      hoje.getDate()\n    );\n  }\n\n  return Math.max(\n    0,\n    Math.floor(\n      (dataFinal - vencimento) / 86400000\n    )\n  );\n};\n\n/* =========================================================\n   MONTAGEM DAS COLUNAS A:Q\n========================================================= */\n\nconst montarLinha = boleto => [\n  // A — id\n  texto(boleto.id),\n\n  // B — status\n  texto(boleto.status),\n\n  // C — Criado em\n  texto(boleto.created_at),\n\n  // D — Valor Total\n  dinheiro(boleto.total_amount),\n\n  // E — Nome do Pagante\n  extrairNome(boleto),\n\n  // F — Documento do Cliente\n  extrairDocumento(boleto),\n\n  // G — Data do Vencimento\n  texto(\n    primeiroValor(\n      boleto.payment_terms?.due_date,\n      boleto.due_date\n    )\n  ),\n\n  // H — Forma de pagamento\n  texto(\n    primeiroValor(\n      boleto.payment_form,\n      boleto.payment?.method,\n      boleto.payment_method\n    )\n  ),\n\n  // I — Data Pagamento\n  texto(\n    primeiroValor(\n      boleto.paid_at,\n      boleto.payment?.paid_at\n    )\n  ),\n\n  // J — Total Pago\n  dinheiro(\n    primeiroValor(\n      boleto.total_paid,\n      boleto.payment?.total_paid\n    )\n  ),\n\n  // K — Multa Aplicada\n  dinheiro(\n    primeiroValor(\n      boleto.fine_paid,\n      boleto.payment?.fine_paid\n    )\n  ),\n\n  // L — Juros Aplicado\n  dinheiro(\n    primeiroValor(\n      boleto.interest_paid,\n      boleto.payment?.interest_paid\n    )\n  ),\n\n  // M — Desconto Aplicado\n  dinheiro(\n    primeiroValor(\n      boleto.discount_paid,\n      boleto.payment?.discount_paid\n    )\n  ),\n\n  // N — Boleto\n  extrairLinkBoleto(boleto),\n\n  // O — Dias vencidos\n  diasVencidos(boleto),\n\n  // P — Nome da Cobrança\n  extrairNomeCobranca(boleto),\n\n  // Q — Descrição\n  extrairDescricao(boleto),\n];\n\n/* =========================================================\n   ATUALIZAR EXISTENTES E ADICIONAR NOVOS\n========================================================= */\n\nconst atualizacoes = [];\nconst novasLinhas = [];\n\nfor (const boleto of itens) {\n  const id = String(boleto.id || '').trim();\n\n  if (!id) continue;\n\n  const valores = montarLinha(boleto);\n  const numeroLinha = linhaPorId.get(id);\n\n  if (numeroLinha) {\n    atualizacoes.push({\n      range: `TodosBoletos!A${numeroLinha}:Q${numeroLinha}`,\n      majorDimension: 'ROWS',\n      values: [valores],\n    });\n  } else {\n    novasLinhas.push(valores);\n  }\n}\n\n/* =========================================================\n   RESULTADO DO LOTE\n========================================================= */\n\nreturn [\n  {\n    json: {\n      atualizacoes,\n      novasLinhas,\n      quantidadeAtualizada: atualizacoes.length,\n      quantidadeNova: novasLinhas.length,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        3840
+      ],
+      "id": "2797ea26-5f3c-4e19-9bb9-3af32876f21d",
+      "name": "Montar lote preservando SIGA"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "tem-atualizacoes",
+              "leftValue": "={{ $json.quantidadeAtualizada }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        3744
+      ],
+      "id": "d5df7743-615c-446e-8249-5328667d4c1f",
+      "name": "Tem boletos existentes?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1IFy2_f53EF-2fYrlqtjYqA09F7W10O9dFGrv1MqFa98/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ valueInputOption: 'USER_ENTERED', data: $json.atualizacoes, includeValuesInResponse: false }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        3744
+      ],
+      "id": "48b10443-ebcf-442f-90ca-32072ac96225",
+      "name": "Atualizar lote no Google",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SAXUQyiSx4YmRwCR",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "tem-novos",
+              "leftValue": "={{ $json.quantidadeNova }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        3936
+      ],
+      "id": "dc1a8dea-5b0f-4bae-97f8-8f7421a18e96",
+      "name": "Tem boletos novos?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/1IFy2_f53EF-2fYrlqtjYqA09F7W10O9dFGrv1MqFa98/values/TodosBoletos!A:Q:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "USER_ENTERED"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ range: 'TodosBoletos!A:Q', majorDimension: 'ROWS', values: $json.novasLinhas }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        3936
+      ],
+      "id": "3759b83d-b9de-4112-a79e-6e93a24c21d6",
+      "name": "Adicionar novos em lote",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 10000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SAXUQyiSx4YmRwCR",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar diariamente": {
+      "main": [
+        [
+          {
+            "node": "Ler TodosBoletos uma vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar manualmente": {
+      "main": [
+        [
+          {
+            "node": "Ler TodosBoletos uma vez",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler TodosBoletos uma vez": {
+      "main": [
+        [
+          {
+            "node": "Iniciar sincronizacao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iniciar sincronizacao": {
+      "main": [
+        [
+          {
+            "node": "Cora - Obter token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cora - Obter token": {
+      "main": [
+        [
+          {
+            "node": "Proxima pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proxima pagina": {
+      "main": [
+        [
+          {
+            "node": "Cora - Listar boletos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cora - Listar boletos": {
+      "main": [
+        [
+          {
+            "node": "Separar boletos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pagina possui boletos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar boletos": {
+      "main": [
+        [
+          {
+            "node": "Cora - Detalhes do boleto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cora - Detalhes do boleto": {
+      "main": [
+        [
+          {
+            "node": "Montar lote preservando SIGA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar lote preservando SIGA": {
+      "main": [
+        [
+          {
+            "node": "Tem boletos existentes?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Tem boletos novos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem boletos existentes?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar lote no Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tem boletos novos?": {
+      "main": [
+        [
+          {
+            "node": "Adicionar novos em lote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagina possui boletos?": {
+      "main": [
+        [
+          {
+            "node": "Aguardar proxima pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aguardar proxima pagina": {
+      "main": [
+        [
+          {
+            "node": "Proxima pagina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f7c40944-a781-4533-b0e8-0689eae0e267",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9738991fb33a4e310520d59dad0c1cbd684100e63d05726110b8be7d6fb634fd"
+  },
+  "nodeGroups": [],
+  "id": "vEqSpKZuCxf9xaBT",
+  "tags": []
+}
