@@ -122,6 +122,26 @@
     </section>
   </div>
 
+  <section class="cartao">
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+      <div>
+        <h2>Entradas e saídas de alunos por mês</h2>
+        <span class="subtitulo">Matrículas que começaram e que encerraram em cada mês. Este cartão tem filtro próprio de turma — a modalidade acima não o afeta.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesMovimentacaoTurma">Turma</label>
+        <select id="analisesMovimentacaoTurma" onchange="carregarMovimentacaoAnalisesSIGA()">
+          <option value="">Todas as turmas</option>
+        </select>
+      </div>
+    </div>
+    <div id="resumoAnalisesMovimentacao" class="analises-resumo-movimentacao"></div>
+    <div id="graficoAnalisesMovimentacao" class="analises-grafico-area">
+      <div class="estado-vazio">Carregando...</div>
+    </div>
+    <div id="avisoAnalisesMovimentacao" class="analises-aviso-movimentacao oculto"></div>
+  </section>
+
 
   <section class="cartao">
     <div class="cartao-cabecalho analises-cabecalho-com-filtro">
@@ -285,6 +305,19 @@
   padding:14px 14px 14px 20px;
   border-left:3px solid #d8d6cc;
 }
+
+/* --- Entradas e saídas: resumo numérico acima do gráfico --- */
+.analises-resumo-movimentacao{display:flex;gap:20px;flex-wrap:wrap;margin:2px 0 6px}
+.analises-resumo-movimentacao span{font-size:13px;color:#52514e}
+.analises-resumo-movimentacao strong{font-size:17px;color:#0b0b0b;margin-right:3px}
+.analises-resumo-movimentacao .analises-saldo-positivo strong{color:#166534}
+.analises-resumo-movimentacao .analises-saldo-negativo strong{color:#b0201d}
+.analises-resumo-movimentacao .analises-saldo-zero strong{color:#898781}
+.analises-aviso-movimentacao{
+  margin-top:10px;padding:9px 12px;border-radius:8px;font-size:12.5px;
+  color:#8a5a00;background:#fff8e6;border:1px solid #f0dfae;
+}
+.analises-aviso-movimentacao.oculto{display:none}
 
 /* --- Tarjas de seção: dão ritmo à página, que antes era uma pilha de
        cartões sem hierarquia nenhuma --- */
@@ -938,7 +971,8 @@ function desenharGraficosAnalisesSIGA(resultado) {
     () => desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []),
     () => renderizarTurmasFiltradasAnalisesSIGA(resultado),
     () => preencherTabelaMensalidadesTempoAnalisesSIGA(resultado.lucroPorTurma || [], resultado.periodos || []),
-    () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || [])
+    () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || []),
+    () => carregarMovimentacaoAnalisesSIGA()
   ];
   passos.forEach(passo => {
     try {
@@ -947,6 +981,110 @@ function desenharGraficosAnalisesSIGA(resultado) {
       console.error('Falha ao desenhar um painel de Análises:', erro);
     }
   });
+}
+
+
+/**
+ * Entradas e saídas por mês, com filtro próprio de turma.
+ *
+ * Vem de obterMovimentacaoTurmaAnalisesSIGA, que lê só a DimMatricula e roda
+ * fora do cache de Análises — por isso o filtro responde na hora e o número
+ * reflete o cadastro atual, sem depender do recálculo de 6 horas.
+ */
+let analisesMovimentacaoTurmasPreenchidas = false;
+
+function carregarMovimentacaoAnalisesSIGA() {
+  const alvo = document.getElementById('graficoAnalisesMovimentacao');
+  if (!alvo) return;
+
+  alvo.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+  definirTextoMovimentacaoAnalisesSIGA_('resumoAnalisesMovimentacao', '');
+  const aviso = document.getElementById('avisoAnalisesMovimentacao');
+  if (aviso) aviso.classList.add('oculto');
+
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+  const meses = Number(document.getElementById('analisesMeses')?.value || 12);
+  const turma = document.getElementById('analisesMovimentacaoTurma')?.value || '';
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      if (!resposta || resposta.sucesso !== true) {
+        alvo.innerHTML = '<div class="estado-vazio">Sem dados de movimentação.</div>';
+        return;
+      }
+      if (!analisesMovimentacaoTurmasPreenchidas) {
+        preencherTurmasMovimentacaoAnalisesSIGA_(resposta.turmas || []);
+        analisesMovimentacaoTurmasPreenchidas = true;
+      }
+      desenharGraficoMovimentacaoAnalisesSIGA_(resposta);
+    })
+    .withFailureHandler(erro => {
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      alvo.innerHTML = '<div class="estado-vazio">Não foi possível carregar a movimentação.<br><small>' + escAnalisesSIGA(motivo) + '</small></div>';
+    })
+    .obterMovimentacaoTurmaAnalisesSIGA({ token, turma, meses });
+}
+
+function preencherTurmasMovimentacaoAnalisesSIGA_(turmas) {
+  const select = document.getElementById('analisesMovimentacaoTurma');
+  if (!select) return;
+  const atual = select.value;
+  select.innerHTML = '<option value="">Todas as turmas</option>';
+  turmas.forEach(turma => {
+    const opcao = document.createElement('option');
+    opcao.value = turma;
+    opcao.textContent = turma;
+    select.appendChild(opcao);
+  });
+  if ([...select.options].some(o => o.value === atual)) select.value = atual;
+}
+
+function definirTextoMovimentacaoAnalisesSIGA_(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+function desenharGraficoMovimentacaoAnalisesSIGA_(resposta) {
+  const alvo = document.getElementById('graficoAnalisesMovimentacao');
+  const serie = resposta.serie || [];
+  if (!alvo) return;
+
+  if (!serie.length || !serie.some(x => x.entradas || x.saidas)) {
+    alvo.innerHTML = '<div class="estado-vazio">Nenhuma entrada ou saída no período'
+      + (resposta.turma ? ' para ' + escAnalisesSIGA(resposta.turma) : '') + '.</div>';
+    return;
+  }
+
+  const totalEntradas = serie.reduce((s, x) => s + Number(x.entradas || 0), 0);
+  const totalSaidas = serie.reduce((s, x) => s + Number(x.saidas || 0), 0);
+  const saldo = totalEntradas - totalSaidas;
+  const classeSaldo = saldo > 0 ? 'analises-saldo-positivo' : (saldo < 0 ? 'analises-saldo-negativo' : 'analises-saldo-zero');
+
+  definirTextoMovimentacaoAnalisesSIGA_('resumoAnalisesMovimentacao',
+    '<span><strong>' + totalEntradas + '</strong> entradas</span>'
+    + '<span><strong>' + totalSaidas + '</strong> saídas</span>'
+    + '<span class="' + classeSaldo + '">saldo <strong>' + (saldo > 0 ? '+' : '') + saldo + '</strong></span>');
+
+  vizGraficoColunas(alvo, {
+    titulo: resposta.turma ? ('Entradas e saídas — ' + resposta.turma) : 'Entradas e saídas — todas as turmas',
+    categorias: serie.map(x => x.periodo),
+    series: [
+      { nome: 'Entradas', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.entradas) },
+      { nome: 'Saídas', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.saidas) }
+    ]
+  });
+
+  const aviso = document.getElementById('avisoAnalisesMovimentacao');
+  if (!aviso) return;
+  const semData = Number(resposta.saidasSemData || 0);
+  if (semData > 0) {
+    aviso.textContent = semData + ' matrícula(s) encerrada(s) sem data de encerramento não aparecem como saída em nenhum mês — preencha DATA_CANCELAMENTO/FINALIZACAO na DimMatricula.';
+    aviso.classList.remove('oculto');
+  } else {
+    aviso.classList.add('oculto');
+  }
 }
 
 /**

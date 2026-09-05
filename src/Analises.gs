@@ -461,6 +461,86 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
 }
 
 
+
+/**
+ * Entradas e saídas de alunos por mês, opcionalmente de UMA turma.
+ *
+ * Chamada sob demanda pelo gráfico "Entradas e saídas de alunos por mês" —
+ * de propósito fora do cache de Análises: lê só a DimMatricula (nada de
+ * TodosBoletos/Comprovante), então roda em segundos e sempre reflete o
+ * cadastro atual, sem esperar o recálculo de 6 horas.
+ *
+ * Entrada  = matrícula cuja data de início cai no mês.
+ * Saída    = matrícula cuja data de encerramento cai no mês.
+ *
+ * Matrícula encerrada SEM data de encerramento preenchida não entra na
+ * contagem de saídas — não há como saber em que mês ela saiu. É a mesma
+ * limitação que analisesMatriculaNoRateio_ trata no rateio de pagamentos:
+ * o conserto é preencher DATA_CANCELAMENTO/FINALIZACAO no cadastro.
+ * O total dessas linhas volta em "saidasSemData" para a tela poder avisar.
+ */
+function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
+  filtros = filtros || {};
+  validarPermissaoPagamentosSIGA_(filtros.token);
+
+  const meses = Math.max(1, Math.min(36, Number(filtros.meses || 12)));
+  const turmaAlvo = String(filtros.turma || '').trim();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const matriculas = lerMatriculasPagUnif_(ss.getSheetByName('DimMatricula'));
+
+  const periodos = analisesGerarPeriodos_(meses);
+  const entradas = new Map();
+  const saidas = new Map();
+  periodos.forEach(p => {
+    const chave = analisesMesRotulo_(p).chave;
+    entradas.set(chave, 0);
+    saidas.set(chave, 0);
+  });
+
+  const turmas = new Set();
+  let saidasSemData = 0;
+
+  matriculas.forEach(m => {
+    const turma = String(m.turma || '').trim();
+    if (turma) turmas.add(turma);
+    if (turmaAlvo && turma !== turmaAlvo) return;
+
+    if (m.inicio instanceof Date) {
+      const chave = analisesMesRotulo_(m.inicio).chave;
+      if (entradas.has(chave)) entradas.set(chave, entradas.get(chave) + 1);
+    }
+
+    if (m.fim instanceof Date) {
+      const chave = analisesMesRotulo_(m.fim).chave;
+      if (saidas.has(chave)) saidas.set(chave, saidas.get(chave) + 1);
+    } else if (!analisesEmCursoParaMovimentacao_(m)) {
+      saidasSemData++;
+    }
+  });
+
+  const serie = periodos.map(p => {
+    const { chave, rotulo } = analisesMesRotulo_(p);
+    const ent = entradas.get(chave) || 0;
+    const sai = saidas.get(chave) || 0;
+    return { periodo: rotulo, entradas: ent, saidas: sai, saldo: ent - sai };
+  });
+
+  return {
+    sucesso: true,
+    turma: turmaAlvo,
+    turmas: Array.from(turmas).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    serie,
+    saidasSemData
+  };
+}
+
+/** Matrícula que ainda não é uma saída: aluno em curso ou em espera. */
+function analisesEmCursoParaMovimentacao_(m) {
+  const status = normalizarPagUnif_(m && m.status || '');
+  return status === 'ATIVO' || status === 'ATIVA' || status === 'EM ESPERA' || status === 'SUSPENSO' || status === 'SUSPENSA';
+}
+
 /**
  * Uma matrícula entra no rateio de um pagamento daquele mês?
  *
