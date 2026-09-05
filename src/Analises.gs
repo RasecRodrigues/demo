@@ -487,15 +487,18 @@ const ANALISES_PDF_CONFIG_ = {
  *   blocos: [ { titulo, subtitulo, colunas: [], linhas: [ [] ] } ]
  * }
  *
- * Gráficos não entram: são SVG montado no navegador, e recriá-los aqui
- * seria manter um segundo renderizador só para o PDF. O relatório leva as
- * tabelas, que é onde estão os números.
+ * Cada bloco é uma tabela (colunas + linhas) ou um gráfico (imagem PNG em
+ * data URL, rasterizada pela própria tela a partir do SVG que está
+ * aparecendo). O conversor de HTML para PDF do Apps Script não desenha SVG,
+ * por isso a rasterização acontece no navegador e não aqui.
  */
 function gerarPdfAnalisesSIGA(dados) {
   dados = dados || {};
   validarPermissaoPagamentosSIGA_(dados.token);
 
-  const blocos = Array.isArray(dados.blocos) ? dados.blocos.filter(b => b && b.linhas && b.linhas.length) : [];
+  const blocos = Array.isArray(dados.blocos)
+    ? dados.blocos.filter(b => b && (b.imagem || (b.linhas && b.linhas.length)))
+    : [];
   if (!blocos.length) {
     throw new Error('Não há dados na tela para exportar. Aguarde o carregamento terminar e tente de novo.');
   }
@@ -526,11 +529,23 @@ function gerarPdfAnalisesSIGA(dados) {
   }
 
   blocos.forEach(bloco => {
-    partes.push('<section class="bloco">');
+    partes.push('<section class="bloco' + (bloco.imagem ? ' grafico-bloco' : '') + '">');
     partes.push('<h2>' + escapeHtmlAnalisesPdf_(bloco.titulo || '') + '</h2>');
     if (bloco.subtitulo) {
       partes.push('<p class="sub">' + escapeHtmlAnalisesPdf_(bloco.subtitulo) + '</p>');
     }
+
+    /*
+     * Gráfico: a tela rasteriza o SVG em PNG e manda a data URL. Rasterizar
+     * no navegador em vez de mandar o SVG é o que torna isso confiável — o
+     * conversor de HTML para PDF do Apps Script não desenha SVG.
+     */
+    if (bloco.imagem) {
+      partes.push('<img class="grafico" src="' + escapeHtmlAnalisesPdf_(bloco.imagem) + '">');
+      partes.push('</section>');
+      return;
+    }
+
     partes.push('<table><thead><tr>');
     (bloco.colunas || []).forEach((coluna, indice) => {
       partes.push('<th' + (indice ? ' class="num"' : '') + '>' + escapeHtmlAnalisesPdf_(coluna) + '</th>');
@@ -563,6 +578,8 @@ function gerarPdfAnalisesSIGA(dados) {
     + '.kpi span{display:block;font-size:7.5px;letter-spacing:.05em;text-transform:uppercase;color:#666}'
     + '.kpi strong{display:block;font-size:14px;margin-top:2px}'
     + '.bloco{page-break-inside:auto;margin-bottom:16px}'
+    + '.bloco.grafico-bloco{page-break-inside:avoid}'
+    + 'img.grafico{width:100%;max-height:95mm;object-fit:contain;display:block}'
     + 'h2{font-size:12px;margin:0 0 2px;color:#6B007B}'
     + '.sub{font-size:8px;color:#666;margin:0 0 6px}'
     + 'table{width:100%;border-collapse:collapse}'
@@ -647,14 +664,22 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
   const periodos = analisesGerarPeriodos_(meses);
   const entradas = new Map();
   const saidas = new Map();
+  const ativos = new Map();
   periodos.forEach(p => {
     const chave = analisesMesRotulo_(p).chave;
     entradas.set(chave, 0);
     saidas.set(chave, 0);
+    ativos.set(chave, 0);
   });
 
   const turmas = new Set();
   let saidasSemData = 0;
+
+  const limites = periodos.map(p => ({
+    chave: analisesMesRotulo_(p).chave,
+    inicio: p,
+    fim: new Date(p.getFullYear(), p.getMonth() + 1, 0, 23, 59, 59, 999)
+  }));
 
   matriculas.forEach(m => {
     const turma = String(m.turma || '').trim();
@@ -672,13 +697,19 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     } else if (!analisesEmCursoParaMovimentacao_(m)) {
       saidasSemData++;
     }
+
+    limites.forEach(lim => {
+      if (analisesAtivoNoMes_(m, lim.inicio, lim.fim)) {
+        ativos.set(lim.chave, ativos.get(lim.chave) + 1);
+      }
+    });
   });
 
   const serie = periodos.map(p => {
     const { chave, rotulo } = analisesMesRotulo_(p);
     const ent = entradas.get(chave) || 0;
     const sai = saidas.get(chave) || 0;
-    return { periodo: rotulo, entradas: ent, saidas: sai, saldo: ent - sai };
+    return { periodo: rotulo, ativos: ativos.get(chave) || 0, entradas: ent, saidas: sai, saldo: ent - sai };
   });
 
   return {
@@ -688,6 +719,25 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     serie,
     saidasSemData
   };
+}
+
+/**
+ * O aluno estava ativo NAQUELE mês?
+ *
+ * Conta por VIGÊNCIA da matrícula, não pelo status atual. É a diferença
+ * para calcularSerieMatriculasAnalisesSIGA_, que exige
+ * analisesStatusAtivo_(m.status) — status é o de HOJE, então quem já saiu
+ * deixa de ser contado até nos meses em que ainda estava na turma, e a
+ * série histórica de ativos fica menor do que foi de verdade.
+ *
+ * Sem data de fim não dá para saber quando saiu: aí sim o status atual
+ * decide — se a pessoa ainda está em curso, a matrícula segue aberta.
+ */
+function analisesAtivoNoMes_(m, inicioMes, fimMes) {
+  if (!m || !(m.inicio instanceof Date)) return false;
+  if (m.inicio > fimMes) return false;
+  if (m.fim instanceof Date) return m.fim >= inicioMes;
+  return analisesEmCursoParaMovimentacao_(m);
 }
 
 /** Matrícula que ainda não é uma saída: aluno em curso ou em espera. */
