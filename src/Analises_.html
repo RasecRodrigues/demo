@@ -154,13 +154,13 @@
       <table class="pagamentos-tabela">
         <thead>
           <tr id="cabecalhoTabelaAnalisesTurmas">
-            <th class="analises-th-ordenavel" data-campo="turma">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
-            <th class="analises-th-ordenavel" data-campo="ativos">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
-            <th class="analises-th-ordenavel" data-campo="saidas">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
-            <th class="analises-th-ordenavel" data-campo="total">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
-            <th class="analises-th-ordenavel" data-campo="receitaPeriodo">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
-            <th class="analises-th-ordenavel" data-campo="taxaEvasao">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
-            <th class="analises-th-ordenavel" data-campo="frequenciaMedia">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="turma">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="ativos">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="saidas">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="total">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="receitaPeriodo">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="taxaEvasao">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="frequenciaMedia">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesTurmas">
@@ -257,6 +257,8 @@
 }
 #tela-analises .pagamentos-tabela tbody tr.analises-turma-inicio td{border-top:2px solid #e1e0d9}
 #tela-analises .analises-th-ordenavel{cursor:pointer;user-select:none;white-space:nowrap}
+#tela-analises .analises-th-ordenavel:hover{background:#eef4fb}
+#tela-analises .analises-seta-inativa{color:#b8c4d4;font-weight:400}
 #tela-analises .analises-th-ordenavel:hover{color:#0b0b0b;background:#eeede7}
 #tela-analises .analises-seta-ordenacao{display:inline-block;margin-left:3px;font-size:10px;color:#2a78d6}
 #tela-analises .analises-tabela-pivot{white-space:nowrap}
@@ -724,6 +726,7 @@ const ANALISES_IDS_GRAFICOS = [
 
 function carregarAnalisesSIGA() {
   analisesInicializarOrdenacaoSIGA_();
+  atualizarSetasOrdenacaoAnalisesSIGA_();
   const meses = Number(document.getElementById('analisesMeses')?.value || 12);
   const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
     ? obterTokenPagamentosUnificadosSIGA()
@@ -1001,9 +1004,11 @@ function ordenarListaAnalisesSIGA_(lista) {
 function atualizarSetasOrdenacaoAnalisesSIGA_() {
   document.querySelectorAll('#tela-analises .analises-seta-ordenacao').forEach(span => {
     const campo = span.getAttribute('data-seta');
-    span.textContent = analisesOrdenacaoDetalhamento.campo === campo
+    const ativa = analisesOrdenacaoDetalhamento.campo === campo;
+    span.textContent = ativa
       ? (analisesOrdenacaoDetalhamento.direcao === 'asc' ? ' ▲' : ' ▼')
-      : '';
+      : ' ⇅';
+    span.classList.toggle('analises-seta-inativa', !ativa);
   });
 }
 
@@ -1164,8 +1169,12 @@ function analisesAlternarOrdenacaoPivot_(estado, campo) {
 }
 
 function analisesThOrdenavelPivot_(rotulo, campo, estado) {
-  const seta = estado.campo === campo ? (estado.direcao === 'asc' ? ' ▲' : ' ▼') : '';
-  return `<th class="analises-th-ordenavel" data-campo="${escAnalisesSIGA(campo)}">${vizEsc(rotulo)}${seta}</th>`;
+  // Coluna sem ordenação ativa mostra uma seta dupla apagada: sem isso não
+  // havia nenhuma pista de que o cabeçalho era clicável.
+  const seta = estado.campo === campo
+    ? (estado.direcao === 'asc' ? ' ▲' : ' ▼')
+    : '<span class="analises-seta-inativa"> ⇅</span>';
+  return `<th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="${escAnalisesSIGA(campo)}">${vizEsc(rotulo)}${seta}</th>`;
 }
 
 /**
@@ -1368,8 +1377,11 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
       analisesAlunosPorTurmaCache.set(chaveCache, alunos);
       renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan);
     })
-    .withFailureHandler(() => {
-      linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.</div></td>`;
+    .withFailureHandler(erro => {
+      // Mostra o motivo real: a mensagem genérica escondia o erro do
+      // servidor e não dava por onde começar a investigar.
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.<br><small>${escAnalisesSIGA(motivo)}</small></div></td>`;
     })
     .obterAlunosPagamentosPorTurmaAnalisesSIGA({
       token,

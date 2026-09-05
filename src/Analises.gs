@@ -24,6 +24,9 @@ const ANALISES_CACHE_SHEETS = {
   PAGAMENTO_ALUNO: 'AnalisesCache_PagamentoAluno'
 };
 const ANALISES_CACHE_PROP_ATUALIZADO_EM = 'ANALISES_CACHE_ATUALIZADO_EM';
+// Turma em que o cálculo de frequência parou por falta de tempo; a próxima
+// execução retoma dela em vez de recomeçar do início da lista.
+const ANALISES_CACHE_PROP_FREQ_CURSOR = 'ANALISES_CACHE_FREQ_CURSOR';
 const ANALISES_CACHE_MESES_MAX = 36;
 
 /**
@@ -480,11 +483,32 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
   });
 
   const ativas = comparativoTurmas.filter(item => item.ativos > 0);
-  for (let i = 0; i < ativas.length; i++) {
+  if (!ativas.length) {
+    return;
+  }
+
+  // O orçamento de tempo abaixo interrompe o laço no meio da lista. Antes,
+  // ele recomeçava sempre do índice 0, então as turmas do fim da lista NUNCA
+  // eram calculadas: toda execução parava no mesmo ponto e elas ficavam
+  // permanentemente com frequência em branco (aparecendo como 0% na tela).
+  // Agora o ponto de parada é gravado e a próxima execução retoma dali,
+  // dando a volta na lista — em algumas execuções todas as turmas são
+  // atendidas, independentemente de quantas cabem em um único orçamento.
+  const props = PropertiesService.getScriptProperties();
+  const turmaRetomada = props.getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR) || '';
+  const indiceRetomada = Math.max(0, ativas.findIndex(item => item.turma === turmaRetomada));
+
+  let proximaTurma = '';
+  let processadas = 0;
+
+  for (let passo = 0; passo < ativas.length; passo++) {
+    const i = (indiceRetomada + passo) % ativas.length;
     if (Date.now() - inicio > ORCAMENTO_MS) {
-      break; // fica pra próxima execução — os números principais já foram salvos
+      proximaTurma = ativas[i].turma; // retoma exatamente daqui na próxima execução
+      break;
     }
     const turma = ativas[i].turma;
+    processadas++;
     const linha = linhaPorTurma.get(turma);
     if (!linha) {
       continue;
@@ -498,6 +522,9 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
     }
     SpreadsheetApp.flush();
   }
+
+  // Lista inteira percorrida: zera o cursor para a próxima execução começar do topo.
+  props.setProperty(ANALISES_CACHE_PROP_FREQ_CURSOR, processadas >= ativas.length ? '' : proximaTurma);
 }
 
 function analisesGerarPeriodos_(mesesJanela) {
