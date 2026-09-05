@@ -48,6 +48,8 @@
     </div>
   </div>
 
+  <div class="analises-tarja-secao"><h3>Visão geral</h3><span>Matrículas e receita do período inteiro.</span></div>
+
   <div class="analises-grade-dupla">
     <section class="cartao">
       <div class="cartao-cabecalho">
@@ -86,6 +88,8 @@
     </div>
   </section>
 
+  <div class="analises-tarja-secao"><h3>Turmas</h3><span>Comparação, frequência e detalhamento. O filtro de modalidade abaixo vale para tudo nesta seção.</span></div>
+
   <div class="analises-filtro-modalidade-linha">
     <span class="analises-filtro-modalidade-rotulo">Modalidade (afeta os gráficos de turma abaixo e o detalhamento):</span>
     <div id="analisesFiltroModalidade" class="analises-filtro-modalidade"></div>
@@ -118,33 +122,15 @@
     </section>
   </div>
 
-  <section class="cartao">
-    <div class="cartao-cabecalho">
-      <div>
-        <h2>Lucro por turma no tempo</h2>
-        <span class="subtitulo">Lucro = valor efetivamente pago pelos alunos (boleto pago + comprovante) − valor pago aos professores dessa turma, por mês. Ordenado pelo total do período (role para o lado para ver todos os meses).</span>
-      </div>
-    </div>
-    <div class="pagamentos-tabela-wrap">
-      <table class="pagamentos-tabela analises-tabela-pivot">
-        <thead>
-          <tr id="cabecalhoTabelaMensalidadesTempo"><th>Turma</th></tr>
-        </thead>
-        <tbody id="corpoTabelaMensalidadesTempo">
-          <tr><td class="estado-vazio">Carregando...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
 
   <section class="cartao">
-    <div class="cartao-cabecalho">
-      <h2>Detalhamento por turma</h2>
-      <span class="subtitulo">Só turmas com aluno ativo. Clique no cabeçalho de uma coluna para ordenar.</span>
-    </div>
-    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:12px;">
-      <div class="campo">
-        <label>Receita do mês</label>
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+      <div>
+        <h2>Detalhamento por turma</h2>
+        <span class="subtitulo">Só turmas com aluno ativo. Clique no cabeçalho de uma coluna para ordenar.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesDetalhamentoMes">Receita do mês</label>
         <select id="analisesDetalhamentoMes" onchange="renderizarTurmasFiltradasAnalisesSIGA(analisesDadosCache)">
           <option value="">Soma do período</option>
         </select>
@@ -170,14 +156,16 @@
     </div>
   </section>
 
+  <div class="analises-tarja-secao"><h3>Financeiro por turma</h3><span>Quanto cada turma recebeu e quanto sobrou depois do custo do professor.</span></div>
+
   <section class="cartao">
-    <div class="cartao-cabecalho">
-      <h2>Mensalidades por turma no período</h2>
-      <span class="subtitulo">Clique no nome da turma para ver os alunos ativos/suspensos dela e o quanto cada um pagou no período.</span>
-    </div>
-    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:12px;">
-      <div class="campo">
-        <label>Mês</label>
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+      <div>
+        <h2>Mensalidades recebidas por turma</h2>
+        <span class="subtitulo">Clique no nome da turma para ver os alunos e quanto cada um pagou.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesMensalidadesMes">Mês</label>
         <select id="analisesMensalidadesMes" onchange="preencherTabelaMensalidadesAnalisesSIGA(analisesDadosCache?.detalheMensalPorTurma || [])">
           <option value="">Todos os meses (colunas)</option>
         </select>
@@ -189,6 +177,25 @@
           <tr id="cabecalhoTabelaAnalisesLucro"><th>Turma</th></tr>
         </thead>
         <tbody id="corpoTabelaAnalisesLucro">
+          <tr><td class="estado-vazio">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Lucro por turma</h2>
+        <span class="subtitulo">Mensalidades recebidas − valor pago ao professor da turma, mês a mês. Negativo em vermelho. Role para o lado para ver todos os meses.</span>
+      </div>
+    </div>
+    <div class="pagamentos-tabela-wrap">
+      <table class="pagamentos-tabela analises-tabela-pivot">
+        <thead>
+          <tr id="cabecalhoTabelaMensalidadesTempo"><th>Turma</th></tr>
+        </thead>
+        <tbody id="corpoTabelaMensalidadesTempo">
           <tr><td class="estado-vazio">Carregando...</td></tr>
         </tbody>
       </table>
@@ -264,15 +271,65 @@
 #tela-analises .analises-tabela-pivot{white-space:nowrap}
 #tela-analises .analises-tabela-pivot th:first-child,
 #tela-analises .analises-tabela-pivot td:first-child{
-  position:sticky;left:0;background:#fcfcfb;z-index:1;
+  position:sticky;left:0;background:#fff;z-index:1;
   box-shadow:1px 0 0 #e1e0d9;
 }
+/* zebra e hover precisam valer TAMBÉM na coluna fixa, senão a célula da
+   turma destoa do resto da linha */
+#tela-analises .analises-tabela-pivot tbody tr:nth-child(even) td:first-child{background:#faf9f6}
+#tela-analises .analises-tabela-pivot tbody tr:hover td:first-child{background:#f2f1eb}
 #tela-analises .analises-tabela-pivot thead th:first-child{background:#f4f3ef;z-index:3}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos:hover{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{
   padding:14px 14px 14px 20px;
   border-left:3px solid #d8d6cc;
+}
+
+/* --- Tarjas de seção: dão ritmo à página, que antes era uma pilha de
+       cartões sem hierarquia nenhuma --- */
+.analises-tarja-secao{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin:30px 0 12px;padding-bottom:8px;border-bottom:1px solid #e6e5de;
+}
+.analises-tarja-secao h3{
+  margin:0;font-size:12px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;color:#6B007B;
+}
+.analises-tarja-secao span{font-size:12.5px;color:#898781}
+
+/* --- Filtro dentro do cabeçalho do cartão, no lugar do div solto com
+       style inline que ficava desalinhado do título --- */
+#tela-analises .analises-cabecalho-com-filtro{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:16px;flex-wrap:wrap;margin-bottom:14px;
+}
+#tela-analises .analises-campo-filtro{min-width:210px;margin:0}
+#tela-analises .analises-campo-filtro label{
+  display:block;font-size:11px;font-weight:700;letter-spacing:.03em;
+  text-transform:uppercase;color:#898781;margin-bottom:4px;
+}
+#tela-analises .analises-campo-filtro select{width:100%}
+
+/* --- Coluna Total: peso próprio e uma divisória, para não se perder no
+       meio de dezenas de colunas de mês --- */
+#tela-analises .analises-celula-total{font-weight:800;border-left:1px solid #e1e0d9}
+#tela-analises .analises-tabela-pivot thead th:last-child{border-left:1px solid #e1e0d9}
+
+/* --- Lucro: sinal legível sem precisar ler o "-" --- */
+#tela-analises .analises-lucro-negativo{color:#b0201d;font-weight:700}
+#tela-analises .analises-lucro-positivo{color:#166534}
+#tela-analises .analises-lucro-zero{color:#a3a29c}
+
+/* --- KPIs: rótulo menor e número maior, para o valor dominar --- */
+#tela-analises .pagamentos-kpi span{
+  font-size:10.5px;letter-spacing:.05em;color:#898781;line-height:1.35;
+}
+#tela-analises .pagamentos-kpi strong{font-size:26px;letter-spacing:-.02em}
+
+@media(max-width:700px){
+  #tela-analises .analises-cabecalho-com-filtro{align-items:stretch}
+  #tela-analises .analises-campo-filtro{min-width:0;width:100%}
 }
 
 .analises-link-turma{
@@ -1245,10 +1302,21 @@ function preencherTabelaMensalidadesTempoAnalisesSIGA(lucroPorTurma, periodosRot
   corpo.innerHTML = linhas.map(linha => `
     <tr>
       <td><strong>${escAnalisesSIGA(linha.turma)}</strong></td>
-      ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(linha.porMes.get(p) || 0)}</td>`).join('')}
-      <td style="font-weight:800">${moedaAnalisesSIGA(linha.total)}</td>
+      ${periodosRotulos.map(p => celulaLucroAnalisesSIGA_(linha.porMes.get(p) || 0)).join('')}
+      ${celulaLucroAnalisesSIGA_(linha.total, true)}
     </tr>
   `).join('');
+}
+
+/**
+ * Lucro é a única tabela da tela em que o número pode ser negativo — uma
+ * turma que custou mais professor do que recebeu de mensalidade. Em preto,
+ * o sinal de menos passava batido no meio de dezenas de colunas.
+ */
+function celulaLucroAnalisesSIGA_(valor, ehTotal) {
+  const n = Number(valor || 0);
+  const classe = n < 0 ? 'analises-lucro-negativo' : (n > 0 ? 'analises-lucro-positivo' : 'analises-lucro-zero');
+  return `<td class="${classe}${ehTotal ? ' analises-celula-total' : ''}">${moedaAnalisesSIGA(n)}</td>`;
 }
 
 let analisesAlunosPorTurmaCache = new Map();
@@ -1313,7 +1381,7 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
     <tr>
       <td>${botaoTurma(linha.turma)}</td>
       ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(linha.porMes.get(p) || 0)}</td>`).join('')}
-      <td style="font-weight:800">${moedaAnalisesSIGA(linha.total)}</td>
+      <td class="analises-celula-total">${moedaAnalisesSIGA(linha.total)}</td>
     </tr>
   `).join('');
 }
