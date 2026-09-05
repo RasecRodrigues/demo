@@ -26,11 +26,13 @@
       <button type="button" class="botao botao-secundario" id="botaoRecalcularAnalises" onclick="recalcularCacheAnalisesSIGA()" title="Refaz o cálculo a partir das planilhas — mais lento, use quando os dados parecerem desatualizados.">
         🔄 Recalcular dados
       </button>
-      <button type="button" class="botao botao-primario" id="botaoExportarPdfAnalises" onclick="exportarPdfAnalisesSIGA()" title="Gera um PDF com as tabelas exatamente como estão na tela, incluindo a ordenação e os filtros atuais.">
+      <button type="button" class="botao botao-primario" id="botaoExportarPdfAnalises" onclick="exportarPdfAnalisesSIGA()" title="Gera um PDF com os gráficos e as tabelas exatamente como estão na tela, incluindo a ordenação e os filtros atuais.">
         ⬇ Exportar PDF
       </button>
     </div>
   </div>
+
+  <div id="resultadoPdfAnalises" class="analises-resultado-pdf oculto"></div>
 
   <div class="analises-kpis">
     <div class="pagamentos-kpi">
@@ -310,6 +312,20 @@
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{
   padding:14px 14px 14px 20px;
   border-left:3px solid #d8d6cc;
+}
+
+/* --- PDF pronto: link na tela, porque o pop-up é bloqueado --- */
+.analises-resultado-pdf{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:14px 0 0;padding:11px 14px;border-radius:10px;
+  background:#eaf7ee;border:1px solid #bbe5c6;color:#14532d;font-size:13px;
+}
+.analises-resultado-pdf.oculto{display:none}
+.analises-resultado-pdf-ok{font-weight:700}
+.analises-resultado-pdf .botao{text-decoration:none}
+.analises-resultado-pdf-fechar{
+  margin-left:auto;background:none;border:none;cursor:pointer;
+  font-size:19px;line-height:1;color:#14532d;padding:0 2px;
 }
 
 /* --- Entradas e saídas: resumo numérico acima do gráfico --- */
@@ -1013,6 +1029,37 @@ const ANALISES_GRAFICOS_PARA_PDF = [
 ];
 
 /**
+ * Mostra o PDF pronto como link na própria tela.
+ *
+ * window.open aqui dentro roda no retorno do google.script.run, e não no
+ * clique — para o navegador isso não é gesto do usuário, então o pop-up é
+ * bloqueado. Pior: alguns bloqueadores devolvem um objeto de janela em vez
+ * de null, então nem o aviso de "pop-up bloqueado" aparecia e o botão
+ * simplesmente não fazia nada visível. O link fica na tela e o clique nele
+ * é gesto legítimo; a tentativa de abrir sozinho continua, como atalho.
+ */
+function mostrarResultadoPdfAnalisesSIGA_(resposta) {
+  const caixa = document.getElementById('resultadoPdfAnalises');
+  if (caixa) {
+    caixa.innerHTML =
+      '<span class="analises-resultado-pdf-ok">PDF pronto:</span> '
+      + '<strong>' + escAnalisesSIGA(resposta.nome || 'relatório.pdf') + '</strong>'
+      + '<a class="botao botao-primario botao-rh-pequeno" target="_blank" rel="noopener" href="'
+      + escAnalisesSIGA(resposta.url) + '">Abrir</a>'
+      + (resposta.urlDownload
+          ? '<a class="botao botao-secundario botao-rh-pequeno" target="_blank" rel="noopener" href="'
+            + escAnalisesSIGA(resposta.urlDownload) + '">Baixar</a>'
+          : '')
+      + '<button type="button" class="analises-resultado-pdf-fechar" onclick="document.getElementById(\'resultadoPdfAnalises\').classList.add(\'oculto\')">&times;</button>';
+    caixa.classList.remove('oculto');
+    caixa.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // Atalho: se o navegador deixar, já abre. Se bloquear, o link acima resolve.
+  try { window.open(resposta.url, '_blank'); } catch (erro) { /* bloqueado: tudo bem */ }
+}
+
+/**
  * Converte um gráfico da tela em PNG.
  *
  * Os gráficos são SVG montado aqui no navegador, e o conversor de HTML para
@@ -1079,6 +1126,9 @@ function exportarPdfAnalisesSIGA() {
   const botao = document.getElementById('botaoExportarPdfAnalises');
   const rotulo = botao ? botao.textContent : '';
 
+  const caixaAnterior = document.getElementById('resultadoPdfAnalises');
+  if (caixaAnterior) caixaAnterior.classList.add('oculto');
+
   if (botao) {
     botao.disabled = true;
     botao.textContent = 'Gerando PDF...';
@@ -1143,11 +1193,7 @@ function enviarPdfAnalisesSIGA_(blocosGraficos, liberar) {
         mostrarErroAnalisesSIGA('O PDF não pôde ser gerado.');
         return;
       }
-      const janela = window.open(resposta.url, '_blank');
-      if (!janela) {
-        // pop-up bloqueado: deixa o link na tela em vez de falhar em silêncio
-        mostrarErroAnalisesSIGA('PDF gerado, mas o navegador bloqueou a janela. Abra por aqui: ' + resposta.url);
-      }
+      mostrarResultadoPdfAnalisesSIGA_(resposta);
     })
     .withFailureHandler(erro => {
       liberar();
