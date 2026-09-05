@@ -338,6 +338,7 @@ function configurarGatilhoCacheAnalisesSIGA() {
  * quebrava com "Já existe uma página chamada ...".
  */
 function garantirCacheAnalisesSIGA_() {
+  const inicioExecucao = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
     return;
@@ -358,7 +359,7 @@ function garantirCacheAnalisesSIGA_() {
   }
   if (nucleo) {
     analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
-    analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas);
+    analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas, inicioExecucao);
   }
 }
 
@@ -379,10 +380,11 @@ function garantirCacheAnalisesSIGA_() {
  * trabalho), então nenhuma delas precisa de lock.
  */
 function recalcularCacheAnalisesSIGA() {
+  const inicioExecucao = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const nucleo = analisesRecalcularCacheNucleoComLock_(ss);
   analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
-  analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas);
+  analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas, inicioExecucao);
 }
 
 function analisesRecalcularCacheNucleoComLock_(ss) {
@@ -482,7 +484,7 @@ function analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) {
   throw new Error('Análises não encontrou a função de cálculo do valor da matrícula (esperada calcularValorMatriculaPagUnifV38_ no arquivo Pagamentos). Se ela foi renomeada, atualize analisesCalcularValorMatricula_ no Analises.');
 }
 
-function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
+function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, inicioExecucao) {
   if (typeof obterPainelFrequenciaTurma !== 'function') {
     return;
   }
@@ -491,8 +493,14 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
     return;
   }
 
-  const inicio = Date.now();
-  const ORCAMENTO_MS = 4 * 60 * 1000; // deixa ~2min de folga do limite de 6min do Apps Script
+  // O orçamento tem que contar a execução INTEIRA, não só esta etapa. As
+  // etapas anteriores (núcleo + mensalidades) já consumiram parte do limite
+  // de 6 min do Apps Script; medir a partir daqui dava a esta etapa 4 min
+  // adicionais e o total estourava com "Tempo máximo de execução excedido",
+  // perdendo o recálculo inteiro. Com o cursor rotativo abaixo, o que não
+  // couber agora é retomado na execução seguinte.
+  const inicio = inicioExecucao || Date.now();
+  const ORCAMENTO_MS = 4.5 * 60 * 1000; // ~1,5 min de folga até o limite de 6 min
 
   const periodosFreq = analisesGerarPeriodos_(3);
   const mesInicial = analisesMesRotulo_(periodosFreq[0]).chave;
