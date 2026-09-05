@@ -225,9 +225,7 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       // pagamento inteiro na turma que sobrou — era por isso que o Caio
       // aparecia com R$ 260,00 na INTERMED1 (R$ 180,00 dela + R$ 80,00 da I22)
       // e a soma dos alunos estourava o total da coluna, que já rateava certo.
-      const vigentes = matsAluno.filter(m =>
-        vigenteNoMesPagUnif_(m, ref) && (!m.inicio || m.inicio <= dataCalculo)
-      );
+      const vigentes = matsAluno.filter(m => analisesMatriculaNoRateio_(m, ref, dataCalculo));
       if (!vigentes.length) return;
 
       const matriculaDaTurma = vigentes.find(m => String(m.turma || '').trim() === turmaAlvo);
@@ -460,6 +458,34 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+}
+
+
+/**
+ * Uma matrícula entra no rateio de um pagamento daquele mês?
+ *
+ * vigenteNoMesPagUnif_ sozinho considera vigente qualquer matrícula SEM data
+ * de encerramento preenchida — ou seja, para sempre. Uma linha antiga de
+ * turma que já acabou, mas cuja DATA_CANCELAMENTO/FINALIZACAO ficou em
+ * branco, passava a disputar todo pagamento futuro: além de roubar uma
+ * fatia, a presença dela ligava o preço de COMBO, e o aluno aparecia
+ * pagando um valor quebrado numa turma em que pagou o valor cheio.
+ *
+ * Por isso, matrícula com status de saída só conta se o encerramento
+ * estiver datado. Note que a lista de status abaixo não é fechada: qualquer
+ * status que não seja de aluno em curso (ATIVO/SUSPENSO) cai na mesma
+ * exigência — inclusive "TURMA ENCERRADA", que não aparece na lista de
+ * encerrados do Pagamentos.
+ */
+function analisesMatriculaNoRateio_(m, ref, dataCalculo) {
+  if (!m) return false;
+  if (!vigenteNoMesPagUnif_(m, ref)) return false;
+  if (m.inicio && m.inicio > dataCalculo) return false;
+  const status = normalizarPagUnif_(m.status || '');
+  if (status === 'ATIVO' || status === 'ATIVA' || status === 'SUSPENSO' || status === 'SUSPENSA') {
+    return true;
+  }
+  return Boolean(m.fim);
 }
 
 /**
@@ -1306,9 +1332,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
       // trabalhar em granularidade de mês inteiro, consideraria o mês
       // inteiro vigente mesmo antes do início real (foi isso que fez uma
       // turma que ainda vai começar aparecer com pagamento antes).
-      const ativas = matsAluno.filter(m =>
-        vigenteNoMesPagUnif_(m, ref) && (!m.inicio || m.inicio <= dataCalculo)
-      );
+      const ativas = matsAluno.filter(m => analisesMatriculaNoRateio_(m, ref, dataCalculo));
       if (!ativas.length) {
         return;
       }
