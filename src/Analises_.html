@@ -130,8 +130,8 @@
   <section class="cartao">
     <div class="cartao-cabecalho analises-cabecalho-com-filtro">
       <div>
-        <h2>Entradas e saídas de alunos por mês</h2>
-        <span class="subtitulo">Quantos alunos a turma tinha no fim de cada mês (linha) e quantos entraram e saíram durante o mês (colunas). Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
+        <h2>Alunos ativos por mês</h2>
+        <span class="subtitulo">Quantos alunos a turma tinha no fim de cada mês. Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
       </div>
       <div class="campo analises-campo-filtro">
         <label for="analisesMovimentacaoTurma">Turma</label>
@@ -141,10 +141,7 @@
       </div>
     </div>
     <div id="resumoAnalisesMovimentacao" class="analises-resumo-movimentacao"></div>
-    <div id="graficoAnalisesAtivosTurma" class="analises-grafico-area">
-      <div class="estado-vazio">Carregando...</div>
-    </div>
-    <div id="graficoAnalisesMovimentacao" class="analises-grafico-area">
+    <div id="graficoAnalisesMovimentacao" class="analises-grafico-area analises-grafico-alto">
       <div class="estado-vazio">Carregando...</div>
     </div>
     <div id="avisoAnalisesMovimentacao" class="analises-aviso-movimentacao oculto"></div>
@@ -1024,8 +1021,7 @@ const ANALISES_GRAFICOS_PARA_PDF = [
   { id: 'graficoAnalisesFinanceiro', titulo: 'Receita financeira no tempo' },
   { id: 'graficoAnalisesTurmas', titulo: 'Comparação entre turmas' },
   { id: 'graficoAnalisesFrequencia', titulo: 'Frequência média por turma' },
-  { id: 'graficoAnalisesAtivosTurma', titulo: 'Alunos ativos no fim de cada mês' },
-  { id: 'graficoAnalisesMovimentacao', titulo: 'Entradas e saídas no mês' }
+  { id: 'graficoAnalisesMovimentacao', titulo: 'Alunos ativos no fim de cada mês' }
 ];
 
 /**
@@ -1235,13 +1231,13 @@ function analisesBlocoMovimentacaoParaPdf_() {
   const dados = analisesMovimentacaoUltima;
   if (!dados || !dados.serie || !dados.serie.length) return null;
   const linhas = dados.serie
-    .filter(x => x.entradas || x.saidas || x.ativos)
-    .map(x => [x.periodo, String(x.ativos || 0), String(x.entradas), String(x.saidas), (x.saldo > 0 ? '+' : '') + x.saldo]);
+    .filter(x => x.ativos)
+    .map(x => [x.periodo, String(x.ativos || 0)]);
   if (!linhas.length) return null;
   return {
-    titulo: 'Alunos ativos, entradas e saídas por mês',
+    titulo: 'Alunos ativos por mês',
     subtitulo: dados.turma ? ('Turma: ' + dados.turma) : 'Todas as turmas',
-    colunas: ['Mês', 'Ativos no fim do mês', 'Entradas', 'Saídas', 'Saldo'],
+    colunas: ['Mês', 'Ativos no fim do mês'],
     linhas
   };
 }
@@ -1315,55 +1311,36 @@ function desenharGraficoMovimentacaoAnalisesSIGA_(resposta) {
   analisesMovimentacaoUltima = resposta;
   if (!alvo) return;
 
-  if (!serie.length || !serie.some(x => x.entradas || x.saidas || x.ativos)) {
-    alvo.innerHTML = '<div class="estado-vazio">Nenhuma entrada ou saída no período'
-      + (resposta.turma ? ' para ' + escAnalisesSIGA(resposta.turma) : '') + '.</div>';
+  if (!serie.length || !serie.some(x => x.ativos)) {
+    alvo.innerHTML = '<div class="estado-vazio">Nenhum aluno ativo no período'
+      + (resposta.turma ? ' em ' + escAnalisesSIGA(resposta.turma) : '') + '.</div>';
     return;
   }
 
-  const totalEntradas = serie.reduce((s, x) => s + Number(x.entradas || 0), 0);
-  const totalSaidas = serie.reduce((s, x) => s + Number(x.saidas || 0), 0);
-  const saldo = totalEntradas - totalSaidas;
-  const classeSaldo = saldo > 0 ? 'analises-saldo-positivo' : (saldo < 0 ? 'analises-saldo-negativo' : 'analises-saldo-zero');
-
   const ativosUltimo = Number(serie[serie.length - 1].ativos || 0);
+  const ativosPrimeiro = Number(serie[0].ativos || 0);
+  const variacao = ativosUltimo - ativosPrimeiro;
+  const classeVariacao = variacao > 0 ? 'analises-saldo-positivo' : (variacao < 0 ? 'analises-saldo-negativo' : 'analises-saldo-zero');
+  const maior = serie.reduce((a, b) => (Number(b.ativos || 0) > Number(a.ativos || 0) ? b : a), serie[0]);
+
   definirTextoMovimentacaoAnalisesSIGA_('resumoAnalisesMovimentacao',
     '<span><strong>' + ativosUltimo + '</strong> ativos no fim de ' + escAnalisesSIGA(serie[serie.length - 1].periodo) + '</span>'
-    + '<span><strong>' + totalEntradas + '</strong> entradas no período</span>'
-    + '<span><strong>' + totalSaidas + '</strong> saídas no período</span>'
-    + '<span class="' + classeSaldo + '">saldo <strong>' + (saldo > 0 ? '+' : '') + saldo + '</strong></span>');
+    + '<span class="' + classeVariacao + '">' + (variacao > 0 ? '+' : '') + '<strong>' + variacao + '</strong> desde ' + escAnalisesSIGA(serie[0].periodo) + '</span>'
+    + '<span>pico de <strong>' + Number(maior.ativos || 0) + '</strong> em ' + escAnalisesSIGA(maior.periodo) + '</span>');
 
-  /*
-   * Dois gráficos, e não três séries num só: "alunos ativos" é um estoque
-   * (centenas) e entradas/saídas são fluxo (unidades). vizGraficoColunas usa
-   * uma escala única, então juntar tudo achataria as barras de entrada e
-   * saída na linha de base — some justamente o que se quer comparar.
-   */
-  const alvoAtivos = document.getElementById('graficoAnalisesAtivosTurma');
-  if (alvoAtivos) {
-    vizGraficoLinha(alvoAtivos, {
-      titulo: resposta.turma ? ('Alunos ativos no fim de cada mês — ' + resposta.turma) : 'Alunos ativos no fim de cada mês — todas as turmas',
-      categorias: serie.map(x => x.periodo),
-      areaUnicaSerie: true,
-      semRotuloUnico: true,
-      series: [{ nome: 'Alunos ativos', cor: VIZ_COR.categorico[0], pontos: serie.map(x => x.ativos || 0) }]
-    });
-  }
-
-  vizGraficoColunas(alvo, {
-    titulo: 'Entradas e saídas no mês',
+  vizGraficoLinha(alvo, {
+    titulo: resposta.turma ? ('Alunos ativos no fim de cada mês — ' + resposta.turma) : 'Alunos ativos no fim de cada mês — todas as turmas',
     categorias: serie.map(x => x.periodo),
-    series: [
-      { nome: 'Entradas', cor: VIZ_COR.categorico[2] || VIZ_COR.categorico[0], valores: serie.map(x => x.entradas) },
-      { nome: 'Saídas', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.saidas) }
-    ]
+    areaUnicaSerie: true,
+    semRotuloUnico: true,
+    series: [{ nome: 'Alunos ativos', cor: VIZ_COR.categorico[0], pontos: serie.map(x => x.ativos || 0) }]
   });
 
   const aviso = document.getElementById('avisoAnalisesMovimentacao');
   if (!aviso) return;
   const semData = Number(resposta.saidasSemData || 0);
   if (semData > 0) {
-    aviso.textContent = semData + ' matrícula(s) encerrada(s) sem data de encerramento não aparecem como saída em nenhum mês — preencha DATA_CANCELAMENTO/FINALIZACAO na DimMatricula.';
+    aviso.textContent = semData + ' matrícula(s) encerrada(s) sem data de encerramento ficam fora desta contagem em todos os meses, inclusive nos meses em que o aluno ainda estava na turma — preencha DATA_CANCELAMENTO/FINALIZACAO na DimMatricula.';
     aviso.classList.remove('oculto');
   } else {
     aviso.classList.add('oculto');
