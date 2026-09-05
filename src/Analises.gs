@@ -247,7 +247,7 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       const turmasDoMes = ativas
         .map(m => ({
           turma: String(m.turma || '').trim(),
-          valorDevido: Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0)
+          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
         }))
         .filter(d => d.turma);
       if (!turmasDoMes.length) return;
@@ -456,6 +456,28 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
 
   PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+}
+
+/**
+ * O valor devido de uma matrícula é calculado no Pagamentos, cujo nome de
+ * função carrega o número da versão (hoje calcularValorMatriculaPagUnifV38_).
+ * Análises chamava o nome SEM o sufixo, que não existe: as duas chamadas
+ * quebravam com "calcularValorMatriculaPagUnif_ is not defined", derrubando
+ * tanto o clique numa turma quanto a gravação do cache de mensalidades — e,
+ * como o recálculo morria aí, as etapas seguintes (receita e frequência)
+ * nunca rodavam e a tela seguia mostrando números velhos.
+ *
+ * Resolver o nome em tempo de execução faz a próxima renumeração (V39...)
+ * falhar com uma mensagem que diz o que fazer, em vez de um ReferenceError.
+ */
+function analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) {
+  if (typeof calcularValorMatriculaPagUnifV38_ === 'function') {
+    return calcularValorMatriculaPagUnifV38_(m, combo, ref, dataCalculo);
+  }
+  if (typeof calcularValorMatriculaPagUnif_ === 'function') {
+    return calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo);
+  }
+  throw new Error('Análises não encontrou a função de cálculo do valor da matrícula (esperada calcularValorMatriculaPagUnifV38_ no arquivo Pagamentos). Se ela foi renomeada, atualize analisesCalcularValorMatricula_ no Analises.');
 }
 
 function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas) {
@@ -1285,7 +1307,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
       const turmasDoMes = ativas
         .map(m => ({
           turma: String(m.turma || '').trim(),
-          valorDevido: Number(calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo) || 0)
+          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
         }))
         .filter(d => d.turma && (!turmasAtivas || turmasAtivas.has(d.turma)));
       if (!turmasDoMes.length) {
