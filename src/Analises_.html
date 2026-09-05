@@ -1025,9 +1025,19 @@ const ANALISES_GRAFICOS_PARA_PDF = [
  */
 function analisesGraficoParaPngSIGA_(id) {
   return new Promise(resolve => {
+    /*
+     * Trava de segurança: se onload/onerror não dispararem (já aconteceu com
+     * SVG grande em alguns navegadores), o Promise.all ficaria pendurado e o
+     * botão travaria em "Gerando PDF..." sem nunca voltar. Passados 8s, esse
+     * gráfico é descartado e o PDF sai sem ele.
+     */
+    let respondido = false;
+    const responder = valor => { if (!respondido) { respondido = true; resolve(valor); } };
+    setTimeout(() => responder(null), 8000);
+
     try {
       const svg = document.querySelector('#' + id + ' svg');
-      if (!svg) { resolve(null); return; }
+      if (!svg) { responder(null); return; }
 
       const caixa = svg.viewBox && svg.viewBox.baseVal;
       const largura = (caixa && caixa.width) || svg.clientWidth || 900;
@@ -1044,7 +1054,7 @@ function analisesGraficoParaPngSIGA_(id) {
       const imagem = new Image();
       imagem.onload = () => {
         try {
-          const escala = 2;
+          const escala = 1.6;
           const canvas = document.createElement('canvas');
           canvas.width = Math.round(largura * escala);
           canvas.height = Math.round(altura * escala);
@@ -1052,15 +1062,15 @@ function analisesGraficoParaPngSIGA_(id) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(imagem, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL('image/png'));
+          responder(canvas.toDataURL('image/png'));
         } catch (erro) {
-          resolve(null);
+          responder(null);
         }
       };
-      imagem.onerror = () => resolve(null);
+      imagem.onerror = () => responder(null);
       imagem.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
     } catch (erro) {
-      resolve(null);
+      responder(null);
     }
   });
 }
@@ -1079,9 +1089,22 @@ function exportarPdfAnalisesSIGA() {
 
   Promise.all(ANALISES_GRAFICOS_PARA_PDF.map(g => analisesGraficoParaPngSIGA_(g.id)))
     .then(imagens => {
-      const blocosGraficos = ANALISES_GRAFICOS_PARA_PDF
+      let blocosGraficos = ANALISES_GRAFICOS_PARA_PDF
         .map((g, i) => imagens[i] ? { titulo: g.titulo, imagem: imagens[i] } : null)
         .filter(Boolean);
+
+      /*
+       * google.script.run tem limite de tamanho de payload. Sete gráficos em
+       * PNG passam fácil de alguns MB em base64 e a chamada inteira falha —
+       * é melhor entregar o PDF só com as tabelas do que não entregar nada.
+       */
+      const LIMITE_BYTES = 6 * 1024 * 1024;
+      let acumulado = 0;
+      blocosGraficos = blocosGraficos.filter(bloco => {
+        acumulado += bloco.imagem.length;
+        return acumulado <= LIMITE_BYTES;
+      });
+
       enviarPdfAnalisesSIGA_(blocosGraficos, liberarBotaoPdf);
     })
     .catch(() => enviarPdfAnalisesSIGA_([], liberarBotaoPdf));
@@ -1128,7 +1151,10 @@ function enviarPdfAnalisesSIGA_(blocosGraficos, liberar) {
     })
     .withFailureHandler(erro => {
       liberar();
-      mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao gerar o PDF.'));
+      const motivo = erro && erro.message ? erro.message : String(erro || 'Erro ao gerar o PDF.');
+      mostrarErroAnalisesSIGA(/not a function|não é uma função|is not defined/i.test(motivo)
+        ? 'O arquivo Analises (.gs) não tem a função gerarPdfAnalisesSIGA. Cole a versão nova do Analises e publique uma Nova versão.'
+        : motivo);
     })
     .gerarPdfAnalisesSIGA({
       token: typeof obterTokenPagamentosUnificadosSIGA === 'function' ? obterTokenPagamentosUnificadosSIGA() : '',
