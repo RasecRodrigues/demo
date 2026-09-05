@@ -1,0 +1,312 @@
+<!-- =====================================================================
+     SIGA - Edição de documentos do RH
+     Arquivo NOVO. Inclua no Index (antes de </body>) com:
+       <?!= HtmlService.createHtmlOutputFromFile('RHDocumentosEditar').getContent(); ?>
+     Ele cria sozinho o botão "Editar" em cada linha da tabela de documentos
+     e o modal de edição. Nenhuma função existente precisa ser alterada.
+     ===================================================================== -->
+
+<style>
+  .botao-editar-doc-rh{
+    display:inline-block;margin:2px 4px 2px 0;padding:6px 14px;border-radius:8px;
+    border:1px solid #6B007B;background:#FFF;color:#6B007B;
+    font-size:.85rem;font-weight:600;cursor:pointer;line-height:1.2;
+  }
+  .botao-editar-doc-rh:hover{background:#6B007B;color:#FFF;}
+  .arquivo-atual-doc-rh{
+    font-size:.85rem;color:#555;background:#F5F3F7;border:1px solid #E4DDEA;
+    border-radius:8px;padding:8px 10px;margin-bottom:8px;word-break:break-all;
+  }
+</style>
+
+<div id="modalEditarDocumentoRH" class="modal-fundo oculto">
+  <section class="modal modal-rh">
+    <div class="modal-cabecalho">
+      <h2>Editar documento</h2>
+      <button class="modal-fechar" onclick="fecharEdicaoDocumentoRH()">&times;</button>
+    </div>
+    <div class="modal-corpo">
+      <div id="mensagemEditarDocumentoRH" class="mensagem oculto"></div>
+      <div class="grade">
+        <div class="campo campo-2"><label>Colaborador *</label><select id="rhEditarDocumentoColaborador"></select></div>
+        <div class="campo campo-2"><label>Tipo *</label><select id="rhEditarDocumentoTipo"></select></div>
+        <div class="campo"><label>Data</label><input id="rhEditarDocumentoData" type="date"></div>
+        <div class="campo"><label>Validade</label><input id="rhEditarDocumentoValidade" type="date"></div>
+        <div class="campo campo-total"><label>Observação</label><textarea id="rhEditarDocumentoObservacao"></textarea></div>
+        <div class="campo campo-total">
+          <label>Arquivo atual</label>
+          <div id="arquivoAtualEditarDocumentoRH" class="arquivo-atual-doc-rh">&mdash;</div>
+          <label class="upload-rh" for="rhEditarDocumentoArquivo">
+            <strong>Substituir arquivo (opcional)</strong>
+            <span>Deixe em branco para manter o arquivo atual &mdash; PDF, imagem, Word ou Excel, até 15 MB</span>
+          </label>
+          <input id="rhEditarDocumentoArquivo" type="file" class="oculto"
+                 accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+                 onchange="marcarArquivoEdicaoDocumentoRH(this)">
+          <div id="previewEditarDocumentoRH" class="preview-arquivo-rh oculto"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-rodape">
+      <button class="botao botao-secundario" onclick="fecharEdicaoDocumentoRH()">Cancelar</button>
+      <button id="botaoSalvarEdicaoDocumentoRH" class="botao botao-primario" onclick="salvarEdicaoDocumentoRH()">Salvar alterações</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var ESTADO = { idDocumento: '', carregouOpcoes: false };
+
+  function elDoc(id) { return document.getElementById(id); }
+
+  function mensagemDoc(texto, erro) {
+    var caixa = elDoc('mensagemEditarDocumentoRH');
+    if (!caixa) return;
+    if (!texto) { caixa.className = 'mensagem oculto'; caixa.textContent = ''; caixa.removeAttribute('style'); return; }
+    caixa.className = 'mensagem';
+    caixa.textContent = texto;
+    caixa.style.padding = '10px 12px';
+    caixa.style.borderRadius = '8px';
+    caixa.style.marginBottom = '12px';
+    caixa.style.background = erro ? '#FDECEC' : '#EAF7EE';
+    caixa.style.color = erro ? '#9B1C1C' : '#166534';
+    caixa.style.border = '1px solid ' + (erro ? '#F5C2C2' : '#BBE5C6');
+  }
+
+  function paraInputDataDoc(texto) {
+    var m = String(texto || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    return m ? (m[3] + '-' + m[2] + '-' + m[1]) : '';
+  }
+
+  /* Copia as opções dos filtros que a tela já preencheu (mesmos valores que o
+     servidor espera). Se estiverem vazios, busca no servidor. */
+  function preencherOpcoesDoc(aoTerminar) {
+    var destinoColab = elDoc('rhEditarDocumentoColaborador');
+    var destinoTipo = elDoc('rhEditarDocumentoTipo');
+    if (!destinoColab || !destinoTipo) return;
+
+    function clonar(destino, origemId) {
+      var origem = document.getElementById(origemId);
+      destino.innerHTML = '';
+      if (!origem) return 0;
+      var total = 0;
+      Array.prototype.forEach.call(origem.options, function (op) {
+        if (!op.value) return;
+        var novo = document.createElement('option');
+        novo.value = op.value;
+        novo.textContent = op.textContent;
+        destino.appendChild(novo);
+        total++;
+      });
+      return total;
+    }
+
+    var qtdColab = clonar(destinoColab, 'filtroColaboradorDocumentoRH');
+    var qtdTipo = clonar(destinoTipo, 'filtroTipoDocumentoRH');
+
+    if (qtdColab && qtdTipo) { ESTADO.carregouOpcoes = true; aoTerminar(); return; }
+
+    google.script.run
+      .withSuccessHandler(function (op) {
+        if (!qtdColab) {
+          (op.colaboradores || []).forEach(function (c) {
+            var o = document.createElement('option');
+            o.value = c.idColaborador; o.textContent = c.nome;
+            destinoColab.appendChild(o);
+          });
+        }
+        if (!qtdTipo) {
+          (op.tiposDocumento || []).forEach(function (t) {
+            var o = document.createElement('option');
+            o.value = t; o.textContent = t;
+            destinoTipo.appendChild(o);
+          });
+        }
+        ESTADO.carregouOpcoes = true;
+        aoTerminar();
+      })
+      .withFailureHandler(function () { aoTerminar(); })
+      .obterOpcoesEdicaoDocumentoRH();
+  }
+
+  function selecionarValorDoc(select, valor) {
+    if (!select) return;
+    var alvo = String(valor || '');
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === alvo) { select.selectedIndex = i; return; }
+    }
+    if (!alvo) return;
+    var extra = document.createElement('option');
+    extra.value = alvo; extra.textContent = alvo;
+    select.appendChild(extra);
+    select.value = alvo;
+  }
+
+  function lerArquivoDoc(input, retorno) {
+    var arquivo = input && input.files && input.files[0];
+    if (!arquivo) { retorno(null, null); return; }
+    if (arquivo.size > 15 * 1024 * 1024) { retorno(null, 'O arquivo deve possuir no máximo 15 MB.'); return; }
+    var leitor = new FileReader();
+    leitor.onload = function () {
+      var partes = String(leitor.result).split(',');
+      retorno({ nome: arquivo.name, tipo: arquivo.type || 'application/octet-stream', base64: partes[1] || '' }, null);
+    };
+    leitor.onerror = function () { retorno(null, 'Não foi possível ler o arquivo selecionado.'); };
+    leitor.readAsDataURL(arquivo);
+  }
+
+  window.marcarArquivoEdicaoDocumentoRH = function (input) {
+    var preview = elDoc('previewEditarDocumentoRH');
+    var arquivo = input && input.files && input.files[0];
+    if (!preview) return;
+    if (!arquivo) { preview.className = 'preview-arquivo-rh oculto'; preview.textContent = ''; return; }
+    preview.className = 'preview-arquivo-rh';
+    preview.textContent = 'Novo arquivo: ' + arquivo.name + ' (' + Math.round(arquivo.size / 1024) + ' KB)';
+  };
+
+  window.fecharEdicaoDocumentoRH = function () {
+    var modal = elDoc('modalEditarDocumentoRH');
+    if (modal) modal.classList.add('oculto');
+  };
+
+  window.abrirEdicaoDocumentoRH = function (idDocumento) {
+    ESTADO.idDocumento = String(idDocumento || '');
+    var modal = elDoc('modalEditarDocumentoRH');
+    if (!modal) return;
+
+    mensagemDoc('');
+    elDoc('rhEditarDocumentoArquivo').value = '';
+    elDoc('previewEditarDocumentoRH').className = 'preview-arquivo-rh oculto';
+    elDoc('previewEditarDocumentoRH').textContent = '';
+    elDoc('arquivoAtualEditarDocumentoRH').textContent = 'Carregando...';
+    elDoc('rhEditarDocumentoObservacao').value = '';
+    elDoc('rhEditarDocumentoData').value = '';
+    elDoc('rhEditarDocumentoValidade').value = '';
+    modal.classList.remove('oculto');
+
+    preencherOpcoesDoc(function () {
+      google.script.run
+        .withSuccessHandler(function (doc) {
+          selecionarValorDoc(elDoc('rhEditarDocumentoColaborador'), doc.idColaborador);
+          selecionarValorDoc(elDoc('rhEditarDocumentoTipo'), doc.tipoDocumento);
+          elDoc('rhEditarDocumentoData').value = paraInputDataDoc(doc.dataDocumento);
+          elDoc('rhEditarDocumentoValidade').value = paraInputDataDoc(doc.validade);
+          elDoc('rhEditarDocumentoObservacao').value = doc.observacao || '';
+          elDoc('arquivoAtualEditarDocumentoRH').textContent = doc.nomeArquivo || '—';
+        })
+        .withFailureHandler(function (e) {
+          elDoc('arquivoAtualEditarDocumentoRH').textContent = '—';
+          mensagemDoc((e && e.message) ? e.message : 'Não foi possível carregar o documento.', true);
+        })
+        .obterDocumentoRH(ESTADO.idDocumento);
+    });
+  };
+
+  window.salvarEdicaoDocumentoRH = function () {
+    var botao = elDoc('botaoSalvarEdicaoDocumentoRH');
+    var idColaborador = elDoc('rhEditarDocumentoColaborador').value;
+    var tipoDocumento = elDoc('rhEditarDocumentoTipo').value;
+
+    if (!ESTADO.idDocumento) { mensagemDoc('Documento não identificado. Feche e abra novamente.', true); return; }
+    if (!idColaborador) { mensagemDoc('Selecione um colaborador.', true); return; }
+    if (!tipoDocumento) { mensagemDoc('Informe o tipo do documento.', true); return; }
+
+    var rotulo = botao.textContent;
+    function liberar() { botao.disabled = false; botao.textContent = rotulo; }
+    botao.disabled = true;
+    botao.textContent = 'Salvando...';
+    mensagemDoc('');
+
+    var dados = {
+      idDocumento: ESTADO.idDocumento,
+      idColaborador: idColaborador,
+      tipoDocumento: tipoDocumento,
+      dataDocumento: elDoc('rhEditarDocumentoData').value,
+      validade: elDoc('rhEditarDocumentoValidade').value,
+      observacao: elDoc('rhEditarDocumentoObservacao').value
+    };
+
+    lerArquivoDoc(elDoc('rhEditarDocumentoArquivo'), function (arquivo, erro) {
+      if (erro) { liberar(); mensagemDoc(erro, true); return; }
+      if (arquivo) dados.arquivo = arquivo;
+
+      google.script.run
+        .withSuccessHandler(function (r) {
+          liberar();
+          mensagemDoc((r && r.mensagem) ? r.mensagem : 'Documento atualizado com sucesso.', false);
+          if (typeof carregarDocumentosRH === 'function') { try { carregarDocumentosRH(); } catch (e) {} }
+          setTimeout(window.fecharEdicaoDocumentoRH, 1200);
+        })
+        .withFailureHandler(function (e) {
+          liberar();
+          mensagemDoc((e && e.message) ? e.message : 'Não foi possível salvar as alterações.', true);
+        })
+        .atualizarDocumentoRH(dados);
+    });
+  };
+
+  /* Fecha ao clicar fora do modal */
+  document.addEventListener('click', function (evento) {
+    var modal = elDoc('modalEditarDocumentoRH');
+    if (modal && evento.target === modal) window.fecharEdicaoDocumentoRH();
+  });
+
+  /* ---------------------------------------------------------------
+     Coloca o botão "Editar" em cada linha da tabela de documentos.
+     Funciona a cada recarga da tabela, sem alterar quem a monta.
+     --------------------------------------------------------------- */
+  function injetarBotoesEdicaoDoc() {
+    var corpo = elDoc('corpoTabelaDocumentosRH');
+    if (!corpo) return;
+    var linhas = corpo.querySelectorAll('tr');
+    for (var i = 0; i < linhas.length; i++) {
+      var linha = linhas[i];
+      if (linha.getAttribute('data-edicao-doc-rh') === '1') continue;
+      linha.setAttribute('data-edicao-doc-rh', '1');
+
+      var achou = (linha.innerHTML || '').match(/DOC-\d{4,}/);
+      if (!achou) continue;
+
+      var celulas = linha.querySelectorAll('td');
+      if (!celulas.length) continue;
+
+      var acoes = celulas[celulas.length - 1];
+      if (acoes.querySelector('.botao-editar-doc-rh')) continue;
+
+      var botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = 'botao-editar-doc-rh';
+      botao.textContent = 'Editar';
+      botao.setAttribute('data-id-documento', achou[0]);
+      botao.addEventListener('click', function () {
+        window.abrirEdicaoDocumentoRH(this.getAttribute('data-id-documento'));
+      });
+      acoes.insertBefore(botao, acoes.firstChild);
+    }
+  }
+
+  var agendado = null;
+  function agendarInjecaoDoc() {
+    if (agendado) return;
+    agendado = setTimeout(function () { agendado = null; injetarBotoesEdicaoDoc(); }, 60);
+  }
+
+  function iniciarEdicaoDocumentosRH() {
+    var corpo = elDoc('corpoTabelaDocumentosRH');
+    if (!corpo) { setTimeout(iniciarEdicaoDocumentosRH, 500); return; }
+    injetarBotoesEdicaoDoc();
+    if (window.MutationObserver) {
+      new MutationObserver(agendarInjecaoDoc).observe(corpo, { childList: true, subtree: true });
+    } else {
+      setInterval(injetarBotoesEdicaoDoc, 1500);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', iniciarEdicaoDocumentosRH);
+  } else {
+    iniciarEdicaoDocumentosRH();
+  }
+})();
+</script>
