@@ -462,6 +462,161 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
 
 
 
+
+/* ==========================================================================
+   EXPORTAÇÃO EM PDF
+   ========================================================================== */
+
+const ANALISES_PDF_CONFIG_ = {
+  NOME_ESCOLA: 'Casa de Artes Gabriel Engel',
+  NOME_PASTA: 'SIGA - Relatórios de Análises'
+};
+
+/**
+ * Gera o PDF da tela de Análises.
+ *
+ * Mesmo princípio de gerarPdfAlunosTurmaSIGA: a tela já calculou e já
+ * ordenou tudo, então ela manda o que está na tela e aqui só desenhamos.
+ * Além de ser rápido (nada de varrer planilha de novo, num script que já
+ * anda perto do limite de 6 min), garante que o PDF sai idêntico ao que a
+ * pessoa está vendo — mesma ordenação, mesmos filtros.
+ *
+ * dados = {
+ *   token, periodo, atualizadoEm,
+ *   kpis:   [ { rotulo, valor } ],
+ *   blocos: [ { titulo, subtitulo, colunas: [], linhas: [ [] ] } ]
+ * }
+ *
+ * Gráficos não entram: são SVG montado no navegador, e recriá-los aqui
+ * seria manter um segundo renderizador só para o PDF. O relatório leva as
+ * tabelas, que é onde estão os números.
+ */
+function gerarPdfAnalisesSIGA(dados) {
+  dados = dados || {};
+  validarPermissaoPagamentosSIGA_(dados.token);
+
+  const blocos = Array.isArray(dados.blocos) ? dados.blocos.filter(b => b && b.linhas && b.linhas.length) : [];
+  if (!blocos.length) {
+    throw new Error('Não há dados na tela para exportar. Aguarde o carregamento terminar e tente de novo.');
+  }
+
+  const timezone = Session.getScriptTimeZone();
+  const agora = new Date();
+  const geradoEm = Utilities.formatDate(agora, timezone, "dd/MM/yyyy 'às' HH:mm");
+
+  const kpis = Array.isArray(dados.kpis) ? dados.kpis : [];
+  const partes = [];
+
+  partes.push('<div class="capa">');
+  partes.push('<div class="escola">' + escapeHtmlAnalisesPdf_(ANALISES_PDF_CONFIG_.NOME_ESCOLA) + '</div>');
+  partes.push('<h1>Análises</h1>');
+  partes.push('<div class="meta">Período: <strong>' + escapeHtmlAnalisesPdf_(dados.periodo || '—') + '</strong>'
+    + ' &nbsp;·&nbsp; Gerado em ' + escapeHtmlAnalisesPdf_(geradoEm)
+    + (dados.atualizadoEm ? ' &nbsp;·&nbsp; ' + escapeHtmlAnalisesPdf_(dados.atualizadoEm) : '')
+    + '</div>');
+  partes.push('</div>');
+
+  if (kpis.length) {
+    partes.push('<div class="kpis">');
+    kpis.forEach(k => {
+      partes.push('<div class="kpi"><span>' + escapeHtmlAnalisesPdf_(k.rotulo) + '</span><strong>'
+        + escapeHtmlAnalisesPdf_(k.valor) + '</strong></div>');
+    });
+    partes.push('</div>');
+  }
+
+  blocos.forEach(bloco => {
+    partes.push('<section class="bloco">');
+    partes.push('<h2>' + escapeHtmlAnalisesPdf_(bloco.titulo || '') + '</h2>');
+    if (bloco.subtitulo) {
+      partes.push('<p class="sub">' + escapeHtmlAnalisesPdf_(bloco.subtitulo) + '</p>');
+    }
+    partes.push('<table><thead><tr>');
+    (bloco.colunas || []).forEach((coluna, indice) => {
+      partes.push('<th' + (indice ? ' class="num"' : '') + '>' + escapeHtmlAnalisesPdf_(coluna) + '</th>');
+    });
+    partes.push('</tr></thead><tbody>');
+    (bloco.linhas || []).forEach(linha => {
+      partes.push('<tr>');
+      (linha || []).forEach((celula, indice) => {
+        const texto = String(celula == null ? '' : celula);
+        const negativo = indice > 0 && texto.indexOf('-') === 0;
+        partes.push('<td' + (indice ? (negativo ? ' class="num neg"' : ' class="num"') : '') + '>'
+          + escapeHtmlAnalisesPdf_(texto) + '</td>');
+      });
+      partes.push('</tr>');
+    });
+    partes.push('</tbody></table>');
+    partes.push('</section>');
+  });
+
+  const html =
+    '<!DOCTYPE html><html><head><meta charset="utf-8"><style>'
+    + '@page{size:A4 landscape;margin:12mm 10mm}'
+    + 'body{font-family:Helvetica,Arial,sans-serif;color:#111;font-size:9px;margin:0}'
+    + '.capa{border-bottom:2px solid #6B007B;padding-bottom:8px;margin-bottom:12px}'
+    + '.escola{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#6B007B;font-weight:bold}'
+    + 'h1{font-size:20px;margin:4px 0 3px}'
+    + '.meta{font-size:9px;color:#555}'
+    + '.kpis{display:table;width:100%;table-layout:fixed;margin-bottom:14px;border-spacing:6px 0}'
+    + '.kpi{display:table-cell;border:1px solid #ddd;border-radius:5px;padding:7px 9px}'
+    + '.kpi span{display:block;font-size:7.5px;letter-spacing:.05em;text-transform:uppercase;color:#666}'
+    + '.kpi strong{display:block;font-size:14px;margin-top:2px}'
+    + '.bloco{page-break-inside:auto;margin-bottom:16px}'
+    + 'h2{font-size:12px;margin:0 0 2px;color:#6B007B}'
+    + '.sub{font-size:8px;color:#666;margin:0 0 6px}'
+    + 'table{width:100%;border-collapse:collapse}'
+    + 'thead{display:table-header-group}'
+    + 'tr{page-break-inside:avoid}'
+    + 'th{background:#f4f3ef;border-bottom:1px solid #ccc;padding:5px 6px;text-align:left;'
+    + 'font-size:7.5px;letter-spacing:.03em;text-transform:uppercase;color:#444}'
+    + 'td{border-bottom:1px solid #eee;padding:4px 6px}'
+    + 'th.num,td.num{text-align:right}'
+    + 'td.neg{color:#b0201d}'
+    + '</style></head><body>' + partes.join('') + '</body></html>';
+
+  const nomeArquivo = 'analises_' + Utilities.formatDate(agora, timezone, 'yyyy-MM-dd_HHmm') + '.pdf';
+  const pdf = Utilities.newBlob(html, 'text/html', 'analises.html').getAs(MimeType.PDF).setName(nomeArquivo);
+  const arquivo = obterPastaRelatoriosAnalisesSIGA_().createFile(pdf);
+
+  /*
+   * O app roda como o dono da planilha, então o PDF nasce privado. Sem esta
+   * linha o funcionário cai na tela "Você precisa de permissão" do Drive.
+   */
+  arquivo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  return {
+    sucesso: true,
+    url: arquivo.getUrl(),
+    urlDownload: 'https://drive.google.com/uc?export=download&id=' + arquivo.getId(),
+    nome: arquivo.getName()
+  };
+}
+
+function obterPastaRelatoriosAnalisesSIGA_() {
+  const propriedades = PropertiesService.getScriptProperties();
+  const idSalvo = propriedades.getProperty('PASTA_RELATORIOS_ANALISES_ID');
+  if (idSalvo) {
+    try {
+      return DriveApp.getFolderById(idSalvo);
+    } catch (erro) {
+      // pasta apagada: cai fora e cria outra
+    }
+  }
+  const iterador = DriveApp.getFoldersByName(ANALISES_PDF_CONFIG_.NOME_PASTA);
+  const pasta = iterador.hasNext() ? iterador.next() : DriveApp.createFolder(ANALISES_PDF_CONFIG_.NOME_PASTA);
+  propriedades.setProperty('PASTA_RELATORIOS_ANALISES_ID', pasta.getId());
+  return pasta;
+}
+
+function escapeHtmlAnalisesPdf_(valor) {
+  return String(valor == null ? '' : valor)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 /**
  * Entradas e saídas de alunos por mês, opcionalmente de UMA turma.
  *

@@ -26,6 +26,9 @@
       <button type="button" class="botao botao-secundario" id="botaoRecalcularAnalises" onclick="recalcularCacheAnalisesSIGA()" title="Refaz o cálculo a partir das planilhas — mais lento, use quando os dados parecerem desatualizados.">
         🔄 Recalcular dados
       </button>
+      <button type="button" class="botao botao-primario" id="botaoExportarPdfAnalises" onclick="exportarPdfAnalisesSIGA()" title="Gera um PDF com as tabelas exatamente como estão na tela, incluindo a ordenação e os filtros atuais.">
+        ⬇ Exportar PDF
+      </button>
     </div>
   </div>
 
@@ -984,6 +987,113 @@ function desenharGraficosAnalisesSIGA(resultado) {
 }
 
 
+
+/**
+ * Exporta as tabelas da tela em PDF.
+ *
+ * Lê as tabelas do próprio DOM em vez de remontar os dados: assim o PDF
+ * sai com a ordenação que a pessoa escolheu e o recorte dos filtros que
+ * estão valendo, sem duplicar aqui a lógica de cada tabela. Linhas de
+ * detalhe de aluno (a expansão ao clicar numa turma) ficam de fora, senão
+ * quebrariam o alinhamento das colunas.
+ */
+function exportarPdfAnalisesSIGA() {
+  const botao = document.getElementById('botaoExportarPdfAnalises');
+  const rotulo = botao ? botao.textContent : '';
+
+  const blocos = [
+    analisesBlocoMovimentacaoParaPdf_(),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaAnalisesTurmas', 'corpoTabelaAnalisesTurmas', 'Detalhamento por turma'),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaAnalisesLucro', 'corpoTabelaAnalisesLucro', 'Mensalidades recebidas por turma'),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaMensalidadesTempo', 'corpoTabelaMensalidadesTempo', 'Lucro por turma')
+  ].filter(Boolean);
+
+  if (!blocos.length) {
+    mostrarErroAnalisesSIGA('Ainda não há dados na tela para exportar. Espere o carregamento terminar.');
+    return;
+  }
+
+  const kpis = [];
+  document.querySelectorAll('#tela-analises .analises-kpis .pagamentos-kpi').forEach(cartao => {
+    const rot = cartao.querySelector('span');
+    const val = cartao.querySelector('strong');
+    if (rot && val) kpis.push({ rotulo: rot.textContent.trim(), valor: val.textContent.trim() });
+  });
+
+  const selectPeriodo = document.getElementById('analisesMeses');
+  const periodo = selectPeriodo && selectPeriodo.selectedIndex >= 0
+    ? selectPeriodo.options[selectPeriodo.selectedIndex].textContent.trim()
+    : '';
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Gerando PDF...';
+  }
+  function liberar() {
+    if (botao) { botao.disabled = false; botao.textContent = rotulo; }
+  }
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      liberar();
+      if (!resposta || !resposta.url) {
+        mostrarErroAnalisesSIGA('O PDF não pôde ser gerado.');
+        return;
+      }
+      const janela = window.open(resposta.url, '_blank');
+      if (!janela) {
+        // pop-up bloqueado: deixa o link na tela em vez de falhar em silêncio
+        mostrarErroAnalisesSIGA('PDF gerado, mas o navegador bloqueou a janela. Abra por aqui: ' + resposta.url);
+      }
+    })
+    .withFailureHandler(erro => {
+      liberar();
+      mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao gerar o PDF.'));
+    })
+    .gerarPdfAnalisesSIGA({
+      token: typeof obterTokenPagamentosUnificadosSIGA === 'function' ? obterTokenPagamentosUnificadosSIGA() : '',
+      periodo,
+      atualizadoEm: (document.getElementById('analisesAtualizadoEm') || {}).textContent || '',
+      kpis,
+      blocos
+    });
+}
+
+function analisesBlocoDaTabelaParaPdf_(idCabecalho, idCorpo, titulo) {
+  const cabecalho = document.getElementById(idCabecalho);
+  const corpo = document.getElementById(idCorpo);
+  if (!cabecalho || !corpo) return null;
+
+  const colunas = Array.from(cabecalho.querySelectorAll('th'))
+    .map(th => th.textContent.replace(/[▲▼⇅]/g, '').trim());
+
+  const linhas = [];
+  corpo.querySelectorAll('tr').forEach(tr => {
+    if (tr.classList.contains('analises-linha-alunos')) return; // expansão de alunos
+    const celulas = Array.from(tr.querySelectorAll('td'));
+    if (celulas.length < 2) return; // "Carregando..." / "Sem dados"
+    linhas.push(celulas.map(td => td.textContent.trim()));
+  });
+
+  if (!linhas.length) return null;
+  return { titulo, colunas, linhas };
+}
+
+function analisesBlocoMovimentacaoParaPdf_() {
+  const dados = analisesMovimentacaoUltima;
+  if (!dados || !dados.serie || !dados.serie.length) return null;
+  const linhas = dados.serie
+    .filter(x => x.entradas || x.saidas)
+    .map(x => [x.periodo, String(x.entradas), String(x.saidas), (x.saldo > 0 ? '+' : '') + x.saldo]);
+  if (!linhas.length) return null;
+  return {
+    titulo: 'Entradas e saídas de alunos por mês',
+    subtitulo: dados.turma ? ('Turma: ' + dados.turma) : 'Todas as turmas',
+    colunas: ['Mês', 'Entradas', 'Saídas', 'Saldo'],
+    linhas
+  };
+}
+
 /**
  * Entradas e saídas por mês, com filtro próprio de turma.
  *
@@ -992,6 +1102,7 @@ function desenharGraficosAnalisesSIGA(resultado) {
  * reflete o cadastro atual, sem depender do recálculo de 6 horas.
  */
 let analisesMovimentacaoTurmasPreenchidas = false;
+let analisesMovimentacaoUltima = null;
 
 function carregarMovimentacaoAnalisesSIGA() {
   const alvo = document.getElementById('graficoAnalisesMovimentacao');
@@ -1049,6 +1160,7 @@ function definirTextoMovimentacaoAnalisesSIGA_(id, html) {
 function desenharGraficoMovimentacaoAnalisesSIGA_(resposta) {
   const alvo = document.getElementById('graficoAnalisesMovimentacao');
   const serie = resposta.serie || [];
+  analisesMovimentacaoUltima = resposta;
   if (!alvo) return;
 
   if (!serie.length || !serie.some(x => x.entradas || x.saidas)) {
