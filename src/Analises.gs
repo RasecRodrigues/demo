@@ -699,7 +699,7 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     }
 
     limites.forEach(lim => {
-      if (analisesAtivoNoMes_(m, lim.inicio, lim.fim)) {
+      if (analisesAtivoNoFimDoMes_(m, lim.fim)) {
         ativos.set(lim.chave, ativos.get(lim.chave) + 1);
       }
     });
@@ -722,21 +722,27 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
 }
 
 /**
- * O aluno estava ativo NAQUELE mês?
+ * Quantos alunos a turma TINHA no fim daquele mês.
  *
- * Conta por VIGÊNCIA da matrícula, não pelo status atual. É a diferença
- * para calcularSerieMatriculasAnalisesSIGA_, que exige
- * analisesStatusAtivo_(m.status) — status é o de HOJE, então quem já saiu
- * deixa de ser contado até nos meses em que ainda estava na turma, e a
- * série histórica de ativos fica menor do que foi de verdade.
+ * É um estoque, medido no último dia do mês — mesma leitura do gráfico
+ * "Alunos ativos ao longo do tempo" ("matrículas ativas ao final de cada
+ * mês"). Contar quem esteve ativo em QUALQUER momento do mês faz o número
+ * subir junto com toda entrada, inclusive de quem entrou e saiu dentro do
+ * próprio mês, e a linha acaba desenhando o mesmo formato das entradas em
+ * vez do tamanho da turma.
  *
- * Sem data de fim não dá para saber quando saiu: aí sim o status atual
- * decide — se a pessoa ainda está em curso, a matrícula segue aberta.
+ * Conta por VIGÊNCIA da matrícula, não pelo status atual — esta é a
+ * diferença para calcularSerieMatriculasAnalisesSIGA_, que exige
+ * analisesStatusAtivo_(m.status): status é o de HOJE, então quem já saiu
+ * some até dos meses em que ainda estava na turma.
+ *
+ * Sem data de fim não há como saber quando saiu: aí o status atual decide —
+ * se a pessoa ainda está em curso, a matrícula seguia aberta.
  */
-function analisesAtivoNoMes_(m, inicioMes, fimMes) {
+function analisesAtivoNoFimDoMes_(m, fimMes) {
   if (!m || !(m.inicio instanceof Date)) return false;
-  if (m.inicio > fimMes) return false;
-  if (m.fim instanceof Date) return m.fim >= inicioMes;
+  if (m.inicio > fimMes) return false;            // ainda não tinha entrado
+  if (m.fim instanceof Date) return m.fim > fimMes; // saiu durante o mês: não conta
   return analisesEmCursoParaMovimentacao_(m);
 }
 
