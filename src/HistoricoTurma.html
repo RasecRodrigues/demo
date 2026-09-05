@@ -1,0 +1,158 @@
+<div id="modalHistoricoTurmaSIGA" class="ht-siga-fundo oculto">
+  <div class="ht-siga-painel">
+    <div class="ht-siga-cabecalho"><div><h2 id="tituloHistoricoTurmaSIGA">Alunos da turma</h2><p>Alunos atuais e todos que já passaram por esta turma.</p></div><div class="ht-siga-acoes"><a id="linkPdfHistoricoTurmaSIGA" class="botao botao-secundario" target="_blank" rel="noopener" hidden>Abrir PDF</a><button type="button" id="botaoPdfHistoricoTurmaSIGA" class="botao botao-primario" onclick="exportarPdfHistoricoTurmaSIGA()">Exportar PDF</button><button type="button" class="botao botao-secundario" onclick="fecharHistoricoTurmaSIGA()">✕ Fechar</button></div></div>
+    <div class="ht-siga-kpis"><div><span>Total</span><strong id="kpiHistoricoTurmaTotalSIGA">0</strong></div><div><span>Ativos</span><strong id="kpiHistoricoTurmaAtivosSIGA">0</strong></div><div><span>Histórico</span><strong id="kpiHistoricoTurmaPassaramSIGA">0</strong></div></div>
+    <div class="ht-siga-filtros"><div class="campo"><label>Pesquisar aluno</label><input id="buscaHistoricoTurmaSIGA" type="search" placeholder="Digite o nome ou status..." oninput="filtrarHistoricoTurmaSIGA()"></div><div class="campo"><label>Status</label><select id="statusHistoricoTurmaSIGA" onchange="filtrarHistoricoTurmaSIGA()"><option value="">Todos</option><option value="ATIVO">Ativos</option><option value="HISTORICO">Já passaram</option></select></div></div>
+    <div class="ht-siga-tabela-wrap"><table class="ht-siga-tabela"><thead><tr><th>Aluno</th><th>Status</th><th>Data da matrícula</th><th>Início na turma</th><th>Saída</th><th>Aulas</th><th>Presenças</th><th>Faltas</th><th>Frequência</th></tr></thead><tbody id="corpoHistoricoTurmaSIGA"><tr><td colspan="9" class="estado-vazio">Carregando...</td></tr></tbody></table></div>
+  </div>
+</div>
+
+<style>
+.ht-siga-fundo{position:fixed;inset:0;z-index:99998;background:rgba(17,24,39,.58);padding:20px;display:flex;align-items:center;justify-content:center}.ht-siga-fundo.oculto{display:none!important}.ht-siga-painel{width:min(1400px,100%);max-height:calc(100vh - 40px);background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.25)}
+.ht-siga-cabecalho{display:flex;justify-content:space-between;gap:18px;padding:20px 24px;border-bottom:1px solid #e5e7eb}.ht-siga-cabecalho h2{margin:0 0 5px}.ht-siga-cabecalho p{margin:0;color:#667085}.ht-siga-acoes{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}.ht-siga-acoes [hidden]{display:none!important}.ht-siga-acoes a.botao{display:inline-flex;align-items:center;text-decoration:none}.ht-siga-kpis{display:grid;grid-template-columns:repeat(3,minmax(130px,180px));gap:12px;padding:16px 24px 0}.ht-siga-kpis div{padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px}.ht-siga-kpis span{display:block;font-size:10px;font-weight:900;color:#667085;text-transform:uppercase}.ht-siga-kpis strong{font-size:24px}.ht-siga-filtros{display:grid;grid-template-columns:minmax(260px,1fr) 220px;gap:12px;padding:16px 24px}.ht-siga-tabela-wrap{overflow:auto;padding:0 24px 24px}.ht-siga-tabela{width:100%;min-width:1100px;border-collapse:collapse}.ht-siga-tabela th,.ht-siga-tabela td{padding:12px 10px;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap}.ht-siga-tabela th{position:sticky;top:0;background:#fff;color:#667085;font-size:10px;text-transform:uppercase}.ht-siga-status{display:inline-block;padding:5px 9px;border-radius:999px;background:#f3f4f6;font-size:10px;font-weight:900}.ht-siga-status.ativo{background:#dcfce7;color:#166534}.ht-siga-freq{font-weight:900}.ht-siga-freq.baixa{color:#dc2626}.botao-ver-alunos-turma-siga{white-space:nowrap}
+@media(max-width:700px){.ht-siga-fundo{padding:7px}.ht-siga-painel{max-height:calc(100vh - 14px)}.ht-siga-kpis,.ht-siga-filtros{grid-template-columns:1fr}.ht-siga-cabecalho,.ht-siga-kpis,.ht-siga-filtros{padding-left:14px;padding-right:14px}.ht-siga-tabela-wrap{padding:0 10px 14px}.ht-siga-cabecalho{flex-direction:column}.ht-siga-acoes .botao{flex:1}}
+</style>
+
+<script>
+let historicoTurmaAtualSIGA = [];
+
+/* O PDF sai igual ao que está na tela: guardamos a turma
+   aberta, o resumo e a lista já filtrada. */
+let turmaHistoricoAtualSIGA = '';
+let resumoHistoricoTurmaSIGA = {};
+let historicoTurmaFiltradoSIGA = [];
+
+function adicionarBotoesHistoricoTurmaSIGA() {
+  document
+    .querySelectorAll('#listaTurmasSistema .turma-card')
+    .forEach(card => {
+      if (card.querySelector('.botao-ver-alunos-turma-siga')) return;
+
+      const turma = card.querySelector('h3')?.textContent.trim();
+      const acoes = card.querySelector('.turma-card-acoes');
+      if (!turma || !acoes) return;
+
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className =
+        'botao botao-secundario botao-ver-alunos-turma-siga';
+      botao.textContent = 'Ver alunos';
+      botao.addEventListener('click', () =>
+        abrirHistoricoTurmaSIGA(turma)
+      );
+      acoes.insertBefore(botao, acoes.firstChild);
+    });
+}
+
+function conectarHistoricoAoRenderTurmasSIGA() {
+  if (
+    typeof window.renderizarTurmasSistema !== 'function' ||
+    window.renderizarTurmasSistema.__historicoConectado
+  ) {
+    return false;
+  }
+
+  const renderOriginal = window.renderizarTurmasSistema;
+  const renderComHistorico = function(turmas) {
+    const retorno = renderOriginal.apply(this, arguments);
+    setTimeout(adicionarBotoesHistoricoTurmaSIGA, 0);
+    return retorno;
+  };
+
+  renderComHistorico.__historicoConectado = true;
+  window.renderizarTurmasSistema = renderComHistorico;
+  adicionarBotoesHistoricoTurmaSIGA();
+  return true;
+}
+
+window.addEventListener('load', () => {
+  if (conectarHistoricoAoRenderTurmasSIGA()) return;
+
+  let tentativas = 0;
+  const timer = setInterval(() => {
+    tentativas += 1;
+    if (
+      conectarHistoricoAoRenderTurmasSIGA() ||
+      tentativas >= 20
+    ) {
+      clearInterval(timer);
+    }
+  }, 250);
+});
+
+/* =========================================================
+   EXPORTAR PDF
+
+   Manda para o servidor a lista que já está na tela, em vez
+   de mandar refazer a consulta: o cálculo de frequência é a
+   parte lenta e já foi feito ao abrir o modal.
+========================================================= */
+
+function exportarPdfHistoricoTurmaSIGA() {
+  const botao = document.getElementById('botaoPdfHistoricoTurmaSIGA');
+  const link = document.getElementById('linkPdfHistoricoTurmaSIGA');
+
+  if (!historicoTurmaFiltradoSIGA.length) {
+    alert('Não há alunos para exportar com os filtros atuais.');
+    return;
+  }
+
+  if (link) link.hidden = true;
+
+  const textoOriginal = botao ? botao.textContent : '';
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Gerando PDF...';
+  }
+
+  const restaurar = () => {
+    if (botao) {
+      botao.disabled = false;
+      botao.textContent = textoOriginal;
+    }
+  };
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      restaurar();
+
+      const url = resposta && resposta.url;
+
+      if (!url) {
+        alert('O PDF foi gerado, mas o servidor não devolveu o link.');
+        return;
+      }
+
+      /* Se o navegador bloquear a nova aba, o link fica
+         visível no cabeçalho para a pessoa clicar. */
+      if (!window.open(url, '_blank')) {
+        if (link) {
+          link.href = url;
+          link.hidden = false;
+        }
+      }
+    })
+    .withFailureHandler(erro => {
+      restaurar();
+      alert(
+        'Não foi possível gerar o PDF: ' +
+        (erro && erro.message ? erro.message : String(erro))
+      );
+    })
+    .gerarPdfAlunosTurmaSIGA({
+      turma: turmaHistoricoAtualSIGA,
+      busca: document.getElementById('buscaHistoricoTurmaSIGA')?.value || '',
+      filtroStatus: document.getElementById('statusHistoricoTurmaSIGA')?.value || '',
+      resumo: resumoHistoricoTurmaSIGA,
+      alunos: historicoTurmaFiltradoSIGA
+    });
+}
+
+function abrirHistoricoTurmaSIGA(turma){const modal=document.getElementById('modalHistoricoTurmaSIGA'),corpo=document.getElementById('corpoHistoricoTurmaSIGA');turmaHistoricoAtualSIGA=turma;historicoTurmaFiltradoSIGA=[];resumoHistoricoTurmaSIGA={};document.getElementById('linkPdfHistoricoTurmaSIGA').hidden=true;modal?.classList.remove('oculto');document.body.style.overflow='hidden';document.getElementById('tituloHistoricoTurmaSIGA').textContent='Alunos — '+turma;if(corpo)corpo.innerHTML='<tr><td colspan="9" class="estado-vazio">Carregando histórico e frequência...</td></tr>';google.script.run.withSuccessHandler(aplicarHistoricoTurmaSIGA).withFailureHandler(erro=>{if(corpo)corpo.innerHTML='<tr><td colspan="9" class="estado-vazio">'+escHistoricoTurmaSIGA_(erro?.message||String(erro))+'</td></tr>'}).obterHistoricoAlunosTurmaSIGA(turma)}
+function fecharHistoricoTurmaSIGA(){document.getElementById('modalHistoricoTurmaSIGA')?.classList.add('oculto');document.body.style.overflow=''}
+function aplicarHistoricoTurmaSIGA(resultado){historicoTurmaAtualSIGA=Array.isArray(resultado?.alunos)?resultado.alunos:[];resumoHistoricoTurmaSIGA={total:Number(resultado?.resumo?.total||0),ativos:Number(resultado?.resumo?.ativos||0),historico:Number(resultado?.resumo?.historico||0)};document.getElementById('kpiHistoricoTurmaTotalSIGA').textContent=String(resumoHistoricoTurmaSIGA.total);document.getElementById('kpiHistoricoTurmaAtivosSIGA').textContent=String(resumoHistoricoTurmaSIGA.ativos);document.getElementById('kpiHistoricoTurmaPassaramSIGA').textContent=String(resumoHistoricoTurmaSIGA.historico);filtrarHistoricoTurmaSIGA()}
+function filtrarHistoricoTurmaSIGA(){const busca=normHistoricoTurmaSIGA_(document.getElementById('buscaHistoricoTurmaSIGA')?.value||''),filtro=document.getElementById('statusHistoricoTurmaSIGA')?.value||'';const lista=historicoTurmaAtualSIGA.filter(a=>{const ativo=['ATIVO','ATIVA'].includes(normHistoricoTurmaSIGA_(a.status));return(!busca||normHistoricoTurmaSIGA_([a.nomeAluno,a.status].join(' ')).includes(busca))&&(!filtro||(filtro==='ATIVO'?ativo:!ativo))});historicoTurmaFiltradoSIGA=lista;renderizarHistoricoTurmaSIGA(lista)}
+function renderizarHistoricoTurmaSIGA(lista){const corpo=document.getElementById('corpoHistoricoTurmaSIGA');if(!corpo)return;if(!lista.length){corpo.innerHTML='<tr><td colspan="9" class="estado-vazio">Nenhum aluno encontrado.</td></tr>';return}corpo.innerHTML=lista.map(a=>{const ativo=['ATIVO','ATIVA'].includes(normHistoricoTurmaSIGA_(a.status)),p=Number(a.percentual||0);return'<tr><td><strong>'+escHistoricoTurmaSIGA_(a.nomeAluno)+'</strong></td><td><span class="ht-siga-status '+(ativo?'ativo':'')+'">'+escHistoricoTurmaSIGA_(a.status||'SEM STATUS')+'</span></td><td>'+escHistoricoTurmaSIGA_(a.dataMatricula||'—')+'</td><td>'+escHistoricoTurmaSIGA_(a.dataInicioTurma||'—')+'</td><td>'+escHistoricoTurmaSIGA_(a.dataSaida||'—')+'</td><td>'+Number(a.totalAulas||0)+'</td><td>'+Number(a.presencas||0)+'</td><td>'+Number(a.faltas||0)+'</td><td><span class="ht-siga-freq '+(p<75?'baixa':'')+'">'+p.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</span></td></tr>'}).join('')}
+function normHistoricoTurmaSIGA_(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim()}function escHistoricoTurmaSIGA_(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+</script>
