@@ -218,17 +218,19 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
     const chaveMes = analisesMesRotulo_(ref).chave;
 
     matriculasPorAluno.forEach((matsAluno, chaveAluno) => {
-      // Aqui o filtro é intencionalmente mais restrito que analisesStatusAtivo_:
-      // a lista de alunos de uma turma (clique na tabela de mensalidades) deve
-      // mostrar só quem está ATIVO ou SUSPENSO, sem incluir EM ESPERA (que
-      // ainda não começou de fato na turma).
-      const ativas = matsAluno.filter(m => {
-        const status = normalizarPagUnif_(m.status);
-        return (status === 'ATIVO' || status === 'SUSPENSO') && vigenteNoMesPagUnif_(m, ref);
-      });
-      if (!ativas.length) return;
+      // Mesma regra da coluna da turma em calcularMensalidadesPorTurmaAnalisesSIGA_:
+      // o rateio de um pagamento tem que enxergar TODAS as matrículas vigentes
+      // na competência, inclusive as de turma já encerrada. Filtrar por status
+      // ATIVO/SUSPENSO aqui escondia a matrícula encerrada do aluno e jogava o
+      // pagamento inteiro na turma que sobrou — era por isso que o Caio
+      // aparecia com R$ 260,00 na INTERMED1 (R$ 180,00 dela + R$ 80,00 da I22)
+      // e a soma dos alunos estourava o total da coluna, que já rateava certo.
+      const vigentes = matsAluno.filter(m =>
+        vigenteNoMesPagUnif_(m, ref) && (!m.inicio || m.inicio <= dataCalculo)
+      );
+      if (!vigentes.length) return;
 
-      const matriculaDaTurma = ativas.find(m => String(m.turma || '').trim() === turmaAlvo);
+      const matriculaDaTurma = vigentes.find(m => String(m.turma || '').trim() === turmaAlvo);
       if (!matriculaDaTurma) return;
 
       // Valor REALMENTE pago pelo aluno nesse mês (boleto pago +
@@ -238,13 +240,13 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       // valor devido) a parte de turma desconhecida. Isso evita que o
       // pagamento de uma turma que o aluno já deixou apareça como se
       // fosse desta. Não usa obterTurmasEValorDevidoDimPagUnif_ porque
-      // ela só considera status ATIVO — aqui "ativas" já inclui
-      // SUSPENSO, por regra própria desta função.
+      // ela parte do status atual do aluno, e o que vale aqui é a
+      // vigência da matrícula na competência.
       const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
       if (!porTurmaPagamento) return;
 
-      const combo = ativas.length > 1;
-      const turmasDoMes = ativas
+      const combo = vigentes.length > 1;
+      const turmasDoMes = vigentes
         .map(m => ({
           turma: String(m.turma || '').trim(),
           valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)

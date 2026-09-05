@@ -1413,7 +1413,7 @@ function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan) {
   const mostrarTotal = periodosRotulos.length > 1;
 
   const cabecalho =
-    '<th>Aluno (ativo/suspenso)</th>' +
+    '<th>Aluno</th>' +
     periodosRotulos.map(p => `<th>${escAnalisesSIGA(p)}</th>`).join('') +
     (mostrarTotal ? '<th>Total</th>' : '');
 
