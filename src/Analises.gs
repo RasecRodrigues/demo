@@ -672,7 +672,16 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     ativos.set(chave, 0);
   });
 
-  const turmas = new Set();
+  /*
+   * A DimMatricula tem o mesmo nome de turma grafado de jeitos diferentes
+   * ("Formação I14" e "FORMAÇÃO I14"), e cada variante virava uma opção
+   * separada no filtro — cada uma mostrando só um pedaço dos alunos. As
+   * variantes passam a ser agrupadas pela chave normalizada e exibidas em
+   * uma forma única (maiúsculas, espaços colapsados), tanto na lista quanto
+   * na comparação do filtro.
+   */
+  const turmas = new Map();
+  const chaveTurmaAlvo = analisesChaveTurma_(turmaAlvo);
   let saidasSemData = 0;
 
   const limites = periodos.map(p => ({
@@ -683,8 +692,11 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
 
   matriculas.forEach(m => {
     const turma = String(m.turma || '').trim();
-    if (turma) turmas.add(turma);
-    if (turmaAlvo && turma !== turmaAlvo) return;
+    const chaveTurma = analisesChaveTurma_(turma);
+    if (chaveTurma && !turmas.has(chaveTurma)) {
+      turmas.set(chaveTurma, analisesRotuloTurma_(turma));
+    }
+    if (chaveTurmaAlvo && chaveTurma !== chaveTurmaAlvo) return;
 
     if (m.inicio instanceof Date) {
       const chave = analisesMesRotulo_(m.inicio).chave;
@@ -714,11 +726,28 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
 
   return {
     sucesso: true,
-    turma: turmaAlvo,
-    turmas: Array.from(turmas).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    turma: chaveTurmaAlvo ? (turmas.get(chaveTurmaAlvo) || analisesRotuloTurma_(turmaAlvo)) : '',
+    turmas: Array.from(turmas.values()).sort((a, b) => a.localeCompare(b, 'pt-BR')),
     serie,
     saidasSemData
   };
+}
+
+/**
+ * Chave de comparação de turma: ignora caixa, acento e espaço repetido, para
+ * que "Formação I14" e "FORMAÇÃO  I14" sejam a mesma turma.
+ */
+function analisesChaveTurma_(turma) {
+  return normalizarPagUnif_(String(turma || '').replace(/\s+/g, ' ').trim());
+}
+
+/**
+ * Forma exibida de um nome de turma: espaços colapsados e caixa alta, que é
+ * como a grande maioria já está cadastrada. Só afeta a exibição — o cadastro
+ * na DimMatricula continua como está.
+ */
+function analisesRotuloTurma_(turma) {
+  return String(turma || '').replace(/\s+/g, ' ').trim().toUpperCase();
 }
 
 /**

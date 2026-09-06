@@ -571,7 +571,9 @@ function vizGraficoLinha(alvo, opcoes) {
   if (!alvo) return;
   const largura = vizLargura_(alvo);
   const altura = opcoes.altura || 280;
-  const margem = { topo: 24, direita: 96, baixo: 40, esquerda: 60 };
+  // Com valores escritos sobre os pontos, o rótulo do ponto mais alto sairia
+  // cortado no topo do SVG; daí a folga extra.
+  const margem = { topo: opcoes.mostrarValores ? 34 : 24, direita: 96, baixo: 40, esquerda: 60 };
   const largPlot = largura - margem.esquerda - margem.direita;
   const altPlot = altura - margem.topo - margem.baixo;
 
@@ -638,6 +640,18 @@ function vizGraficoLinha(alvo, opcoes) {
       if (!p) return;
       const valorPonto = serie.pontos[i];
       marcasSvg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="7" fill="transparent"><title>${vizEsc(categorias[i])} · ${vizEsc(serie.nome)}: ${opcoes.moeda ? moedaAnalisesSIGA(valorPonto) : valorPonto}</title></circle>`;
+
+      /*
+       * Valor escrito em cima do ponto. Opcional: sem mostrarValores, os
+       * outros gráficos que usam esta função continuam exatamente como
+       * estavam. Com muitos meses os rótulos se atropelariam, então segue o
+       * mesmo passo dos rótulos do eixo X — e o último ponto sempre aparece.
+       */
+      if (opcoes.mostrarValores && (i % passoLabel === 0 || i === n - 1)) {
+        const texto = opcoes.moeda ? moedaAnalisesSIGA(valorPonto) : String(valorPonto);
+        marcasSvg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="${serie.cor}"/>`;
+        marcasSvg += `<text x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}" stroke="${VIZ_COR.superficie}" stroke-width="3" paint-order="stroke">${vizEsc(texto)}</text>`;
+      }
     });
 
     const ultimo = pontos.filter(Boolean).pop();
@@ -1333,6 +1347,7 @@ function desenharGraficoMovimentacaoAnalisesSIGA_(resposta) {
     categorias: serie.map(x => x.periodo),
     areaUnicaSerie: true,
     semRotuloUnico: true,
+    mostrarValores: true,
     series: [{ nome: 'Alunos ativos', cor: VIZ_COR.categorico[0], pontos: serie.map(x => x.ativos || 0) }]
   });
 
