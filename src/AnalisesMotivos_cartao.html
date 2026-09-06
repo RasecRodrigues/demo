@@ -1,0 +1,211 @@
+<!--
+  SIGA — Cartão "Por que os alunos saem" (motivos de saída)
+
+  Este arquivo NÃO é incluído automaticamente: é o bloco pronto para colar
+  dentro do Analises_.html. Fica versionado aqui porque o Analises_.html do
+  repositório está mais velho que o que está publicado, e um patch contra a
+  base errada quebraria a tela.
+
+  COMO INSTALAR — três colagens no Analises_.html:
+
+  1) MARCAÇÃO: cole o <section class="cartao"> abaixo logo DEPOIS do cartão
+     "Detalhamento por turma" (ainda dentro da seção "Turmas", antes da tarja
+     "Financeiro por turma").
+
+  2) ESTILO: cole o bloco <style> dentro do <style> que já existe na tela
+     (ou deixe como <style> separado — funciona igual).
+
+  3) SCRIPT: cole as funções do <script> dentro do <script> que já existe,
+     perto de carregarMovimentacaoAnalisesSIGA — elas seguem o mesmo padrão.
+
+  E dois ganchos de uma linha cada, em funções que já existem:
+
+  a) Em desenharGraficosAnalisesSIGA, acrescente ao array `passos`:
+         () => carregarMotivosSaidaAnalisesSIGA(),
+
+  b) Em enviarPdfAnalisesSIGA_, acrescente ao array de blocos (logo depois
+     de analisesBlocoMovimentacaoParaPdf_()):
+         analisesBlocoMotivosParaPdf_(),
+
+  O back-end é obterMotivosSaidaAnalisesSIGA, no arquivo AnalisesMotivos.gs.
+-->
+
+<!-- ========== 1) MARCAÇÃO ========== -->
+<section class="cartao">
+  <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+    <div>
+      <h2>Por que os alunos saem</h2>
+      <span class="subtitulo">Motivo registrado em MOTIVO_ALTERACAO nas matrículas encerradas dentro do período. Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
+    </div>
+    <div class="campo analises-campo-filtro">
+      <label for="analisesMotivosTurma">Turma</label>
+      <select id="analisesMotivosTurma" onchange="carregarMotivosSaidaAnalisesSIGA()">
+        <option value="">Todas as turmas</option>
+      </select>
+    </div>
+  </div>
+  <div id="resumoAnalisesMotivos" class="analises-resumo-movimentacao"></div>
+  <div id="graficoAnalisesMotivos" class="analises-grafico-area analises-grafico-alto">
+    <div class="estado-vazio">Carregando...</div>
+  </div>
+  <div id="avisoAnalisesMotivos" class="analises-aviso-movimentacao oculto"></div>
+</section>
+
+<!-- ========== 2) ESTILO ========== -->
+<style>
+/* "Não informado" não é um motivo: é um furo de cadastro. Fica cinza para
+   não competir com os motivos de verdade na leitura do gráfico. */
+#tela-analises .analises-motivo-vazio{color:#898781;font-style:italic}
+</style>
+
+<!-- ========== 3) SCRIPT ========== -->
+<script>
+/**
+ * Motivos de saída do período.
+ *
+ * Vem de obterMotivosSaidaAnalisesSIGA, que lê só a DimMatricula e roda
+ * fora do cache de Análises — por isso o filtro de turma responde na hora
+ * e o número reflete o cadastro atual, sem depender do recálculo de 6h.
+ * Mesmo desenho de carregarMovimentacaoAnalisesSIGA.
+ */
+let analisesMotivosTurmasPreenchidas = false;
+let analisesMotivosUltima = null;
+
+function carregarMotivosSaidaAnalisesSIGA() {
+  const alvo = document.getElementById('graficoAnalisesMotivos');
+  if (!alvo) return;
+
+  alvo.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+  const resumo = document.getElementById('resumoAnalisesMotivos');
+  if (resumo) resumo.innerHTML = '';
+  const aviso = document.getElementById('avisoAnalisesMotivos');
+  if (aviso) aviso.classList.add('oculto');
+
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+  const meses = Number(document.getElementById('analisesMeses')?.value || 12);
+  const turma = document.getElementById('analisesMotivosTurma')?.value || '';
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      if (!resposta || resposta.sucesso !== true) {
+        alvo.innerHTML = '<div class="estado-vazio">Sem dados de motivos.</div>';
+        return;
+      }
+      if (!analisesMotivosTurmasPreenchidas) {
+        preencherTurmasMotivosAnalisesSIGA_(resposta.turmas || []);
+        analisesMotivosTurmasPreenchidas = true;
+      }
+      desenharMotivosSaidaAnalisesSIGA_(resposta);
+    })
+    .withFailureHandler(erro => {
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      alvo.innerHTML = '<div class="estado-vazio">Não foi possível carregar os motivos de saída.<br><small>'
+        + escAnalisesSIGA(motivo) + '</small></div>';
+    })
+    .obterMotivosSaidaAnalisesSIGA({ token, turma, meses });
+}
+
+function preencherTurmasMotivosAnalisesSIGA_(turmas) {
+  const select = document.getElementById('analisesMotivosTurma');
+  if (!select) return;
+  const atual = select.value;
+  select.innerHTML = '<option value="">Todas as turmas</option>';
+  turmas.forEach(turma => {
+    const opcao = document.createElement('option');
+    opcao.value = turma;
+    opcao.textContent = turma;
+    select.appendChild(opcao);
+  });
+  if ([...select.options].some(o => o.value === atual)) select.value = atual;
+}
+
+function desenharMotivosSaidaAnalisesSIGA_(resposta) {
+  const alvo = document.getElementById('graficoAnalisesMotivos');
+  const motivos = resposta.motivos || [];
+  analisesMotivosUltima = resposta;
+  if (!alvo) return;
+
+  if (!motivos.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Nenhuma saída registrada no período'
+      + (resposta.turma ? ' em ' + escAnalisesSIGA(resposta.turma) : '') + '.</div>';
+    mostrarAvisoMotivosAnalisesSIGA_(resposta);
+    return;
+  }
+
+  // O maior motivo REAL — "Não informado" lidera com frequência e, como
+  // resposta à pergunta "por que saem", não diz nada.
+  const maiorReal = motivos.find(m => m.motivo !== 'Não informado');
+
+  const resumo = document.getElementById('resumoAnalisesMotivos');
+  if (resumo) {
+    resumo.innerHTML =
+      '<span><strong>' + Number(resposta.totalSaidas || 0) + '</strong> saídas no período</span>'
+      + (maiorReal
+          ? '<span>maior motivo: <strong>' + escAnalisesSIGA(maiorReal.motivo) + '</strong> ('
+            + Number(maiorReal.percentual || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%)</span>'
+          : '')
+      + '<span><strong>' + Number(resposta.semMotivo || 0) + '</strong> sem motivo preenchido</span>';
+  }
+
+  vizGraficoBarrasHorizontais(alvo, {
+    titulo: resposta.turma ? ('Motivos de saída — ' + resposta.turma) : 'Motivos de saída — todas as turmas',
+    itens: motivos.map(m => ({
+      nome: m.motivo,
+      valores: [{
+        valor: Number(m.total || 0),
+        cor: m.motivo === 'Não informado' ? VIZ_COR.inkMudo : VIZ_COR.categorico[1],
+        rotulo: Number(m.percentual || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '% das saídas'
+      }]
+    }))
+  });
+
+  mostrarAvisoMotivosAnalisesSIGA_(resposta);
+}
+
+/**
+ * Os dois furos de cadastro aparecem na tela em vez de sumirem no cálculo:
+ * sem data, a saída não entra em nenhum mês; sem motivo, ela infla a fatia
+ * "Não informado" e o ranking deixa de responder à pergunta.
+ */
+function mostrarAvisoMotivosAnalisesSIGA_(resposta) {
+  const aviso = document.getElementById('avisoAnalisesMotivos');
+  if (!aviso) return;
+
+  const partes = [];
+  const semData = Number(resposta.semData || 0);
+  const semMotivo = Number(resposta.semMotivo || 0);
+
+  if (semData > 0) {
+    partes.push(semData + ' matrícula(s) encerrada(s) sem data de encerramento ficam fora deste gráfico '
+      + '— preencha DATA_CANCELAMENTO/FINALIZACAO na DimMatricula.');
+  }
+  if (semMotivo > 0) {
+    partes.push(semMotivo + ' saída(s) do período estão sem MOTIVO_ALTERACAO preenchido e aparecem como "Não informado".');
+  }
+
+  if (!partes.length) {
+    aviso.classList.add('oculto');
+    return;
+  }
+  aviso.textContent = partes.join(' ');
+  aviso.classList.remove('oculto');
+}
+
+function analisesBlocoMotivosParaPdf_() {
+  const dados = analisesMotivosUltima;
+  if (!dados || !dados.motivos || !dados.motivos.length) return null;
+  return {
+    titulo: 'Por que os alunos saem',
+    subtitulo: (dados.turma ? 'Turma: ' + dados.turma : 'Todas as turmas')
+      + ' · ' + Number(dados.totalSaidas || 0) + ' saídas no período',
+    colunas: ['Motivo', 'Saídas', '% das saídas'],
+    linhas: dados.motivos.map(m => [
+      m.motivo,
+      String(m.total || 0),
+      Number(m.percentual || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'
+    ])
+  };
+}
+</script>
