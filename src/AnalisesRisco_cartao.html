@@ -1,0 +1,304 @@
+<!--
+  SIGA — Cartão "Alunos em risco de evasão"
+
+  Como o AnalisesMotivos_cartao.html, este arquivo NÃO é incluído
+  automaticamente: é o bloco para colar dentro do Analises_.html, que no
+  repositório está mais velho que o publicado.
+
+  COMO INSTALAR:
+
+  1) MARCAÇÃO: cole a tarja + o <section class="cartao"> abaixo logo
+     DEPOIS do cartão "Detalhamento por turma" — a lista é sobre alunos,
+     não sobre dinheiro, então fica antes da tarja "Financeiro por turma".
+
+  2) ESTILO e 3) SCRIPT: cole nos blocos <style>/<script> que já existem.
+
+  E dois ganchos de uma linha:
+
+  a) Em desenharGraficosAnalisesSIGA, no array `passos`:
+         () => carregarRiscoAnalisesSIGA(),
+
+  b) Em enviarPdfAnalisesSIGA_, no array de blocos:
+         analisesBlocoRiscoParaPdf_(),
+
+  O back-end é obterAlunosEmRiscoAnalisesSIGA, em AnalisesRisco.gs. Os
+  pesos e cortes do score ficam em ANALISES_RISCO_CONFIG, no topo daquele
+  arquivo — é lá que se calibra a lista, não aqui.
+-->
+
+<!-- ========== 1) MARCAÇÃO ========== -->
+<div class="analises-tarja-secao">
+  <h3>Risco de evasão</h3>
+  <span>Quem provavelmente sai se ninguém ligar — frequência cruzada com situação financeira.</span>
+</div>
+
+<div class="analises-kpis analises-kpis-risco">
+  <div class="pagamentos-kpi"><span>ALUNOS ANALISADOS</span><strong id="riscoKpiAnalisados">—</strong></div>
+  <div class="pagamentos-kpi"><span>RISCO ALTO</span><strong id="riscoKpiAlto" class="analises-risco-alto">—</strong></div>
+  <div class="pagamentos-kpi"><span>RISCO MÉDIO</span><strong id="riscoKpiMedio" class="analises-risco-medio">—</strong></div>
+  <div class="pagamentos-kpi"><span>RISCO BAIXO</span><strong id="riscoKpiBaixo" class="analises-risco-baixo">—</strong></div>
+  <div class="pagamentos-kpi"><span>FREQUÊNCIA MÉDIA DOS EM RISCO</span><strong id="riscoKpiFrequencia">—</strong></div>
+  <div class="pagamentos-kpi"><span>VALOR FINANCEIRO EXPOSTO</span><strong id="riscoKpiExposto">—</strong></div>
+</div>
+
+<section class="cartao">
+  <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+    <div>
+      <h2>Alunos em risco</h2>
+      <span class="subtitulo">Ordenados do maior score para o menor. Só matrículas ativas hoje. Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
+    </div>
+    <div class="campo analises-campo-filtro">
+      <label for="analisesRiscoTurma">Turma</label>
+      <select id="analisesRiscoTurma" onchange="carregarRiscoAnalisesSIGA()">
+        <option value="">Todas as turmas</option>
+      </select>
+    </div>
+  </div>
+  <div class="pagamentos-tabela-wrap">
+    <table class="pagamentos-tabela">
+      <thead>
+        <tr>
+          <th>Aluno</th>
+          <th>Turma</th>
+          <th>Frequência</th>
+          <th>Faltas recentes</th>
+          <th>Situação financeira</th>
+          <th>Score</th>
+          <th>Risco</th>
+        </tr>
+      </thead>
+      <tbody id="corpoTabelaAnalisesRisco">
+        <tr><td colspan="7" class="estado-vazio">Carregando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div id="avisoAnalisesRisco" class="analises-aviso-movimentacao oculto"></div>
+</section>
+
+<!-- ========== 2) ESTILO ========== -->
+<style>
+/* Seis KPIs não cabem na grade de quatro da tela. */
+#tela-analises .analises-kpis-risco{grid-template-columns:repeat(6,minmax(0,1fr))}
+@media(max-width:1100px){#tela-analises .analises-kpis-risco{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){#tela-analises .analises-kpis-risco{grid-template-columns:repeat(2,1fr)}}
+
+#tela-analises .analises-risco-alto{color:#d03b3b}
+#tela-analises .analises-risco-medio{color:#ec835a}
+#tela-analises .analises-risco-baixo{color:#0ca30c}
+
+/* A coluna Aluno é a que a secretaria lê para ligar: peso maior e
+   alinhada à esquerda como as demais colunas de texto. */
+#tela-analises .analises-risco-nome{font-weight:700}
+#tela-analises .pagamentos-tabela tbody td.analises-celula-texto{text-align:left}
+#tela-analises .analises-risco-sem-dado{color:#898781;font-style:italic}
+
+/* O score tem a decomposição no title — a linha tracejada avisa que há
+   algo a ler ali, senão ninguém descobre que o hover explica o número. */
+#tela-analises .analises-risco-score{
+  font-weight:700;cursor:help;
+  text-decoration:underline dotted #c3c2b7;text-underline-offset:3px;
+}
+</style>
+
+<!-- ========== 3) SCRIPT ========== -->
+<script>
+/**
+ * Lista de alunos em risco de evasão.
+ *
+ * Diferente do resto da tela, esta é a única visão que olha para frente.
+ * Vem de obterAlunosEmRiscoAnalisesSIGA (AnalisesRisco.gs), que é a
+ * chamada mais cara da tela — consulta o painel de frequência de cada
+ * turma — e por isso trabalha com orçamento de tempo: se não couber
+ * tudo, devolve as turmas que couberam e diz quantas ficaram de fora.
+ */
+let analisesRiscoTurmasPreenchidas = false;
+let analisesRiscoUltima = null;
+
+function carregarRiscoAnalisesSIGA() {
+  const corpo = document.getElementById('corpoTabelaAnalisesRisco');
+  if (!corpo) return;
+
+  corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Analisando frequência e pagamentos...</td></tr>';
+  const aviso = document.getElementById('avisoAnalisesRisco');
+  if (aviso) aviso.classList.add('oculto');
+
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA()
+    : '';
+  const turma = document.getElementById('analisesRiscoTurma')?.value || '';
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      if (!resposta || resposta.sucesso !== true) {
+        corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Não foi possível montar a lista de risco.</td></tr>';
+        return;
+      }
+      if (!analisesRiscoTurmasPreenchidas) {
+        preencherTurmasRiscoAnalisesSIGA_(resposta.turmas || []);
+        analisesRiscoTurmasPreenchidas = true;
+      }
+      desenharRiscoAnalisesSIGA_(resposta);
+    })
+    .withFailureHandler(erro => {
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Não foi possível montar a lista de risco.<br><small>'
+        + escAnalisesSIGA(motivo) + '</small></td></tr>';
+    })
+    .obterAlunosEmRiscoAnalisesSIGA({ token, turma });
+}
+
+function preencherTurmasRiscoAnalisesSIGA_(turmas) {
+  const select = document.getElementById('analisesRiscoTurma');
+  if (!select) return;
+  const atual = select.value;
+  select.innerHTML = '<option value="">Todas as turmas</option>';
+  turmas.forEach(turma => {
+    const opcao = document.createElement('option');
+    opcao.value = turma;
+    opcao.textContent = turma;
+    select.appendChild(opcao);
+  });
+  if ([...select.options].some(o => o.value === atual)) select.value = atual;
+}
+
+const ANALISES_RISCO_STATUS = {
+  alto:  { chave: 'critico', rotulo: 'Alto' },
+  medio: { chave: 'grave',   rotulo: 'Médio' },
+  baixo: { chave: 'bom',     rotulo: 'Baixo' }
+};
+
+function desenharRiscoAnalisesSIGA_(resposta) {
+  const corpo = document.getElementById('corpoTabelaAnalisesRisco');
+  const alunos = resposta.alunos || [];
+  const resumo = resposta.resumo || {};
+  analisesRiscoUltima = resposta;
+
+  definirTextoAnalisesSIGA('riscoKpiAnalisados', Number(resumo.analisados || 0).toLocaleString('pt-BR'));
+  definirTextoAnalisesSIGA('riscoKpiAlto', String(Number(resumo.alto || 0)));
+  definirTextoAnalisesSIGA('riscoKpiMedio', String(Number(resumo.medio || 0)));
+  definirTextoAnalisesSIGA('riscoKpiBaixo', String(Number(resumo.baixo || 0)));
+  definirTextoAnalisesSIGA('riscoKpiFrequencia', resumo.frequenciaMediaEmRisco === null || resumo.frequenciaMediaEmRisco === undefined
+    ? '—'
+    : Number(resumo.frequenciaMediaEmRisco).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%');
+  definirTextoAnalisesSIGA('riscoKpiExposto', moedaAnalisesSIGA(resumo.valorExposto));
+
+  mostrarAvisoRiscoAnalisesSIGA_(resposta);
+
+  if (!corpo) return;
+
+  if (!alunos.length) {
+    corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Nenhum aluno ativo encontrado'
+      + (resposta.turma ? ' em ' + escAnalisesSIGA(resposta.turma) : '') + '.</td></tr>';
+    return;
+  }
+
+  corpo.innerHTML = alunos.map(a => {
+    const status = ANALISES_RISCO_STATUS[a.risco] || ANALISES_RISCO_STATUS.baixo;
+    return `
+    <tr>
+      <td class="analises-celula-texto analises-risco-nome">${escAnalisesSIGA(a.aluno)}</td>
+      <td class="analises-celula-texto">${escAnalisesSIGA(a.turma)}</td>
+      <td>${a.frequencia === null || a.frequencia === undefined
+        ? '<span class="analises-risco-sem-dado">sem dado</span>'
+        : Number(a.frequencia).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%'}</td>
+      <td>${escAnalisesSIGA(analisesRiscoTextoFaltas_(a))}</td>
+      <td class="analises-celula-texto">${escAnalisesSIGA(analisesRiscoTextoFinanceiro_(a))}</td>
+      <td class="analises-risco-score" title="${escAnalisesSIGA(analisesRiscoTextoMotivos_(a))}">${Number(a.score || 0)}</td>
+      <td>${vizChipStatus(status.rotulo, { chave: status.chave, cor: VIZ_COR.status[status.chave] })}</td>
+    </tr>`;
+  }).join('');
+}
+
+/**
+ * Falta seguida pesa mais que falta espalhada — quem sumiu três aulas
+ * seguidas já está de saída, quem faltou três vezes em dois meses não.
+ * Por isso o texto destaca a sequência quando ela existe.
+ */
+function analisesRiscoTextoFaltas_(aluno) {
+  const consecutivas = Number(aluno.faltasConsecutivas || 0);
+  if (consecutivas >= 2) {
+    return consecutivas + ' consecutivas';
+  }
+  return String(Number(aluno.faltas || 0));
+}
+
+function analisesRiscoTextoFinanceiro_(aluno) {
+  const meses = Number(aluno.mesesEmAtraso || 0);
+  if (!aluno.emAtraso && !meses) {
+    return 'Em dia';
+  }
+  // Um aluno pode ter meses em aberto antigos sem estar em atraso agora —
+  // o texto tem que separar os dois, senão a secretaria liga cobrando algo
+  // que já foi resolvido.
+  const rotulo = aluno.emAtraso ? 'Em atraso' : 'Débito antigo';
+  return rotulo + ' · ' + meses + (meses > 1 ? ' meses' : ' mês')
+    + ' · ' + moedaAnalisesSIGA(aluno.valorEmAberto);
+}
+
+/**
+ * A decomposição do score, para o title da célula. É o que transforma
+ * "80" em algo que se fala ao telefone: sem isto, a lista pede confiança
+ * cega num número.
+ */
+function analisesRiscoTextoMotivos_(aluno) {
+  const motivos = aluno.motivos || [];
+  if (!motivos.length) {
+    return 'Nenhum sinal de risco.';
+  }
+  return motivos.map(m => (m.pontos ? '+' + m.pontos + '  ' : '     ') + m.texto).join('\n');
+}
+
+/**
+ * Os dois casos em que a lista está incompleta aparecem na tela em vez de
+ * passarem por lista curta: turma que não coube no orçamento de tempo, e
+ * frequência que não pôde ser lida (aí o score sai só do financeiro e
+ * ninguém deve tratá-lo como completo).
+ */
+function mostrarAvisoRiscoAnalisesSIGA_(resposta) {
+  const aviso = document.getElementById('avisoAnalisesRisco');
+  if (!aviso) return;
+
+  const partes = [];
+  if (Number(resposta.turmasPendentes || 0) > 0) {
+    partes.push(resposta.turmasPendentes + ' turma(s) ficaram fora desta análise por limite de tempo '
+      + '— filtre por turma para vê-las.');
+  }
+  if (resposta.frequenciaIndisponivel) {
+    partes.push('A frequência por aluno não pôde ser lida: o score está saindo só das faltas e do financeiro.');
+  }
+
+  if (!partes.length) {
+    aviso.classList.add('oculto');
+    return;
+  }
+  aviso.textContent = partes.join(' ');
+  aviso.classList.remove('oculto');
+}
+
+function analisesBlocoRiscoParaPdf_() {
+  const dados = analisesRiscoUltima;
+  if (!dados || !dados.alunos || !dados.alunos.length) return null;
+  const resumo = dados.resumo || {};
+  return {
+    titulo: 'Alunos em risco de evasão',
+    subtitulo: (dados.turma ? 'Turma: ' + dados.turma : 'Todas as turmas')
+      + ' · ' + Number(resumo.alto || 0) + ' em risco alto, ' + Number(resumo.medio || 0) + ' médio'
+      + ' · valor exposto ' + moedaAnalisesSIGA(resumo.valorExposto),
+    // No papel não existe hover: os motivos viram coluna, senão o PDF
+    // entrega um score que ninguém consegue conferir.
+    colunas: ['Aluno', 'Turma', 'Frequência', 'Faltas recentes', 'Situação financeira', 'Score', 'Risco', 'Por quê'],
+    linhas: dados.alunos.map(a => [
+      a.aluno,
+      a.turma,
+      a.frequencia === null || a.frequencia === undefined
+        ? '—'
+        : Number(a.frequencia).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%',
+      analisesRiscoTextoFaltas_(a),
+      analisesRiscoTextoFinanceiro_(a),
+      String(Number(a.score || 0)),
+      (ANALISES_RISCO_STATUS[a.risco] || ANALISES_RISCO_STATUS.baixo).rotulo,
+      (a.motivos || []).map(m => m.texto).join('; ') || '—'
+    ])
+  };
+}
+</script>
