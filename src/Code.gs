@@ -37,6 +37,12 @@ function doGet(e) {
     .trim()
     .toLowerCase();
 
+  // Endpoint de dados do Power BI. Vem antes das telas porque responde
+  // JSON (ContentService), não HTML — ver PowerBI.gs.
+  if (pagina === 'powerbi') {
+    return powerBIResponderSIGA_(e);
+  }
+
   if (pagina === 'professor') {
 
     const token = String(
