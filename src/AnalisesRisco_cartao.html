@@ -24,6 +24,12 @@
   O back-end é obterAlunosEmRiscoAnalisesSIGA, em AnalisesRisco.gs. Os
   pesos e cortes do score ficam em ANALISES_RISCO_CONFIG, no topo daquele
   arquivo — é lá que se calibra a lista, não aqui.
+
+  DEPOIS DE COLAR: rode UMA VEZ, pelo editor do Apps Script, a função
+  configurarGatilhoCacheRiscoSIGA. Ela agenda o recálculo de 4 em 4 horas.
+  Sem o gatilho a tabela só é montada na primeira abertura da tela e no
+  botão Recalcular, e vai envelhecendo — numa lista de risco isso faz a
+  secretaria ligar para quem já voltou.
 -->
 
 <!-- ========== 1) MARCAÇÃO ========== -->
@@ -46,12 +52,18 @@
     <div>
       <h2>Alunos em risco</h2>
       <span class="subtitulo">Ordenados do maior score para o menor. Só matrículas ativas hoje. Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
+      <span class="subtitulo" id="riscoAtualizadoEm"></span>
     </div>
-    <div class="campo analises-campo-filtro">
-      <label for="analisesRiscoTurma">Turma</label>
-      <select id="analisesRiscoTurma" onchange="carregarRiscoAnalisesSIGA()">
-        <option value="">Todas as turmas</option>
-      </select>
+    <div class="analises-risco-acoes">
+      <div class="campo analises-campo-filtro">
+        <label for="analisesRiscoTurma">Turma</label>
+        <select id="analisesRiscoTurma" onchange="carregarRiscoAnalisesSIGA()">
+          <option value="">Todas as turmas</option>
+        </select>
+      </div>
+      <button type="button" class="botao botao-secundario" id="botaoRecalcularRisco" onclick="recalcularRiscoAnalisesSIGA()" title="Refaz o cálculo a partir das chamadas e dos pagamentos — lento, use quando a lista parecer desatualizada.">
+        🔄 Recalcular
+      </button>
     </div>
   </div>
   <div class="pagamentos-tabela-wrap">
@@ -82,6 +94,9 @@
 @media(max-width:1100px){#tela-analises .analises-kpis-risco{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){#tela-analises .analises-kpis-risco{grid-template-columns:repeat(2,1fr)}}
 
+#tela-analises .analises-risco-acoes{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+#tela-analises #riscoAtualizadoEm{display:block;font-size:12px;color:#898781;margin-top:2px}
+
 #tela-analises .analises-risco-alto{color:#d03b3b}
 #tela-analises .analises-risco-medio{color:#ec835a}
 #tela-analises .analises-risco-baixo{color:#0ca30c}
@@ -106,10 +121,12 @@
  * Lista de alunos em risco de evasão.
  *
  * Diferente do resto da tela, esta é a única visão que olha para frente.
- * Vem de obterAlunosEmRiscoAnalisesSIGA (AnalisesRisco.gs), que é a
- * chamada mais cara da tela — consulta o painel de frequência de cada
- * turma — e por isso trabalha com orçamento de tempo: se não couber
- * tudo, devolve as turmas que couberam e diz quantas ficaram de fora.
+ *
+ * Vem de obterAlunosEmRiscoAnalisesSIGA, que só LÊ a aba
+ * AnalisesCache_Risco — o cálculo pesado (painel de frequência turma a
+ * turma) roda em segundo plano pelo gatilho, como o resto de Análises.
+ * Por isso a lista abre instantânea e traz a data do cálculo: uma lista
+ * de risco velha faz ligar para quem já voltou.
  */
 let analisesRiscoTurmasPreenchidas = false;
 let analisesRiscoUltima = null;
@@ -255,14 +272,17 @@ function analisesRiscoTextoMotivos_(aluno) {
  * ninguém deve tratá-lo como completo).
  */
 function mostrarAvisoRiscoAnalisesSIGA_(resposta) {
+  const rodape = document.getElementById('riscoAtualizadoEm');
+  if (rodape) {
+    rodape.textContent = resposta.atualizadoEm
+      ? 'Lista calculada em ' + new Date(resposta.atualizadoEm).toLocaleString('pt-BR')
+      : 'Lista ainda não calculada — use Recalcular.';
+  }
+
   const aviso = document.getElementById('avisoAnalisesRisco');
   if (!aviso) return;
 
   const partes = [];
-  if (Number(resposta.turmasPendentes || 0) > 0) {
-    partes.push(resposta.turmasPendentes + ' turma(s) ficaram fora desta análise por limite de tempo '
-      + '— filtre por turma para vê-las.');
-  }
   if (resposta.frequenciaIndisponivel) {
     partes.push('A frequência por aluno não pôde ser lida: o score está saindo só das faltas e do financeiro.');
   }
@@ -273,6 +293,60 @@ function mostrarAvisoRiscoAnalisesSIGA_(resposta) {
   }
   aviso.textContent = partes.join(' ');
   aviso.classList.remove('oculto');
+}
+
+/**
+ * Força o recálculo da tabela e recarrega a lista. É lento de propósito:
+ * relê chamadas e pagamentos de todas as turmas. Uma execução pode não dar
+ * conta de todas — o cursor do servidor retoma de onde parou na próxima,
+ * e as turmas já calculadas continuam na tabela enquanto isso.
+ */
+function recalcularRiscoAnalisesSIGA() {
+  const botao = document.getElementById('botaoRecalcularRisco');
+  const rotulo = botao ? botao.textContent : '';
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Recalculando...';
+  }
+
+  const restaurar = () => {
+    if (botao) { botao.disabled = false; botao.textContent = rotulo; }
+  };
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      restaurar();
+      if (resposta && Number(resposta.turmasPendentes || 0) > 0) {
+        analisesRiscoAvisarSIGA_(
+          resposta.turmasPendentes + ' turma(s) não couberam nesta execução e entram na próxima rodada.',
+          'sucesso'
+        );
+      }
+      carregarRiscoAnalisesSIGA();
+    })
+    .withFailureHandler(erro => {
+      restaurar();
+      analisesRiscoAvisarSIGA_(erro && erro.message ? erro.message : String(erro || 'Erro ao recalcular.'), 'erro');
+    })
+    .recalcularCacheRiscoManualSIGA({
+      token: typeof obterTokenPagamentosUnificadosSIGA === 'function' ? obterTokenPagamentosUnificadosSIGA() : ''
+    });
+}
+
+/**
+ * A barra de mensagens do sistema — mostrarErroAnalisesSIGA escreve dentro
+ * das áreas de gráfico e apagaria a tela só para dar um recado.
+ *
+ * Nome próprio (e não analisesAvisarSIGA_, do cartão de motivos) de
+ * propósito: os dois cartões são colados de forma independente, e uma
+ * função com o mesmo nome nos dois seria redeclarada em silêncio.
+ */
+function analisesRiscoAvisarSIGA_(mensagem, tipo) {
+  if (typeof mostrarMensagem === 'function') {
+    mostrarMensagem(mensagem, tipo);
+    return;
+  }
+  alert(mensagem);
 }
 
 function analisesBlocoRiscoParaPdf_() {
