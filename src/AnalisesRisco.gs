@@ -60,9 +60,16 @@ const ANALISES_RISCO_CONFIG = {
   QUEDA_PONTOS: 15,
   MATRICULA_RECENTE_PONTOS: 5,
 
-  // Corte dos rótulos: 0–29 baixo, 30–59 médio, 60–100 alto.
+  // Corte dos rótulos. "Médio" é lista de observação, não alarme: começa
+  // em 15 para que UM sinal real já coloque o aluno nela — duas faltas
+  // seguidas (15) ou frequência na faixa de risco de evasão (25).
+  //
+  // Com o corte em 30, um aluno de 62% somava 25 e caía em "baixo" ao
+  // mesmo tempo em que a régua de frequência o chamava de "Risco de
+  // evasão" — a mesma contradição entre número e rótulo que a régua
+  // única veio resolver, só que dentro deste módulo.
   SCORE_ALTO: 60,
-  SCORE_MEDIO: 30,
+  SCORE_MEDIO: 15,
 
   // Teto. Sem ele o máximo somável é 110 (35+25+20+10+15+5) e a tela
   // mostraria score fora da escala que os cortes acima descrevem.
