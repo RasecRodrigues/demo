@@ -523,18 +523,45 @@ function analisesRiscoRotulo_(score) {
 /**
  * Devido x pago por aluno nos últimos meses FECHADOS.
  *
- * Reaproveita exatamente a mesma engrenagem do detalhamento por turma
- * (analisesMatriculaNoRateio_ + analisesCalcularValorMatricula_ + o cache
- * de pagamento por aluno), então "em atraso" aqui significa o mesmo que
- * na tela de mensalidades — nenhuma segunda definição de dívida.
+ * O devido sai de analisesCalcularValorMatricula_ →
+ * calcularValorMatriculaPagUnifV38_, que já devolve ZERO para matrícula
+ * isenta (APPAI ou bolsa 100%, via ehMatriculaIsentaPagUnif_). Bolsa
+ * parcial não é isenção: o desconto tem que estar nas próprias colunas de
+ * preço da DimMatricula (as colunas SEM_COMBO e COM_COMBO). Se a escola
+ * cobra menos do que está escrito lá, o aluno aparece em atraso — e o
+ * conserto é no cadastro, não aqui.
  *
- * O mês corrente fica de fora de propósito: no dia 3, quem ainda não
- * pagou não está atrasado, e incluí-lo marcaria a escola inteira como
- * devedora todo início de mês.
+ * O pago sai do cache AnalisesCache_PagamentoAluno.
+ *
+ * DECISÕES HUMANAS QUE ANULAM A DÍVIDA:
+ * o módulo de Pagamentos não trata saldo devedor como fato bruto — ele
+ * respeita o que o financeiro já decidiu. Sem consultar as mesmas abas, a
+ * lista de risco mandaria ligar cobrando quem a escola já liberou:
+ *
+ *   AbonosPendencias      diferença abonada pelo financeiro
+ *   ControleInadimplentes competência quitada ou perdoada
+ *                         (PERIODOS_ENCERRADOS)
+ *
+ * As duas são lidas por funções sem verificação de token, então funcionam
+ * no gatilho, que roda sem sessão de usuário.
+ *
+ * O QUE AINDA DIVERGE, de propósito:
+ *   - Realocação de pagamento (RealocacoesPagamento) move um valor de uma
+ *     competência para outra. O cache de Análises é montado direto de
+ *     boletos e comprovantes, sem o id de origem que a realocação usa
+ *     para casar, então não dá para aplicá-la aqui sem refazer o cache.
+ *   - Taxa de matrícula cobrada DENTRO de um boleto entra no pago como se
+ *     fosse mensalidade (o cache soma o boleto inteiro; de comprovante
+ *     entra só "VALOR PAGO MENSALIDADE"). Isso ESCONDE atraso, nunca
+ *     inventa um.
+ *   - Boleto pago com centavos de diferença: o Pagamentos ignora por
+ *     regra ("o banco trata juros, multa e fim de semana"); aqui só a
+ *     TOLERANCIA_REAIS protege.
+ * Os três erram para o lado de não acusar, exceto o último. Use
+ * diagnosticarFinanceiroRiscoSIGA para conferir um aluno concreto.
  *
  * Duas janelas, porque são dois sinais diferentes:
- *   emAtraso   — algum mês em aberto nos últimos MESES_ATRASO. É o aperto
- *                de agora.
+ *   emAtraso   — algum mês em aberto nos últimos MESES_ATRASO.
  *   recorrente — MIN_MESES_RECORRENCIA ou mais meses em aberto nos
  *                últimos MESES_RECORRENCIA. É o padrão, que pesa mais do
  *                que um mês solto e por isso soma pontos ao primeiro.
@@ -545,6 +572,14 @@ function analisesRiscoRotulo_(score) {
 function analisesRiscoFinanceiroPorAluno_(matriculas, valorPagoPorAlunoMes) {
   const cfg = ANALISES_RISCO_CONFIG;
   const resultado = new Map();
+
+  const abonos = typeof lerAbonosDiferencaPagamentoSIGA_ === 'function'
+    ? lerAbonosDiferencaPagamentoSIGA_()
+    : new Map();
+
+  const controles = typeof lerControleInadimplentesPagamentosSIGA_ === 'function'
+    ? lerControleInadimplentesPagamentosSIGA_()
+    : new Map();
 
   const matriculasPorAluno = new Map();
   matriculas.forEach(m => {
@@ -558,15 +593,20 @@ function analisesRiscoFinanceiroPorAluno_(matriculas, valorPagoPorAlunoMes) {
 
   const hoje = new Date();
   const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-
-  // analisesGerarPeriodos_ termina sempre no mês corrente; ele entra só
-  // para a mensalidade, e os anteriores para as duas janelas de atraso.
   const periodos = analisesGerarPeriodos_(cfg.MESES_RECORRENCIA + 1);
 
   matriculasPorAluno.forEach((matsAluno, chaveAluno) => {
     const mesesComSaldo = [];
     let valorEmAberto = 0;
     let mensalidade = 0;
+
+    const controle = controles.get(normalizarPagUnif_(chaveAluno));
+    const encerrados = new Set(
+      (controle && Array.isArray(controle.periodosEncerrados))
+        ? controle.periodosEncerrados
+        : []
+    );
+    const idAluno = (matsAluno.find(m => m.idAluno) || {}).idAluno || '';
 
     periodos.forEach((ref, indice) => {
       const ehMesCorrente = ref >= inicioMesAtual;
@@ -588,7 +628,23 @@ function analisesRiscoFinanceiroPorAluno_(matriculas, valorPagoPorAlunoMes) {
         return;
       }
 
-      const porTurma = valorPagoPorAlunoMes.get(chaveAluno + '|' + analisesMesRotulo_(ref).chave);
+      const chaveMes = analisesMesRotulo_(ref).chave;
+
+      // Competência que o financeiro já encerrou (quitada ou perdoada)
+      // não é dívida — é decisão registrada.
+      if (encerrados.has(chaveMes)) return;
+
+      // Diferença abonada pelo financeiro também não é dívida.
+      if (abonos.size && typeof localizarAbonoDiferencaPagamentoSIGA_ === 'function') {
+        const abono = localizarAbonoDiferencaPagamentoSIGA_(abonos, {
+          idAluno: idAluno,
+          chaveAluno: chaveAluno,
+          competencia: chaveMes
+        });
+        if (abono) return;
+      }
+
+      const porTurma = valorPagoPorAlunoMes.get(chaveAluno + '|' + chaveMes);
       let pago = 0;
       if (porTurma) {
         porTurma.forEach(valor => { pago += Number(valor || 0); });
@@ -596,7 +652,6 @@ function analisesRiscoFinanceiroPorAluno_(matriculas, valorPagoPorAlunoMes) {
 
       const saldo = devido - pago;
       if (saldo > cfg.TOLERANCIA_REAIS) {
-        // Distância em meses até o mês corrente, para separar as janelas.
         mesesComSaldo.push(periodos.length - 1 - indice);
         valorEmAberto += saldo;
       }

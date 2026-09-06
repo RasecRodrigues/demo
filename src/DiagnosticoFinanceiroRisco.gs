@@ -52,6 +52,14 @@ function diagnosticarFinanceiroRiscoSIGA(nomeParcial) {
   garantirCacheAnalisesSIGA_();
   const valorPagoPorAlunoMes = analisesLerCachePagamentoAluno_();
 
+  // As mesmas decisões humanas que analisesRiscoFinanceiroPorAluno_ respeita.
+  const abonos = typeof lerAbonosDiferencaPagamentoSIGA_ === 'function'
+    ? lerAbonosDiferencaPagamentoSIGA_()
+    : new Map();
+  const controles = typeof lerControleInadimplentesPagamentosSIGA_ === 'function'
+    ? lerControleInadimplentesPagamentosSIGA_()
+    : new Map();
+
   const hoje = new Date();
   const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
   const periodos = analisesGerarPeriodos_(ANALISES_RISCO_CONFIG.MESES_RECORRENCIA + 1);
@@ -82,6 +90,25 @@ function diagnosticarFinanceiroRiscoSIGA(nomeParcial) {
 
     const combo = vigentes.length > 1;
     const chaveMes = analisesMesRotulo_(ref).chave;
+
+    const idAluno = (doAluno.find(m => m.idAluno) || {}).idAluno || '';
+    let liberadoPor = '';
+    chaves.forEach(chave => {
+      if (liberadoPor) return;
+      const controle = controles.get(normalizarPagUnif_(chave));
+      if (controle && (controle.periodosEncerrados || []).indexOf(chaveMes) >= 0) {
+        liberadoPor = 'Competência encerrada no ControleInadimplentes';
+        return;
+      }
+      if (abonos.size && typeof localizarAbonoDiferencaPagamentoSIGA_ === 'function') {
+        const abono = localizarAbonoDiferencaPagamentoSIGA_(abonos, {
+          idAluno: idAluno, chaveAluno: chave, competencia: chaveMes
+        });
+        if (abono) {
+          liberadoPor = 'Diferença abonada pelo financeiro (' + (abono.idAbono || '') + ')';
+        }
+      }
+    });
 
     const detalheDevido = vigentes.map(m => ({
       turma: String(m.turma || '').trim(),
@@ -114,7 +141,9 @@ function diagnosticarFinanceiroRiscoSIGA(nomeParcial) {
       detalhePago: detalhePago,
       saldo: arredPagUnif_(saldo),
       // Espelha exatamente a regra de analisesRiscoFinanceiroPorAluno_.
-      contaComoAtraso: !ehMesCorrente && saldo > ANALISES_RISCO_CONFIG.TOLERANCIA_REAIS,
+      liberadoPor: liberadoPor,
+      contaComoAtraso: !ehMesCorrente && !liberadoPor
+        && saldo > ANALISES_RISCO_CONFIG.TOLERANCIA_REAIS,
       // Pago acima do devido é o sintoma de taxa de matrícula (ou outra
       // cobrança) entrando na conta pela via do boleto inteiro.
       pagoAcimaDoDevido: pago - devido > ANALISES_RISCO_CONFIG.TOLERANCIA_REAIS
@@ -125,7 +154,8 @@ function diagnosticarFinanceiroRiscoSIGA(nomeParcial) {
   relatorio.conclusao = {
     mesesFechados: fechados.length,
     mesesContadosComoAtraso: fechados.filter(m => m.contaComoAtraso).length,
-    mesesComPagoAcimaDoDevido: fechados.filter(m => m.pagoAcimaDoDevido).length
+    mesesComPagoAcimaDoDevido: fechados.filter(m => m.pagoAcimaDoDevido).length,
+    mesesLiberadosPeloFinanceiro: fechados.filter(m => m.liberadoPor).length
   };
 
   console.log(JSON.stringify(relatorio, null, 2));
