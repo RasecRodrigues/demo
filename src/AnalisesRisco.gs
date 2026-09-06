@@ -32,15 +32,21 @@
  * Calibrar a lista é mexer AQUI, não no cartão da tela.
  */
 const ANALISES_RISCO_CONFIG = {
-  // Faixas de frequência, da pior para a melhor. A primeira cujo `ate`
-  // alcança a frequência do aluno é a que vale — escada, não soma.
-  // A faixa 70–79 fecha um buraco: sem ela, 71% pontuava zero e um aluno
-  // com 71% e duas faltas seguidas caía em risco baixo.
-  FREQUENCIA: [
-    { ate: 50, pontos: 35 },
-    { ate: 70, pontos: 25 },
-    { ate: 80, pontos: 15 }
-  ],
+  // Pontos por faixa de frequência. As FAIXAS não moram aqui: vêm de
+  // SIGA_FREQUENCIA_FAIXAS (FrequenciaFaixas.gs), a régua única do
+  // projeto. Aqui fica só quanto cada uma pesa no risco, que é decisão
+  // deste módulo.
+  //
+  // "Frequência adequada" e "excelente" valem zero de propósito: um
+  // relatório que chama 78% de adequada e ao mesmo tempo soma risco por
+  // causa dela se contradiz — foi exatamente esse tipo de divergência
+  // que a régua única veio resolver.
+  FREQUENCIA_PONTOS: {
+    critico: 35,
+    evasao: 25,
+    adequado: 0,
+    excelente: 0
+  },
 
   // Faltas SEGUIDAS na janela recente. Também escada: 3 seguidas não
   // soma com 2 seguidas.
@@ -454,14 +460,19 @@ function analisesRiscoAvaliar_(freq, financeiro, diasDeCasa) {
     motivos.push({ pontos: pontos, texto: texto });
   };
 
-  if (freq.frequencia === null || freq.frequencia === undefined) {
+  const faixa = obterFaixaFrequenciaSIGA_(freq.frequencia);
+  if (!faixa) {
     motivos.push({ pontos: 0, texto: 'Frequência sem dado' });
   } else {
-    const faixa = cfg.FREQUENCIA.find(f => Number(freq.frequencia) < f.ate);
-    if (faixa) {
-      somar(faixa.pontos, 'Frequência de '
-        + Number(freq.frequencia).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%');
-    }
+    // O motivo carrega o rótulo da régua, não só o número: quem lê
+    // "Frequência de 62% (Risco de evasão)" no PDF do risco encontra a
+    // mesma expressão no relatório de frequência daquele aluno.
+    somar(
+      Number(cfg.FREQUENCIA_PONTOS[faixa.chave] || 0),
+      'Frequência de '
+        + Number(freq.frequencia).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+        + '% (' + faixa.rotulo + ')'
+    );
   }
 
   const consecutivas = Number(freq.consecutivas || 0);
