@@ -1,0 +1,242 @@
+<!--
+  SIGA — Portal do Aluno · barra de navegação inferior
+
+  Componente independente: nomes de classe com prefixo `nav-aluno`, então
+  nada colide com o CSS que já existe no portal.
+
+  COMO INSTALAR
+  1) Salve como arquivo HTML no Apps Script com o nome PortalAlunoNav.
+  2) No PortalAlunoIndex.html, ANTES de </body>:
+        <?!= include('PortalAlunoNav'); ?>
+     e remova a barra antiga.
+  3) A aba ativa é marcada por data-nav no <body> (ex.: <body data-nav="inicio">)
+     ou, se o portal troca de tela sem recarregar, chamando
+     marcarAbaPortalAlunoSIGA('loja').
+
+  O QUE MUDA EM RELAÇÃO À BARRA DO PRINT
+
+  1. Safe area do iPhone. A barra antiga não reservava
+     env(safe-area-inset-bottom): no iPhone com indicador de gesto ela
+     encosta na barra do Safari e o último item fica difícil de tocar.
+
+  2. Colunas iguais. Com grid de 4 colunas de 1fr os itens ocupam a
+     largura toda. No print eles estavam empurrados para a esquerda,
+     sobrando um vazio à direita — o que fazia "Perfil" parecer fora do
+     lugar.
+
+  3. Alvo de toque de 56px. O mínimo recomendado no iOS é 44pt; a barra
+     antiga ficava no limite porque ícone e rótulo dividiam a altura.
+
+  4. Estado ativo em duas camadas: traço no topo do item + ícone e rótulo
+     coloridos. Só o fundo lavanda, como estava, é fraco em tela clara e
+     some sob luz forte.
+
+  5. Ancorada na borda, não flutuando. A pílula flutuante desperdiça
+     largura e cria a faixa morta que aparece no print, logo acima da
+     barra do navegador. Se preferir manter o visual flutuante, veja o
+     bloco comentado no fim do CSS.
+-->
+
+<style>
+:root {
+  --nav-aluno-altura: 60px;
+}
+
+/*
+ * Espaço no fim do conteúdo para a barra não cobrir o último cartão.
+ * Sem isto, "Dados atualizados em..." fica escondido atrás dela.
+ */
+body {
+  padding-bottom: calc(var(--nav-aluno-altura) + env(safe-area-inset-bottom, 0px));
+}
+
+.nav-aluno {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+
+  background: rgba(255, 255, 255, .92);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-top: 1px solid var(--borda, #e4e7ec);
+
+  /* A sombra sobe, não desce: é o conteúdo passando por baixo. */
+  box-shadow: 0 -2px 16px rgba(16, 24, 40, .06);
+
+  /* O respiro do indicador de gesto do iPhone. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Navegador sem backdrop-filter (parte dos Android antigos) recebe
+   fundo sólido em vez de uma barra semitransparente ilegível. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .nav-aluno { background: #fff; }
+}
+
+.nav-aluno-item {
+  position: relative;
+  min-height: var(--nav-aluno-altura);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+
+  color: var(--cinza, #667085);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  text-decoration: none;
+
+  -webkit-tap-highlight-color: transparent;
+  transition: color .15s ease;
+}
+
+.nav-aluno-item svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Traço no topo do item ativo — a pista mais legível em tela clara. */
+.nav-aluno-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--roxo, #6427e8);
+  transform: translateX(-50%);
+  transition: width .18s ease;
+}
+
+.nav-aluno-item[aria-current="page"] {
+  color: var(--roxo, #6427e8);
+}
+
+.nav-aluno-item[aria-current="page"]::before {
+  width: 28px;
+}
+
+.nav-aluno-item[aria-current="page"] svg {
+  stroke-width: 2.2;
+}
+
+/* Feedback de toque: no celular não existe hover, e sem isto o item
+   parece não responder enquanto a tela seguinte carrega. */
+.nav-aluno-item:active {
+  color: var(--roxo, #6427e8);
+  background: rgba(100, 39, 232, .06);
+}
+
+.nav-aluno-item:focus-visible {
+  outline: 2px solid var(--roxo, #6427e8);
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-aluno-item,
+  .nav-aluno-item::before { transition: none; }
+}
+
+/* Telas bem estreitas (iPhone SE): rótulo menor antes de quebrar linha. */
+@media (max-width: 340px) {
+  .nav-aluno-item { font-size: 10px; }
+  .nav-aluno-item svg { width: 22px; height: 22px; }
+}
+
+/*
+ * VARIANTE FLUTUANTE — se quiser manter o visual do print, acrescente a
+ * classe `nav-aluno-flutuante` na <nav>. Continua respeitando a safe
+ * area, que era o problema principal.
+ *
+ * .nav-aluno-flutuante{
+ *   left:12px; right:12px;
+ *   bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+ *   padding-bottom:0;
+ *   border:1px solid var(--borda,#e4e7ec);
+ *   border-radius:20px;
+ *   box-shadow:0 6px 24px rgba(16,24,40,.12);
+ * }
+ */
+</style>
+
+<nav class="nav-aluno" id="navPortalAluno" aria-label="Navegação principal">
+  <a class="nav-aluno-item" href="#inicio" data-aba="inicio">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 10.5 12 3l9 7.5"/>
+      <path d="M5.5 9.5V20h13V9.5"/>
+      <path d="M9.5 20v-6h5v6"/>
+    </svg>
+    Início
+  </a>
+
+  <a class="nav-aluno-item" href="#loja" data-aba="loja">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 8h16l-1.2 12H5.2L4 8Z"/>
+      <path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+    </svg>
+    Loja
+  </a>
+
+  <a class="nav-aluno-item" href="#carteirinha" data-aba="carteirinha">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2.5"/>
+      <circle cx="8.5" cy="11" r="2"/>
+      <path d="M5.5 16.5c.6-1.6 1.7-2.4 3-2.4s2.4.8 3 2.4"/>
+      <path d="M14.5 10h4M14.5 13.5h4"/>
+    </svg>
+    Carteirinha
+  </a>
+
+  <a class="nav-aluno-item" href="#perfil" data-aba="perfil">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8.5" r="3.5"/>
+      <path d="M4.5 20c1.3-3.6 4-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/>
+    </svg>
+    Perfil
+  </a>
+</nav>
+
+<script>
+/**
+ * Marca a aba ativa.
+ *
+ * aria-current="page" faz o trabalho duplo: é o seletor do CSS e é o que
+ * o leitor de tela anuncia. Uma classe própria só resolveria o visual.
+ */
+function marcarAbaPortalAlunoSIGA(aba) {
+  const barra = document.getElementById('navPortalAluno');
+  if (!barra) return;
+
+  barra.querySelectorAll('.nav-aluno-item').forEach(item => {
+    if (item.getAttribute('data-aba') === aba) {
+      item.setAttribute('aria-current', 'page');
+    } else {
+      item.removeAttribute('aria-current');
+    }
+  });
+}
+
+// Aba inicial: <body data-nav="loja">, senão "inicio".
+marcarAbaPortalAlunoSIGA(document.body.getAttribute('data-nav') || 'inicio');
+</script>
