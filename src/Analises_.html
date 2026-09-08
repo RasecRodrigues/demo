@@ -12,7 +12,7 @@
     <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
       <div class="campo">
         <label>Período</label>
-        <select id="analisesMeses" onchange="carregarAnalisesSIGA()">
+        <select id="analisesMeses" onchange="carregarAnalisesSIGA(true)">
           <option value="6">Últimos 6 meses</option>
           <option value="12" selected>Últimos 12 meses</option>
           <option value="24">Últimos 24 meses</option>
@@ -20,19 +20,36 @@
         </select>
       </div>
 
-      <button type="button" class="botao botao-secundario" onclick="carregarAnalisesSIGA()">
+      <button type="button" class="botao botao-secundario" onclick="atualizarAnalisesSIGARapido()">
         ↻ Atualizar
       </button>
       <button type="button" class="botao botao-secundario" id="botaoRecalcularAnalises" onclick="recalcularCacheAnalisesSIGA()" title="Refaz o cálculo a partir das planilhas — mais lento, use quando os dados parecerem desatualizados.">
         🔄 Recalcular dados
       </button>
+      <button type="button" class="botao botao-primario" id="botaoExportarPdfAnalises" onclick="exportarPdfAnalisesSIGA()" title="Gera um PDF com os gráficos e as tabelas exatamente como estão na tela, incluindo a ordenação e os filtros atuais.">
+        ⬇ Exportar PDF
+      </button>
     </div>
   </div>
+
+  <button
+  type="button"
+  class="botao botao-primario"
+  onclick="abrirTelaAnalisesPreditivasSIGA()"
+>
+  🔮 Análises preditivas
+</button>
+
+  <div id="resultadoPdfAnalises" class="analises-resultado-pdf oculto"></div>
 
   <div class="analises-kpis">
     <div class="pagamentos-kpi">
       <span>ALUNOS ATIVOS AGORA</span>
       <strong id="analisesKpiAtivos">—</strong>
+    </div>
+    <div class="pagamentos-kpi">
+      <span>MATRÍCULAS ATIVAS AGORA</span>
+      <strong id="analisesKpiMatriculasAtivas">—</strong>
     </div>
     <div class="pagamentos-kpi">
       <span>RECEITA DO ÚLTIMO MÊS DO PERÍODO</span>
@@ -48,31 +65,19 @@
     </div>
   </div>
 
-  <div class="analises-grade-dupla">
-    <section class="cartao">
-      <div class="cartao-cabecalho">
-        <div>
-          <h2>Alunos ativos ao longo do tempo</h2>
-          <span class="subtitulo">Total de matrículas ativas ao final de cada mês.</span>
-        </div>
-      </div>
-      <div id="graficoAnalisesAtivos" class="analises-grafico-area">
-        <div class="estado-vazio">Carregando...</div>
-      </div>
-    </section>
+  <div class="analises-tarja-secao"><h3>Visão geral</h3><span>Matrículas e receita do período inteiro.</span></div>
 
-    <section class="cartao">
-      <div class="cartao-cabecalho">
-        <div>
-          <h2>Novas matrículas vs. cancelamentos</h2>
-          <span class="subtitulo">Movimentação do mês (entradas e saídas), separada do total acumulado ao lado.</span>
-        </div>
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Matrículas vs. cancelamentos</h2>
+        <span class="subtitulo">Entradas: ATIVAÇÃO, NOVA e UPGRADE. Saídas: CANCELADO, FINALIZADO, ABANDONO e SUSPENSO.</span>
       </div>
-      <div id="graficoAnalisesMatriculas" class="analises-grafico-area">
-        <div class="estado-vazio">Carregando...</div>
-      </div>
-    </section>
-  </div>
+    </div>
+    <div id="graficoAnalisesMatriculas" class="analises-grafico-area">
+      <div class="estado-vazio">Carregando...</div>
+    </div>
+  </section>
 
   <section class="cartao">
     <div class="cartao-cabecalho">
@@ -85,6 +90,8 @@
       <div class="estado-vazio">Carregando...</div>
     </div>
   </section>
+
+  <div class="analises-tarja-secao"><h3>Turmas</h3><span>Comparação, frequência e detalhamento. O filtro de modalidade abaixo vale para tudo nesta seção.</span></div>
 
   <div class="analises-filtro-modalidade-linha">
     <span class="analises-filtro-modalidade-rotulo">Modalidade (afeta os gráficos de turma abaixo e o detalhamento):</span>
@@ -108,7 +115,7 @@
       <div class="cartao-cabecalho">
         <div>
           <h2>Frequência média por turma</h2>
-          <span class="subtitulo">Turmas coloridas pela situação: boa (≥85%), atenção (75–85%) ou crítica (&lt;75%).</span>
+          <span class="subtitulo">Turmas coloridas pela situação: boa (≥80%), atenção (&gt;60% e &lt;80%) ou crítica (≤60%).</span>
         </div>
       </div>
       <div id="legendaAnalisesFrequencia"></div>
@@ -119,32 +126,34 @@
   </div>
 
   <section class="cartao">
-    <div class="cartao-cabecalho">
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
       <div>
-        <h2>Lucro por turma no tempo</h2>
-        <span class="subtitulo">Lucro = valor efetivamente pago pelos alunos (boleto pago + comprovante) − valor pago aos professores dessa turma, por mês. Ordenado pelo total do período (role para o lado para ver todos os meses).</span>
+        <h2>Alunos e matrículas ativas por mês</h2>
+        <span class="subtitulo">Compara alunos únicos ativos e matrículas ativas em cada mês. Filtro próprio de turma — a modalidade acima não afeta este cartão.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesMovimentacaoTurma">Turma</label>
+        <select id="analisesMovimentacaoTurma" onchange="carregarMovimentacaoAnalisesSIGA()">
+          <option value="">Todas as turmas</option>
+        </select>
       </div>
     </div>
-    <div class="pagamentos-tabela-wrap">
-      <table class="pagamentos-tabela analises-tabela-pivot">
-        <thead>
-          <tr id="cabecalhoTabelaMensalidadesTempo"><th>Turma</th></tr>
-        </thead>
-        <tbody id="corpoTabelaMensalidadesTempo">
-          <tr><td class="estado-vazio">Carregando...</td></tr>
-        </tbody>
-      </table>
+    <div id="resumoAnalisesMovimentacao" class="analises-resumo-movimentacao"></div>
+    <div id="graficoAnalisesMovimentacao" class="analises-grafico-area analises-grafico-alto">
+      <div class="estado-vazio">Carregando...</div>
     </div>
+    <div id="avisoAnalisesMovimentacao" class="analises-aviso-movimentacao oculto"></div>
   </section>
 
+
   <section class="cartao">
-    <div class="cartao-cabecalho">
-      <h2>Detalhamento por turma</h2>
-      <span class="subtitulo">Só turmas com aluno ativo. Clique no cabeçalho de uma coluna para ordenar.</span>
-    </div>
-    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:12px;">
-      <div class="campo">
-        <label>Receita do mês</label>
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+      <div>
+        <h2>Detalhamento por turma</h2>
+        <span class="subtitulo">Só turmas com aluno ativo. Clique no cabeçalho de uma coluna para ordenar.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesDetalhamentoMes">Receita do mês</label>
         <select id="analisesDetalhamentoMes" onchange="renderizarTurmasFiltradasAnalisesSIGA(analisesDadosCache)">
           <option value="">Soma do período</option>
         </select>
@@ -154,13 +163,13 @@
       <table class="pagamentos-tabela">
         <thead>
           <tr id="cabecalhoTabelaAnalisesTurmas">
-            <th class="analises-th-ordenavel" data-campo="turma">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
-            <th class="analises-th-ordenavel" data-campo="ativos">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
-            <th class="analises-th-ordenavel" data-campo="saidas">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
-            <th class="analises-th-ordenavel" data-campo="total">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
-            <th class="analises-th-ordenavel" data-campo="receitaPeriodo">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
-            <th class="analises-th-ordenavel" data-campo="taxaEvasao">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
-            <th class="analises-th-ordenavel" data-campo="frequenciaMedia">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="turma">Turma<span class="analises-seta-ordenacao" data-seta="turma"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="ativos">Ativos<span class="analises-seta-ordenacao" data-seta="ativos"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="saidas">Saídas<span class="analises-seta-ordenacao" data-seta="saidas"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="total">Total histórico<span class="analises-seta-ordenacao" data-seta="total"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="receitaPeriodo">Receita<span class="analises-seta-ordenacao" data-seta="receitaPeriodo"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="taxaEvasao">Taxa de evasão<span class="analises-seta-ordenacao" data-seta="taxaEvasao"></span></th>
+            <th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="frequenciaMedia">Frequência média<span class="analises-seta-ordenacao" data-seta="frequenciaMedia"></span></th>
           </tr>
         </thead>
         <tbody id="corpoTabelaAnalisesTurmas">
@@ -170,14 +179,16 @@
     </div>
   </section>
 
+  <div class="analises-tarja-secao"><h3>Financeiro por turma</h3><span>Quanto cada turma recebeu e quanto sobrou depois do custo do professor.</span></div>
+
   <section class="cartao">
-    <div class="cartao-cabecalho">
-      <h2>Mensalidades por turma no período</h2>
-      <span class="subtitulo">Clique no nome da turma para ver os alunos ativos/suspensos dela e o quanto cada um pagou no período.</span>
-    </div>
-    <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:12px;">
-      <div class="campo">
-        <label>Mês</label>
+    <div class="cartao-cabecalho analises-cabecalho-com-filtro">
+      <div>
+        <h2>Mensalidades recebidas por turma</h2>
+        <span class="subtitulo">Clique no nome da turma para ver os alunos e quanto cada um pagou.</span>
+      </div>
+      <div class="campo analises-campo-filtro">
+        <label for="analisesMensalidadesMes">Mês</label>
         <select id="analisesMensalidadesMes" onchange="preencherTabelaMensalidadesAnalisesSIGA(analisesDadosCache?.detalheMensalPorTurma || [])">
           <option value="">Todos os meses (colunas)</option>
         </select>
@@ -194,6 +205,25 @@
       </table>
     </div>
   </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <div>
+        <h2>Lucro por turma</h2>
+        <span class="subtitulo">Mensalidades recebidas − valor pago ao professor da turma, mês a mês. Negativo em vermelho. Role para o lado para ver todos os meses.</span>
+      </div>
+    </div>
+    <div class="pagamentos-tabela-wrap">
+      <table class="pagamentos-tabela analises-tabela-pivot">
+        <thead>
+          <tr id="cabecalhoTabelaMensalidadesTempo"><th>Turma</th></tr>
+        </thead>
+        <tbody id="corpoTabelaMensalidadesTempo">
+          <tr><td class="estado-vazio">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </section>
 
 <style>
@@ -202,7 +232,7 @@
   font-family: var(--analises-fonte);
 }
 #analisesAtualizadoEm{display:block;font-size:12px;color:#898781;margin-top:2px}
-.analises-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.analises-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:18px 0}
 .analises-grade-dupla{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .analises-grafico-area{min-height:280px;padding-top:8px}
 .analises-grafico-alto{min-height:340px}
@@ -257,20 +287,99 @@
 }
 #tela-analises .pagamentos-tabela tbody tr.analises-turma-inicio td{border-top:2px solid #e1e0d9}
 #tela-analises .analises-th-ordenavel{cursor:pointer;user-select:none;white-space:nowrap}
+#tela-analises .analises-th-ordenavel:hover{background:#eef4fb}
+#tela-analises .analises-seta-inativa{color:#b8c4d4;font-weight:400}
 #tela-analises .analises-th-ordenavel:hover{color:#0b0b0b;background:#eeede7}
 #tela-analises .analises-seta-ordenacao{display:inline-block;margin-left:3px;font-size:10px;color:#2a78d6}
 #tela-analises .analises-tabela-pivot{white-space:nowrap}
 #tela-analises .analises-tabela-pivot th:first-child,
 #tela-analises .analises-tabela-pivot td:first-child{
-  position:sticky;left:0;background:#fcfcfb;z-index:1;
+  position:sticky;left:0;background:#fff;z-index:1;
   box-shadow:1px 0 0 #e1e0d9;
 }
+/* zebra e hover precisam valer TAMBÉM na coluna fixa, senão a célula da
+   turma destoa do resto da linha */
+#tela-analises .analises-tabela-pivot tbody tr:nth-child(even) td:first-child{background:#faf9f6}
+#tela-analises .analises-tabela-pivot tbody tr:hover td:first-child{background:#f2f1eb}
 #tela-analises .analises-tabela-pivot thead th:first-child{background:#f4f3ef;z-index:3}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos:hover{background:#f7f6f2}
 #tela-analises .pagamentos-tabela tbody tr.analises-linha-alunos td{
   padding:14px 14px 14px 20px;
   border-left:3px solid #d8d6cc;
+}
+
+/* --- PDF pronto: link na tela, porque o pop-up é bloqueado --- */
+.analises-resultado-pdf{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin:14px 0 0;padding:11px 14px;border-radius:10px;
+  background:#eaf7ee;border:1px solid #bbe5c6;color:#14532d;font-size:13px;
+}
+.analises-resultado-pdf.oculto{display:none}
+.analises-resultado-pdf-ok{font-weight:700}
+.analises-resultado-pdf .botao{text-decoration:none}
+.analises-resultado-pdf-fechar{
+  margin-left:auto;background:none;border:none;cursor:pointer;
+  font-size:19px;line-height:1;color:#14532d;padding:0 2px;
+}
+
+/* --- Entradas e saídas: resumo numérico acima do gráfico --- */
+.analises-resumo-movimentacao{display:flex;gap:20px;flex-wrap:wrap;margin:2px 0 6px}
+.analises-resumo-movimentacao span{font-size:13px;color:#52514e}
+.analises-resumo-movimentacao strong{font-size:17px;color:#0b0b0b;margin-right:3px}
+.analises-resumo-movimentacao .analises-saldo-positivo strong{color:#166534}
+.analises-resumo-movimentacao .analises-saldo-negativo strong{color:#b0201d}
+.analises-resumo-movimentacao .analises-saldo-zero strong{color:#898781}
+.analises-aviso-movimentacao{
+  margin-top:10px;padding:9px 12px;border-radius:8px;font-size:12.5px;
+  color:#8a5a00;background:#fff8e6;border:1px solid #f0dfae;
+}
+.analises-aviso-movimentacao.oculto{display:none}
+
+/* --- Tarjas de seção: dão ritmo à página, que antes era uma pilha de
+       cartões sem hierarquia nenhuma --- */
+.analises-tarja-secao{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin:30px 0 12px;padding-bottom:8px;border-bottom:1px solid #e6e5de;
+}
+.analises-tarja-secao h3{
+  margin:0;font-size:12px;font-weight:800;letter-spacing:.08em;
+  text-transform:uppercase;color:#6B007B;
+}
+.analises-tarja-secao span{font-size:12.5px;color:#898781}
+
+/* --- Filtro dentro do cabeçalho do cartão, no lugar do div solto com
+       style inline que ficava desalinhado do título --- */
+#tela-analises .analises-cabecalho-com-filtro{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:16px;flex-wrap:wrap;margin-bottom:14px;
+}
+#tela-analises .analises-campo-filtro{min-width:210px;margin:0}
+#tela-analises .analises-campo-filtro label{
+  display:block;font-size:11px;font-weight:700;letter-spacing:.03em;
+  text-transform:uppercase;color:#898781;margin-bottom:4px;
+}
+#tela-analises .analises-campo-filtro select{width:100%}
+
+/* --- Coluna Total: peso próprio e uma divisória, para não se perder no
+       meio de dezenas de colunas de mês --- */
+#tela-analises .analises-celula-total{font-weight:800;border-left:1px solid #e1e0d9}
+#tela-analises .analises-tabela-pivot thead th:last-child{border-left:1px solid #e1e0d9}
+
+/* --- Lucro: sinal legível sem precisar ler o "-" --- */
+#tela-analises .analises-lucro-negativo{color:#b0201d;font-weight:700}
+#tela-analises .analises-lucro-positivo{color:#166534}
+#tela-analises .analises-lucro-zero{color:#a3a29c}
+
+/* --- KPIs: rótulo menor e número maior, para o valor dominar --- */
+#tela-analises .pagamentos-kpi span{
+  font-size:10.5px;letter-spacing:.05em;color:#898781;line-height:1.35;
+}
+#tela-analises .pagamentos-kpi strong{font-size:26px;letter-spacing:-.02em}
+
+@media(max-width:700px){
+  #tela-analises .analises-cabecalho-com-filtro{align-items:stretch}
+  #tela-analises .analises-campo-filtro{min-width:0;width:100%}
 }
 
 .analises-link-turma{
@@ -358,10 +467,66 @@
 .analises-status-chip{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;padding:4px 10px 4px 8px;border-radius:999px;line-height:1.3}
 .analises-status-ponto{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
 .analises-grafico-area svg{font-family:var(--analises-fonte, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif)}
+#tela-analises .analises-nota-parcial{
+  margin:8px 4px 0;
+  padding:8px 11px;
+  border-radius:8px;
+  border:1px solid #f0dfae;
+  background:#fff8e6;
+  color:#8a5a00;
+  font-size:12px;
+  line-height:1.45;
+}
 </style>
 
 <script>
 let analisesDadosCache = null;
+
+// Cache rápido no navegador: evita buscar tudo do Apps Script toda vez que
+// o usuário sai e volta para a tela de Análises.
+const ANALISES_CLIENT_CACHE_KEY = 'SIGA_ANALISES_CLIENT_CACHE_V3';
+const ANALISES_CLIENT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+let analisesCarregamentoEmAndamento = false;
+
+function analisesSalvarCacheCliente_(resultado, meses) {
+  try {
+    sessionStorage.setItem(
+      ANALISES_CLIENT_CACHE_KEY,
+      JSON.stringify({
+        salvoEm: Date.now(),
+        meses: Number(meses || 12),
+        resultado: resultado
+      })
+    );
+  } catch (e) {
+    // Se o navegador bloquear sessionStorage ou atingir limite, segue normal.
+  }
+}
+
+function analisesLerCacheCliente_(meses) {
+  try {
+    const bruto = sessionStorage.getItem(ANALISES_CLIENT_CACHE_KEY);
+    if (!bruto) return null;
+    const cache = JSON.parse(bruto);
+    if (!cache || Number(cache.meses) !== Number(meses || 12)) return null;
+    if (!cache.resultado || cache.resultado.sucesso !== true) return null;
+    if (Date.now() - Number(cache.salvoEm || 0) > ANALISES_CLIENT_CACHE_TTL_MS) return null;
+    return cache.resultado;
+  } catch (e) {
+    return null;
+  }
+}
+
+function analisesRenderizarResultado_(resultado) {
+  if (!resultado || resultado.sucesso !== true) return false;
+  if (analisesDadosCache !== resultado) analisesAlunosPorTurmaCache = new Map();
+  analisesDadosCache = resultado;
+  exibirAtualizadoEmAnalisesSIGA(resultado.atualizadoEm);
+  preencherFiltrosMesAnalisesSIGA(resultado.periodos || []);
+  preencherKpisAnalisesSIGA(resultado);
+  desenharGraficosAnalisesSIGA(resultado);
+  return true;
+}
 
 const VIZ_COR = {
   inkPrimario: '#0b0b0b',
@@ -378,8 +543,8 @@ const VIZ_COR = {
 
 function vizStatusFrequencia_(pct) {
   if (pct === null || pct === undefined) return { chave: null, cor: VIZ_COR.inkMudo, rotulo: 'Sem dado' };
-  if (pct >= 85) return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Boa' };
-  if (pct >= 75) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
+  if (pct >= 80) return { chave: 'bom', cor: VIZ_COR.status.bom, rotulo: 'Boa' };
+  if (pct > 60) return { chave: 'atencao', cor: VIZ_COR.status.atencao, rotulo: 'Atenção' };
   return { chave: 'critico', cor: VIZ_COR.status.critico, rotulo: 'Crítica' };
 }
 
@@ -460,7 +625,7 @@ function vizGraficoLinha(alvo, opcoes) {
   if (!alvo) return;
   const largura = vizLargura_(alvo);
   const altura = opcoes.altura || 280;
-  const margem = { topo: 24, direita: 96, baixo: 40, esquerda: 60 };
+  const margem = { topo: 38, direita: 96, baixo: 40, esquerda: 60 };
   const largPlot = largura - margem.esquerda - margem.direita;
   const altPlot = altura - margem.topo - margem.baixo;
 
@@ -527,6 +692,9 @@ function vizGraficoLinha(alvo, opcoes) {
       if (!p) return;
       const valorPonto = serie.pontos[i];
       marcasSvg += `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="7" fill="transparent"><title>${vizEsc(categorias[i])} · ${vizEsc(serie.nome)}: ${opcoes.moeda ? moedaAnalisesSIGA(valorPonto) : valorPonto}</title></circle>`;
+      if (opcoes.rotulosValores) {
+        rotulosSvg += `<text x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}">${vizEsc(Number(valorPonto).toLocaleString('pt-BR'))}</text>`;
+      }
     });
 
     const ultimo = pontos.filter(Boolean).pop();
@@ -549,6 +717,9 @@ function vizGraficoLinha(alvo, opcoes) {
 
 /**
  * Colunas verticais agrupadas. `series` é [{ nome, cor, valores:[numero] }].
+ *
+ * opcoes.indiceParcial marca uma coluna como período incompleto: ela sai
+ * hachurada, com sufixo no rótulo do eixo e aviso no tooltip.
  */
 function vizGraficoColunas(alvo, opcoes) {
   if (!alvo) return;
@@ -565,6 +736,24 @@ function vizGraficoColunas(alvo, opcoes) {
   const faixa = maxNice || 1;
   const y = v => margem.topo + altPlot - (v / faixa) * altPlot;
 
+  const indiceParcial = Number.isInteger(opcoes.indiceParcial) ? opcoes.indiceParcial : -1;
+
+  /*
+   * Um id único por render: a tela desenha três gráficos de coluna, e
+   * dois <pattern> com o mesmo id fariam o segundo herdar as cores do
+   * primeiro.
+   */
+  const uid = 'p' + Math.random().toString(36).slice(2, 8);
+  let defsSvg = '';
+  if (indiceParcial >= 0) {
+    defsSvg = '<defs>' + opcoes.series.map((serie, si) =>
+      `<pattern id="${uid}-${si}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+      `<rect width="7" height="7" fill="${serie.cor}" opacity="0.45"/>` +
+      `<line x1="0" y1="0" x2="0" y2="7" stroke="${serie.cor}" stroke-width="3.5"/>` +
+      `</pattern>`
+    ).join('') + '</defs>';
+  }
+
   let gridSvg = '';
   let ticksSvg = '';
   for (let i = 0; i <= 5; i++) {
@@ -580,11 +769,13 @@ function vizGraficoColunas(alvo, opcoes) {
   const baselineY = y(0);
 
   let barrasSvg = '';
+  let rotulosValoresSvg = '';
   let xLabelsSvg = '';
 
   opcoes.categorias.forEach((cat, i) => {
     const centroGrupo = margem.esquerda + i * larguraGrupo + larguraGrupo / 2;
     const inicioGrupo = centroGrupo - (larguraBarra * numSeries + gap * (numSeries - 1)) / 2;
+    const ehParcial = i === indiceParcial;
 
     opcoes.series.forEach((serie, si) => {
       const valor = Number(serie.valores[i] || 0);
@@ -592,19 +783,37 @@ function vizGraficoColunas(alvo, opcoes) {
       const yTopo = y(Math.max(0, valor));
       const d = vizBarraArredondadaTopo_(xBarra, yTopo, larguraBarra, baselineY, 4);
       const tituloValor = opcoes.moeda ? moedaAnalisesSIGA(valor) : valor.toLocaleString('pt-BR');
-      barrasSvg += `<path d="${d}" fill="${serie.cor}"><title>${vizEsc(cat)} · ${vizEsc(serie.nome)}: ${tituloValor}</title></path>`;
+      const preenchimento = ehParcial ? `url(#${uid}-${si})` : serie.cor;
+      const sufixo = ehParcial ? ' · ' + (opcoes.rotuloParcial || 'período incompleto') : '';
+
+      barrasSvg += `<path d="${d}" fill="${preenchimento}"><title>${vizEsc(cat)} · ${vizEsc(serie.nome)}: ${tituloValor}${vizEsc(sufixo)}</title></path>`;
+
+      if (opcoes.mostrarRotulosValores) {
+        const yRotulo = Math.max(margem.topo + 11, yTopo - 6);
+        // VIZ_COR.ink não existe na paleta — o rótulo saía com fill
+        // "undefined" e o navegador caía no preto padrão por acidente.
+        rotulosValoresSvg += `<text x="${(xBarra + larguraBarra / 2).toFixed(1)}" y="${yRotulo.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}">${vizEsc(tituloValor)}</text>`;
+      }
     });
 
-    xLabelsSvg += `<text x="${centroGrupo.toFixed(1)}" y="${altura - margem.baixo + 20}" text-anchor="middle" font-size="11" fill="${VIZ_COR.inkMudo}" transform="rotate(-40 ${centroGrupo.toFixed(1)} ${altura - margem.baixo + 20})">${vizEsc(cat)}</text>`;
+    const rotuloEixo = ehParcial ? cat + ' (parcial)' : cat;
+    const corRotulo = ehParcial ? VIZ_COR.inkPrimario : VIZ_COR.inkMudo;
+    const pesoRotulo = ehParcial ? ' font-weight="700"' : '';
+    xLabelsSvg += `<text x="${centroGrupo.toFixed(1)}" y="${altura - margem.baixo + 20}" text-anchor="middle" font-size="11" fill="${corRotulo}"${pesoRotulo} transform="rotate(-40 ${centroGrupo.toFixed(1)} ${altura - margem.baixo + 20})">${vizEsc(rotuloEixo)}</text>`;
   });
 
   const baselineSvg = `<line x1="${margem.esquerda}" y1="${baselineY.toFixed(1)}" x2="${largura - margem.direita}" y2="${baselineY.toFixed(1)}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
 
+  const nota = opcoes.notaRodape
+    ? `<div class="analises-nota-parcial">${vizEsc(opcoes.notaRodape)}</div>`
+    : '';
+
   alvo.innerHTML = `
     <svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">
-      ${gridSvg}${barrasSvg}${baselineSvg}${ticksSvg}${xLabelsSvg}
+      ${defsSvg}${gridSvg}${barrasSvg}${rotulosValoresSvg}${baselineSvg}${ticksSvg}${xLabelsSvg}
     </svg>
     ${numSeries > 1 ? vizLegenda(opcoes.series) : ''}
+    ${nota}
   `;
 }
 
@@ -626,7 +835,7 @@ function vizGraficoBarrasHorizontais(alvo, opcoes) {
   const gapBarras = 2;
   const gapGrupos = 14;
   const alturaGrupo = alturaBarra * numSeries + gapBarras * (numSeries - 1) + gapGrupos;
-  const margem = { topo: 10, esquerda: 168, direita: 20, baixo: 30 };
+  const margem = { topo: 10, esquerda: 168, direita: 64, baixo: 30 };
   const largura = vizLargura_(alvo);
   const largPlot = largura - margem.esquerda - margem.direita;
   const altura = itens.length * alturaGrupo + margem.topo + margem.baixo;
@@ -647,6 +856,7 @@ function vizGraficoBarrasHorizontais(alvo, opcoes) {
 
   let barrasSvg = '';
   let nomesSvg = '';
+  let rotulosSvg = '';
 
   itens.forEach((item, i) => {
     const yGrupo = margem.topo + i * alturaGrupo;
@@ -657,14 +867,27 @@ function vizGraficoBarrasHorizontais(alvo, opcoes) {
       const yBarra = yGrupo + si * (alturaBarra + gapBarras);
       const largura2 = Math.max(0, larguraPara(v.valor));
       const d = vizBarraArredondadaDireita_(margem.esquerda, yBarra, largura2, alturaBarra, 4);
-      const tituloValor = opcoes.moeda ? moedaAnalisesSIGA(v.valor) : v.valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-      barrasSvg += `<path d="${d}" fill="${v.cor}"><title>${vizEsc(item.nome)}${v.rotulo ? ' · ' + vizEsc(v.rotulo) : ''}: ${tituloValor}</title></path>`;
+      const tituloValor = v.textoValor
+        ? String(v.textoValor)
+        : (opcoes.moeda
+            ? moedaAnalisesSIGA(v.valor)
+            : Number(v.valor || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
+
+      barrasSvg += `<path d="${d}" fill="${v.cor}"><title>${vizEsc(item.nome)}${v.rotulo ? ' · ' + vizEsc(v.rotulo) : ''}: ${vizEsc(tituloValor)}</title></path>`;
+
+      const valorRotulo = v.textoValor
+        ? String(v.textoValor)
+        : (opcoes.percentual
+            ? Number(v.valor || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'
+            : tituloValor);
+      const xRotulo = Math.min(largura - 4, margem.esquerda + largura2 + 6);
+      rotulosSvg += `<text x="${xRotulo.toFixed(1)}" y="${(yBarra + alturaBarra / 2 + 4).toFixed(1)}" text-anchor="start" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}">${vizEsc(valorRotulo)}</text>`;
     });
   });
 
   const baseSvg = `<line x1="${margem.esquerda}" y1="${margem.topo}" x2="${margem.esquerda}" y2="${altura - margem.baixo}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
 
-  alvo.innerHTML = `<svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">${gridSvg}${barrasSvg}${baseSvg}${ticksSvg}${nomesSvg}</svg>`;
+  alvo.innerHTML = `<svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">${gridSvg}${barrasSvg}${rotulosSvg}${baseSvg}${ticksSvg}${nomesSvg}</svg>`;
 }
 
 function abrirTelaAnalises(botaoMenu) {
@@ -722,38 +945,78 @@ const ANALISES_IDS_GRAFICOS = [
   'graficoAnalisesTurmas', 'graficoAnalisesFrequencia'
 ];
 
-function carregarAnalisesSIGA() {
+function carregarAnalisesSIGA(forcarServidor) {
   analisesInicializarOrdenacaoSIGA_();
+  atualizarSetasOrdenacaoAnalisesSIGA_();
+
   const meses = Number(document.getElementById('analisesMeses')?.value || 12);
   const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
     ? obterTokenPagamentosUnificadosSIGA()
     : '';
 
+  // 1) Se já temos os mesmos dados em memória, abre IMEDIATAMENTE.
+  // Ao voltar para Análises, não apaga gráficos/tabelas e não espera o servidor.
+  if (!forcarServidor && analisesDadosCache &&
+      Array.isArray(analisesDadosCache.periodos) &&
+      analisesDadosCache.periodos.length === meses) {
+    analisesRenderizarResultado_(analisesDadosCache);
+    return;
+  }
+
+  // 2) Se a página foi recarregada, tenta recuperar o último resultado da sessão.
+  if (!forcarServidor) {
+    const cacheCliente = analisesLerCacheCliente_(meses);
+    if (cacheCliente) {
+      analisesRenderizarResultado_(cacheCliente);
+      return;
+    }
+  }
+
+  // Evita duas chamadas simultâneas quando o usuário clica mais de uma vez.
+  if (analisesCarregamentoEmAndamento) return;
+  analisesCarregamentoEmAndamento = true;
+
   ANALISES_IDS_GRAFICOS.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+    if (el && !el.innerHTML.trim()) {
+      el.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+    }
   });
-  resetarTabelaPivotAnalisesSIGA_('corpoTabelaMensalidadesTempo');
-  resetarTabelaPivotAnalisesSIGA_('corpoTabelaAnalisesLucro');
+
+  // Só limpa as tabelas no primeiro carregamento. Se já havia dados,
+  // mantém o conteúdo visível enquanto atualiza.
+  if (!analisesDadosCache) {
+    resetarTabelaPivotAnalisesSIGA_('corpoTabelaMensalidadesTempo');
+    resetarTabelaPivotAnalisesSIGA_('corpoTabelaAnalisesLucro');
+  }
 
   google.script.run
     .withSuccessHandler(resultado => {
+      analisesCarregamentoEmAndamento = false;
+
       if (!resultado || resultado.sucesso !== true) {
         mostrarErroAnalisesSIGA('Não foi possível carregar as análises.');
         return;
       }
-      analisesDadosCache = resultado;
-      exibirAtualizadoEmAnalisesSIGA(resultado.atualizadoEm);
-      preencherFiltrosMesAnalisesSIGA(resultado.periodos || []);
-      preencherKpisAnalisesSIGA(resultado);
-      desenharGraficosAnalisesSIGA(resultado);
+
+      analisesSalvarCacheCliente_(resultado, meses);
+      analisesRenderizarResultado_(resultado);
     })
     .withFailureHandler(erro => {
-      mostrarErroAnalisesSIGA(erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.'));
+      analisesCarregamentoEmAndamento = false;
+      mostrarErroAnalisesSIGA(
+        erro && erro.message ? erro.message : String(erro || 'Erro ao carregar.')
+      );
     })
     .obterAnalisesSIGA({ token, meses });
 }
 
+function atualizarAnalisesSIGARapido() {
+  analisesMovimentacaoCacheV2_.clear();
+  // O botão "Atualizar" força consulta ao cache do servidor,
+  // mas sem recalcular as planilhas pesadas.
+  carregarAnalisesSIGA(true);
+}
 function exibirAtualizadoEmAnalisesSIGA(isoString) {
   const el = document.getElementById('analisesAtualizadoEm');
   if (!el) return;
@@ -789,7 +1052,11 @@ function recalcularCacheAnalisesSIGA() {
         botao.disabled = false;
         botao.textContent = '🔄 Recalcular dados';
       }
-      carregarAnalisesSIGA();
+      try { sessionStorage.removeItem(ANALISES_CLIENT_CACHE_KEY); } catch (e) {}
+      analisesDadosCache = null;
+      analisesMovimentacaoCacheV2_.clear();
+      analisesMovimentacaoTurmasPreenchidas = false;
+      carregarAnalisesSIGA(true);
     })
     .withFailureHandler(erro => {
       if (botao) {
@@ -852,12 +1119,17 @@ function preencherKpisAnalisesSIGA(resultado) {
   const saldoPeriodo = serieMat.reduce((s, x) => s + Number(x.saldo || 0), 0);
 
   definirTextoAnalisesSIGA('analisesKpiAtivos', Number(resumo.alunosAtivos || 0).toLocaleString('pt-BR'));
+  const matriculasAgora = resumo.matriculasAtivasAgora;
+  definirTextoAnalisesSIGA('analisesKpiMatriculasAtivas',
+    matriculasAgora !== null && matriculasAgora !== undefined &&
+    Number.isFinite(Number(matriculasAgora))
+      ? Number(matriculasAgora).toLocaleString('pt-BR') : '—');
   definirTextoAnalisesSIGA('analisesKpiReceita', moedaAnalisesSIGA(ultimaReceita));
   definirTextoAnalisesSIGA(
     'analisesKpiSaldo',
     (saldoPeriodo > 0 ? '+' : '') + saldoPeriodo.toLocaleString('pt-BR')
   );
-  definirTextoAnalisesSIGA('analisesKpiMensalidades', moedaAnalisesSIGA(resumo.mensalidadesTotalPeriodo));
+  definirTextoAnalisesSIGA('analisesKpiMensalidades', moedaAnalisesSIGA((resultado.detalheMensalPorTurma || []).reduce((s, x) => s + analisesCentavos_(x.receita), 0) / 100));
 }
 
 function definirTextoAnalisesSIGA(id, texto) {
@@ -878,7 +1150,8 @@ function desenharGraficosAnalisesSIGA(resultado) {
     () => desenharGraficoFinanceiroAnalisesSIGA(resultado.serieFinanceira || []),
     () => renderizarTurmasFiltradasAnalisesSIGA(resultado),
     () => preencherTabelaMensalidadesTempoAnalisesSIGA(resultado.lucroPorTurma || [], resultado.periodos || []),
-    () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || [])
+    () => preencherTabelaMensalidadesAnalisesSIGA(resultado.detalheMensalPorTurma || []),
+    () => carregarMovimentacaoAnalisesSIGA()
   ];
   passos.forEach(passo => {
     try {
@@ -889,10 +1162,383 @@ function desenharGraficosAnalisesSIGA(resultado) {
   });
 }
 
+
+
 /**
- * Categoria derivada do nome da turma (ex.: "TEATRO AD9" -> "TEATRO"),
- * sem taxonomia fixa — o filtro se adapta ao que existir nos dados.
+ * Exporta as tabelas da tela em PDF.
+ *
+ * Lê as tabelas do próprio DOM em vez de remontar os dados: assim o PDF
+ * sai com a ordenação que a pessoa escolheu e o recorte dos filtros que
+ * estão valendo, sem duplicar aqui a lógica de cada tabela. Linhas de
+ * detalhe de aluno (a expansão ao clicar numa turma) ficam de fora, senão
+ * quebrariam o alinhamento das colunas.
  */
+/* Gráficos da tela, na ordem em que aparecem, para o PDF sair na mesma
+   sequência do que está na tela. */
+const ANALISES_GRAFICOS_PARA_PDF = [
+  { id: 'graficoAnalisesMatriculas', titulo: 'Matrículas vs. cancelamentos' },
+  { id: 'graficoAnalisesFinanceiro', titulo: 'Receita financeira no tempo' },
+  { id: 'graficoAnalisesTurmas', titulo: 'Comparação entre turmas' },
+  { id: 'graficoAnalisesFrequencia', titulo: 'Frequência média por turma' },
+  { id: 'graficoAnalisesMovimentacao', titulo: 'Alunos ativos no fim de cada mês' }
+];
+
+/**
+ * Mostra o PDF pronto como link na própria tela.
+ *
+ * window.open aqui dentro roda no retorno do google.script.run, e não no
+ * clique — para o navegador isso não é gesto do usuário, então o pop-up é
+ * bloqueado. Pior: alguns bloqueadores devolvem um objeto de janela em vez
+ * de null, então nem o aviso de "pop-up bloqueado" aparecia e o botão
+ * simplesmente não fazia nada visível. O link fica na tela e o clique nele
+ * é gesto legítimo; a tentativa de abrir sozinho continua, como atalho.
+ */
+function mostrarResultadoPdfAnalisesSIGA_(resposta) {
+  const caixa = document.getElementById('resultadoPdfAnalises');
+  if (caixa) {
+    caixa.innerHTML =
+      '<span class="analises-resultado-pdf-ok">PDF pronto:</span> '
+      + '<strong>' + escAnalisesSIGA(resposta.nome || 'relatório.pdf') + '</strong>'
+      + '<a class="botao botao-primario botao-rh-pequeno" target="_blank" rel="noopener" href="'
+      + escAnalisesSIGA(resposta.url) + '">Abrir</a>'
+      + (resposta.urlDownload
+          ? '<a class="botao botao-secundario botao-rh-pequeno" target="_blank" rel="noopener" href="'
+            + escAnalisesSIGA(resposta.urlDownload) + '">Baixar</a>'
+          : '')
+      + '<button type="button" class="analises-resultado-pdf-fechar" onclick="document.getElementById(\'resultadoPdfAnalises\').classList.add(\'oculto\')">&times;</button>';
+    caixa.classList.remove('oculto');
+    caixa.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // Atalho: se o navegador deixar, já abre. Se bloquear, o link acima resolve.
+  try { window.open(resposta.url, '_blank'); } catch (erro) { /* bloqueado: tudo bem */ }
+}
+
+/**
+ * Converte um gráfico da tela em PNG.
+ *
+ * Os gráficos são SVG montado aqui no navegador, e o conversor de HTML para
+ * PDF do Apps Script não desenha SVG — mandar o SVG resultaria em espaço em
+ * branco no relatório. Rasterizando com canvas antes de enviar, o PDF recebe
+ * uma imagem comum. Em 2x para não sair borrado no papel.
+ *
+ * Se algo falhar (gráfico ainda não desenhado, canvas indisponível),
+ * devolve null e o gráfico simplesmente não entra — o resto do PDF sai.
+ */
+function analisesGraficoParaPngSIGA_(id) {
+  return new Promise(resolve => {
+    /*
+     * Trava de segurança: se onload/onerror não dispararem (já aconteceu com
+     * SVG grande em alguns navegadores), o Promise.all ficaria pendurado e o
+     * botão travaria em "Gerando PDF..." sem nunca voltar. Passados 8s, esse
+     * gráfico é descartado e o PDF sai sem ele.
+     */
+    let respondido = false;
+    const responder = valor => { if (!respondido) { respondido = true; resolve(valor); } };
+    setTimeout(() => responder(null), 8000);
+
+    try {
+      const svg = document.querySelector('#' + id + ' svg');
+      if (!svg) { responder(null); return; }
+
+      const caixa = svg.viewBox && svg.viewBox.baseVal;
+      const largura = (caixa && caixa.width) || svg.clientWidth || 900;
+      const altura = (caixa && caixa.height) || svg.clientHeight || 300;
+
+      // width="100%" impede a rasterização em alguns navegadores: o clone
+      // sai com medidas absolutas.
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('width', largura);
+      clone.setAttribute('height', altura);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+      const xml = new XMLSerializer().serializeToString(clone);
+      const imagem = new Image();
+      imagem.onload = () => {
+        try {
+          const escala = 1.6;
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(largura * escala);
+          canvas.height = Math.round(altura * escala);
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(imagem, 0, 0, canvas.width, canvas.height);
+          responder(canvas.toDataURL('image/png'));
+        } catch (erro) {
+          responder(null);
+        }
+      };
+      imagem.onerror = () => responder(null);
+      imagem.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    } catch (erro) {
+      responder(null);
+    }
+  });
+}
+
+function exportarPdfAnalisesSIGA() {
+  const botao = document.getElementById('botaoExportarPdfAnalises');
+  const rotulo = botao ? botao.textContent : '';
+
+  const caixaAnterior = document.getElementById('resultadoPdfAnalises');
+  if (caixaAnterior) caixaAnterior.classList.add('oculto');
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Gerando PDF...';
+  }
+  function liberarBotaoPdf() {
+    if (botao) { botao.disabled = false; botao.textContent = rotulo; }
+  }
+
+  Promise.all(ANALISES_GRAFICOS_PARA_PDF.map(g => analisesGraficoParaPngSIGA_(g.id)))
+    .then(imagens => {
+      let blocosGraficos = ANALISES_GRAFICOS_PARA_PDF
+        .map((g, i) => imagens[i] ? { titulo: g.titulo, imagem: imagens[i] } : null)
+        .filter(Boolean);
+
+      /*
+       * google.script.run tem limite de tamanho de payload. Sete gráficos em
+       * PNG passam fácil de alguns MB em base64 e a chamada inteira falha —
+       * é melhor entregar o PDF só com as tabelas do que não entregar nada.
+       */
+      const LIMITE_BYTES = 6 * 1024 * 1024;
+      let acumulado = 0;
+      blocosGraficos = blocosGraficos.filter(bloco => {
+        acumulado += bloco.imagem.length;
+        return acumulado <= LIMITE_BYTES;
+      });
+
+      enviarPdfAnalisesSIGA_(blocosGraficos, liberarBotaoPdf);
+    })
+    .catch(() => enviarPdfAnalisesSIGA_([], liberarBotaoPdf));
+}
+
+function enviarPdfAnalisesSIGA_(blocosGraficos, liberar) {
+  const blocos = blocosGraficos.concat([
+    analisesBlocoMovimentacaoParaPdf_(),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaAnalisesTurmas', 'corpoTabelaAnalisesTurmas', 'Detalhamento por turma'),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaAnalisesLucro', 'corpoTabelaAnalisesLucro', 'Mensalidades recebidas por turma'),
+    analisesBlocoDaTabelaParaPdf_('cabecalhoTabelaMensalidadesTempo', 'corpoTabelaMensalidadesTempo', 'Lucro por turma')
+  ].filter(Boolean));
+
+  if (!blocos.length) {
+    liberar();
+    mostrarErroAnalisesSIGA('Ainda não há dados na tela para exportar. Espere o carregamento terminar.');
+    return;
+  }
+
+  const kpis = [];
+  document.querySelectorAll('#tela-analises .analises-kpis .pagamentos-kpi').forEach(cartao => {
+    const rot = cartao.querySelector('span');
+    const val = cartao.querySelector('strong');
+    if (rot && val) kpis.push({ rotulo: rot.textContent.trim(), valor: val.textContent.trim() });
+  });
+
+  const selectPeriodo = document.getElementById('analisesMeses');
+  const periodo = selectPeriodo && selectPeriodo.selectedIndex >= 0
+    ? selectPeriodo.options[selectPeriodo.selectedIndex].textContent.trim()
+    : '';
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      liberar();
+      if (!resposta || !resposta.url) {
+        mostrarErroAnalisesSIGA('O PDF não pôde ser gerado.');
+        return;
+      }
+      mostrarResultadoPdfAnalisesSIGA_(resposta);
+    })
+    .withFailureHandler(erro => {
+      liberar();
+      const motivo = erro && erro.message ? erro.message : String(erro || 'Erro ao gerar o PDF.');
+      mostrarErroAnalisesSIGA(/not a function|não é uma função|is not defined/i.test(motivo)
+        ? 'O arquivo Analises (.gs) não tem a função gerarPdfAnalisesSIGA. Cole a versão nova do Analises e publique uma Nova versão.'
+        : motivo);
+    })
+    .gerarPdfAnalisesSIGA({
+      token: typeof obterTokenPagamentosUnificadosSIGA === 'function' ? obterTokenPagamentosUnificadosSIGA() : '',
+      periodo,
+      atualizadoEm: (document.getElementById('analisesAtualizadoEm') || {}).textContent || '',
+      kpis,
+      blocos
+    });
+}
+
+function analisesBlocoDaTabelaParaPdf_(idCabecalho, idCorpo, titulo) {
+  const cabecalho = document.getElementById(idCabecalho);
+  const corpo = document.getElementById(idCorpo);
+  if (!cabecalho || !corpo) return null;
+
+  const colunas = Array.from(cabecalho.querySelectorAll('th'))
+    .map(th => th.textContent.replace(/[▲▼⇅]/g, '').trim());
+
+  const linhas = [];
+  corpo.querySelectorAll('tr').forEach(tr => {
+    if (tr.classList.contains('analises-linha-alunos')) return; // expansão de alunos
+    const celulas = Array.from(tr.querySelectorAll('td'));
+    if (celulas.length < 2) return; // "Carregando..." / "Sem dados"
+    linhas.push(celulas.map(td => td.textContent.trim()));
+  });
+
+  if (!linhas.length) return null;
+  return { titulo, colunas, linhas };
+}
+
+function analisesBlocoMovimentacaoParaPdf_() {
+  const dados = analisesMovimentacaoUltima;
+  if (!dados || !dados.serie || !dados.serie.length) return null;
+  const linhas = dados.serie.map(x => [x.periodo, String(x.alunosAtivos ?? x.ativos), String(x.matriculasAtivas)]);
+  if (!linhas.length) return null;
+  return {
+    titulo: 'Alunos e matrículas ativas por mês',
+    subtitulo: dados.turma ? ('Turma: ' + dados.turma) : 'Todas as turmas',
+    colunas: ['Mês', 'Alunos ativos', 'Matrículas ativas'],
+    linhas
+  };
+}
+
+/**
+ * Entradas e saídas por mês, com filtro próprio de turma.
+ *
+ * Vem de obterMovimentacaoTurmaAnalisesSIGA, que lê só a DimMatricula e roda
+ * fora do cache de Análises — por isso o filtro responde na hora e o número
+ * reflete o cadastro atual, sem depender do recálculo de 6 horas.
+ */
+let analisesMovimentacaoTurmasPreenchidas = false;
+let analisesMovimentacaoUltima = null;
+let analisesMovimentacaoRequisicaoV2_ = 0;
+let analisesMovimentacaoCacheV2_ = new Map();
+
+function carregarMovimentacaoAnalisesSIGA(forcarServidor) {
+  const alvo = document.getElementById('graficoAnalisesMovimentacao');
+  if (!alvo) return;
+  const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
+    ? obterTokenPagamentosUnificadosSIGA() : '';
+  const meses = Number(document.getElementById('analisesMeses')?.value || 12);
+  const turma = document.getElementById('analisesMovimentacaoTurma')?.value || '';
+  const chave = meses + '|' + turma;
+  const requisicao = ++analisesMovimentacaoRequisicaoV2_;
+  const cache = !forcarServidor ? analisesMovimentacaoCacheV2_.get(chave) : null;
+  if (cache) {
+    desenharGraficoMovimentacaoAnalisesSIGA_(cache);
+    return;
+  }
+  alvo.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+  definirTextoMovimentacaoAnalisesSIGA_('resumoAnalisesMovimentacao', '');
+  const aviso = document.getElementById('avisoAnalisesMovimentacao');
+  if (aviso) aviso.classList.add('oculto');
+
+  google.script.run
+    .withSuccessHandler(resposta => {
+      if (requisicao !== analisesMovimentacaoRequisicaoV2_) return;
+      if (!resposta || resposta.sucesso !== true) {
+        alvo.innerHTML = '<div class="estado-vazio">Não foi possível carregar as contagens.</div>';
+        return;
+      }
+      if (!analisesMovimentacaoTurmasPreenchidas) {
+        preencherTurmasMovimentacaoAnalisesSIGA_(resposta.turmas || []);
+        analisesMovimentacaoTurmasPreenchidas = true;
+      }
+      const serie = Array.isArray(resposta.serie) ? resposta.serie : [];
+      const valido = serie.every(x =>
+        x.matriculasAtivas !== null && x.matriculasAtivas !== undefined &&
+        Number.isFinite(Number(x.matriculasAtivas)) &&
+        Number.isFinite(Number(x.alunosAtivos ?? x.ativos)));
+      if (!valido) {
+        alvo.innerHTML = '<div class="estado-vazio">O backend ainda não enviou a contagem de matrículas. Instale a correção do endpoint de movimentação. Nenhum valor ausente será exibido como zero.</div>';
+        return;
+      }
+      analisesMovimentacaoCacheV2_.set(chave, resposta);
+      desenharGraficoMovimentacaoAnalisesSIGA_(resposta);
+    })
+    .withFailureHandler(erro => {
+      if (requisicao !== analisesMovimentacaoRequisicaoV2_) return;
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      alvo.innerHTML = '<div class="estado-vazio">Não foi possível carregar a movimentação.<br><small>' + escAnalisesSIGA(motivo) + '</small></div>';
+    })
+    .obterMovimentacaoTurmaV2AnalisesSIGA({ token, turma, meses });
+}
+
+function preencherTurmasMovimentacaoAnalisesSIGA_(turmas) {
+  const select = document.getElementById('analisesMovimentacaoTurma');
+  if (!select) return;
+  const atual = select.value;
+  select.innerHTML = '<option value="">Todas as turmas</option>';
+  turmas.forEach(turma => {
+    const opcao = document.createElement('option');
+    opcao.value = turma;
+    opcao.textContent = turma;
+    select.appendChild(opcao);
+  });
+  if ([...select.options].some(o => o.value === atual)) select.value = atual;
+}
+
+function definirTextoMovimentacaoAnalisesSIGA_(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = html;
+}
+
+function desenharGraficoMovimentacaoAnalisesSIGA_(resposta) {
+  const alvo = document.getElementById('graficoAnalisesMovimentacao');
+  if (!alvo) return;
+  const serie = Array.isArray(resposta.serie) ? resposta.serie : [];
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+  const valido = serie.every(x =>
+    x.matriculasAtivas !== null && x.matriculasAtivas !== undefined &&
+    Number.isFinite(Number(x.matriculasAtivas)) &&
+    Number.isFinite(Number(x.alunosAtivos ?? x.ativos)));
+  if (!valido) {
+    alvo.innerHTML = '<div class="estado-vazio">Contagem de matrículas indisponível nesta versão do backend.</div>';
+    return;
+  }
+  analisesMovimentacaoUltima = resposta;
+  const primeiro = serie[0];
+  const ultimo = serie[serie.length - 1];
+  const alunosUltimo = Number(ultimo.alunosAtivos ?? ultimo.ativos);
+  const matriculasUltimo = Number(ultimo.matriculasAtivas);
+  const variacaoAlunos = alunosUltimo - Number(primeiro.alunosAtivos ?? primeiro.ativos);
+  const variacaoMatriculas = matriculasUltimo - Number(primeiro.matriculasAtivas);
+  const saldo = (valor, rotulo) =>
+    '<span class="' + (valor > 0 ? 'analises-saldo-positivo' : valor < 0 ? 'analises-saldo-negativo' : 'analises-saldo-zero') +
+    '"><strong>' + (valor > 0 ? '+' : '') + valor + '</strong> ' + rotulo + '</span>';
+
+  definirTextoMovimentacaoAnalisesSIGA_('resumoAnalisesMovimentacao',
+    '<span><strong>' + alunosUltimo + '</strong> alunos ativos em ' + escAnalisesSIGA(ultimo.periodo) + '</span>' +
+    '<span><strong>' + matriculasUltimo + '</strong> matrículas ativas em ' + escAnalisesSIGA(ultimo.periodo) + '</span>' +
+    saldo(variacaoAlunos, 'alunos desde ' + escAnalisesSIGA(primeiro.periodo)) +
+    saldo(variacaoMatriculas, 'matrículas desde ' + escAnalisesSIGA(primeiro.periodo)));
+
+  vizGraficoColunas(alvo, {
+    titulo: resposta.turma
+      ? 'Alunos e matrículas ativas por mês — ' + resposta.turma
+      : 'Alunos e matrículas ativas por mês — todas as turmas',
+    categorias: serie.map(x => x.periodo),
+    mostrarRotulosValores: true,
+    series: [
+      { nome: 'Alunos ativos', cor: VIZ_COR.categorico[0],
+        valores: serie.map(x => Number(x.alunosAtivos ?? x.ativos)) },
+      { nome: 'Matrículas ativas', cor: VIZ_COR.categorico[1],
+        valores: serie.map(x => Number(x.matriculasAtivas)) }
+    ]
+  });
+
+  const aviso = document.getElementById('avisoAnalisesMovimentacao');
+  if (aviso) {
+    const mensagens = [];
+    if (Number(resposta.saidasSemData || 0) > 0) {
+      mensagens.push(resposta.saidasSemData + ' matrícula(s) encerrada(s) sem data de encerramento podem afetar o histórico.');
+    }
+    if (resposta.observacaoHistorica) mensagens.push(resposta.observacaoHistorica);
+    aviso.textContent = mensagens.join(' ');
+    aviso.classList.toggle('oculto', !mensagens.length);
+  }
+}
+
 function analisesCategoriaTurma_(turma) {
   const m = String(turma || '').match(/^[A-Za-zÀ-ÖØ-öø-ÿ]+/);
   return m ? m[0].toUpperCase() : 'OUTRAS';
@@ -942,6 +1588,10 @@ function renderizarTurmasFiltradasAnalisesSIGA(resultado) {
 
   montarFiltroModalidadeAnalisesSIGA(comparativoCompleto);
   desenharGraficoTurmasAnalisesSIGA(filtrado);
+
+  // O mesmo filtro de modalidade vale também para o gráfico de frequência.
+  // Em "Todas", mostra todas as turmas ativas; em Formação/Teatro/TP,
+  // mostra somente as turmas daquela modalidade.
   desenharGraficoFrequenciaAnalisesSIGA(filtrado);
 
   // Se um mês específico estiver selecionado no filtro "Receita do mês",
@@ -1001,27 +1651,32 @@ function ordenarListaAnalisesSIGA_(lista) {
 function atualizarSetasOrdenacaoAnalisesSIGA_() {
   document.querySelectorAll('#tela-analises .analises-seta-ordenacao').forEach(span => {
     const campo = span.getAttribute('data-seta');
-    span.textContent = analisesOrdenacaoDetalhamento.campo === campo
+    const ativa = analisesOrdenacaoDetalhamento.campo === campo;
+    span.textContent = ativa
       ? (analisesOrdenacaoDetalhamento.direcao === 'asc' ? ' ▲' : ' ▼')
-      : '';
+      : ' ⇅';
+    span.classList.toggle('analises-seta-inativa', !ativa);
   });
 }
 
 function desenharGraficoAtivosAnalisesSIGA(serie) {
-  const alvo = document.getElementById('graficoAnalisesAtivos');
-  if (!alvo) return;
-  if (!serie.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
-    return;
-  }
+  // Gráfico removido da interface: os dados de alunos/matrículas ativos
+  // já são exibidos no gráfico específico por mês.
+  return;
+}
 
-  vizGraficoLinha(alvo, {
-    titulo: 'Alunos ativos ao longo do tempo',
-    categorias: serie.map(x => x.periodo),
-    areaUnicaSerie: true,
-    semRotuloUnico: true,
-    series: [{ nome: 'Alunos ativos', cor: VIZ_COR.categorico[0], pontos: serie.map(x => x.ativos) }]
-  });
+/**
+ * O rótulo do mês corrente no mesmo formato do eixo ("set-26").
+ *
+ * Compara por rótulo em vez de assumir "é sempre a última coluna":
+ * analisesGerarPeriodos_ hoje termina no mês corrente, mas se algum dia
+ * a janela mudar, a hachura continua caindo no mês certo em vez de
+ * marcar uma coluna qualquer.
+ */
+function analisesRotuloMesAtual_() {
+  const hoje = new Date();
+  return ANALISES_MESES_ABREV_PT[hoje.getMonth()] +
+    '-' + String(hoje.getFullYear()).slice(-2);
 }
 
 function desenharGraficoMatriculasAnalisesSIGA(serie) {
@@ -1032,12 +1687,27 @@ function desenharGraficoMatriculasAnalisesSIGA(serie) {
     return;
   }
 
+  // Só marca se o mês corrente estiver mesmo na janela exibida.
+  const rotuloAtual = analisesRotuloMesAtual_();
+  const indiceParcial = serie.findIndex(x => x.periodo === rotuloAtual);
+
+  const hoje = new Date();
+  const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+
   vizGraficoColunas(alvo, {
-    titulo: 'Novas matrículas vs. cancelamentos',
+    titulo: 'Matrículas vs. cancelamentos',
     categorias: serie.map(x => x.periodo),
+    mostrarRotulosValores: true,
+    indiceParcial: indiceParcial,
+    rotuloParcial: 'mês em curso',
+    notaRodape: indiceParcial >= 0
+      ? 'A coluna hachurada é o mês em curso (' + hoje.getDate() + ' de ' + diasNoMes +
+        ' dias). As saídas se espalham pelo mês inteiro, então ela ainda vai crescer — ' +
+        'não compare com um mês fechado.'
+      : '',
     series: [
-      { nome: 'Novas matrículas', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.novas) },
-      { nome: 'Cancelamentos', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.canceladas) }
+      { nome: 'Matrículas (ATIVAÇÃO, NOVA, UPGRADE)', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.novas) },
+      { nome: 'Cancelamentos / saídas (CANCELADO, FINALIZADO, ABANDONO, SUSPENSO)', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.canceladas) }
     ]
   });
 }
@@ -1083,32 +1753,107 @@ function desenharGraficoFrequenciaAnalisesSIGA(comparativo) {
   const legenda = document.getElementById('legendaAnalisesFrequencia');
   if (!alvo) return;
 
-  const comFrequencia = comparativo.filter(x => x.frequenciaMedia !== null && x.frequenciaMedia !== undefined);
+  // Todas as turmas continuam aparecendo.
+  // Frequência não calculada NÃO vira 0%: aparece como "Sem dados".
+  const lista = comparativo
+    .slice()
+    .map(x => {
+      const disponivel =
+        x.frequenciaMedia !== null &&
+        x.frequenciaMedia !== undefined &&
+        x.frequenciaMedia !== '' &&
+        Number.isFinite(Number(x.frequenciaMedia));
+
+      return Object.assign({}, x, {
+        frequenciaDisponivel: disponivel,
+        frequenciaMedia: disponivel
+          ? Number(x.frequenciaMedia)
+          : null
+      });
+    })
+    .sort((a, b) => {
+      // Primeiro as turmas com frequência calculada.
+      if (
+        a.frequenciaDisponivel !==
+        b.frequenciaDisponivel
+      ) {
+        return a.frequenciaDisponivel ? -1 : 1;
+      }
+
+      // Dentro das calculadas: maior -> menor.
+      if (
+        a.frequenciaDisponivel &&
+        b.frequenciaDisponivel
+      ) {
+        const diferenca =
+          Number(b.frequenciaMedia) -
+          Number(a.frequenciaMedia);
+
+        if (diferenca !== 0) return diferenca;
+      }
+
+      return String(a.turma || '')
+        .localeCompare(
+          String(b.turma || ''),
+          'pt-BR'
+        );
+    });
 
   if (legenda) {
-    legenda.innerHTML = '';
-  }
-
-  if (!comFrequencia.length) {
-    alvo.innerHTML = '<div class="estado-vazio">Frequência não disponível para essas turmas no período.</div>';
-    return;
-  }
-
-  if (legenda) {
-    legenda.innerHTML = `<div class="viz-legenda-status">` +
-      [['bom', 'Boa (≥85%)'], ['atencao', 'Atenção (75–85%)'], ['critico', 'Crítica (<75%)']]
-        .map(([chave, rotulo]) => `<span class="viz-legenda-status-item"><span class="viz-legenda-ponto" style="background:${VIZ_COR.status[chave]}"></span>${vizEsc(rotulo)}</span>`)
+    legenda.innerHTML =
+      `<div class="viz-legenda-status">` +
+      [
+        ['bom', 'Boa (≥80%)'],
+        ['atencao', 'Atenção (>60% e <80%)'],
+        ['critico', 'Crítica (≤60%)']
+      ]
+        .map(
+          ([chave, rotulo]) =>
+            `<span class="viz-legenda-status-item">` +
+            `<span class="viz-legenda-ponto" style="background:${VIZ_COR.status[chave]}"></span>` +
+            `${vizEsc(rotulo)}</span>`
+        )
         .join('') +
+      `<span class="viz-legenda-status-item">` +
+      `<span class="viz-legenda-ponto" style="background:#cbd5e1"></span>` +
+      `Sem dados</span>` +
       `</div>`;
+  }
+
+  if (!lista.length) {
+    alvo.innerHTML =
+      '<div class="estado-vazio">Nenhuma turma ativa encontrada.</div>';
+    return;
   }
 
   vizGraficoBarrasHorizontais(alvo, {
     titulo: 'Frequência média por turma',
-    itens: comFrequencia.map(x => {
-      const status = vizStatusFrequencia_(x.frequenciaMedia);
+    percentual: true,
+    itens: lista.map(x => {
+      if (!x.frequenciaDisponivel) {
+        return {
+          nome: x.turma,
+          valores: [{
+            valor: 0,
+            cor: '#cbd5e1',
+            rotulo: 'Sem dados',
+            textoValor: 'Sem dados'
+          }]
+        };
+      }
+
+      const status =
+        vizStatusFrequencia_(
+          x.frequenciaMedia
+        );
+
       return {
         nome: x.turma,
-        valores: [{ valor: Number(x.frequenciaMedia || 0), cor: status.cor, rotulo: status.rotulo }]
+        valores: [{
+          valor: Number(x.frequenciaMedia),
+          cor: status.cor,
+          rotulo: status.rotulo
+        }]
       };
     })
   });
@@ -1126,11 +1871,15 @@ function analisesAgruparPorTurmaEMes_(detalheMensalPorTurma) {
       porTurma.set(item.turma, { turma: item.turma, porMes: new Map(), total: 0 });
     }
     const acc = porTurma.get(item.turma);
-    const valor = Number(item.receita || 0);
-    acc.porMes.set(item.periodo, valor);
+    const valor = analisesCentavos_(item.receita);
+    acc.porMes.set(item.periodo, (acc.porMes.get(item.periodo) || 0) + valor);
     acc.total += valor;
   });
-  return Array.from(porTurma.values());
+  return Array.from(porTurma.values()).map(acc => ({
+    turma: acc.turma,
+    total: acc.total / 100,
+    porMes: new Map(Array.from(acc.porMes, ([mes, centavos]) => [mes, centavos / 100]))
+  }));
 }
 
 /**
@@ -1164,8 +1913,12 @@ function analisesAlternarOrdenacaoPivot_(estado, campo) {
 }
 
 function analisesThOrdenavelPivot_(rotulo, campo, estado) {
-  const seta = estado.campo === campo ? (estado.direcao === 'asc' ? ' ▲' : ' ▼') : '';
-  return `<th class="analises-th-ordenavel" data-campo="${escAnalisesSIGA(campo)}">${vizEsc(rotulo)}${seta}</th>`;
+  // Coluna sem ordenação ativa mostra uma seta dupla apagada: sem isso não
+  // havia nenhuma pista de que o cabeçalho era clicável.
+  const seta = estado.campo === campo
+    ? (estado.direcao === 'asc' ? ' ▲' : ' ▼')
+    : '<span class="analises-seta-inativa"> ⇅</span>';
+  return `<th class="analises-th-ordenavel" title="Clique para ordenar" data-campo="${escAnalisesSIGA(campo)}">${vizEsc(rotulo)}${seta}</th>`;
 }
 
 /**
@@ -1231,15 +1984,26 @@ function preencherTabelaMensalidadesTempoAnalisesSIGA(lucroPorTurma, periodosRot
   cabecalho.innerHTML =
     analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotTempo) +
     periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotTempo)).join('') +
-    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotTempo);
+    analisesThOrdenavelPivot_('Total (' + periodosRotulos.length + ' meses)', 'total', analisesOrdenacaoPivotTempo);
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
       <td><strong>${escAnalisesSIGA(linha.turma)}</strong></td>
-      ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(linha.porMes.get(p) || 0)}</td>`).join('')}
-      <td style="font-weight:800">${moedaAnalisesSIGA(linha.total)}</td>
+      ${periodosRotulos.map(p => celulaLucroAnalisesSIGA_(linha.porMes.get(p) || 0)).join('')}
+      ${celulaLucroAnalisesSIGA_(linha.total, true)}
     </tr>
   `).join('');
+}
+
+/**
+ * Lucro é a única tabela da tela em que o número pode ser negativo — uma
+ * turma que custou mais professor do que recebeu de mensalidade. Em preto,
+ * o sinal de menos passava batido no meio de dezenas de colunas.
+ */
+function celulaLucroAnalisesSIGA_(valor, ehTotal) {
+  const n = Number(valor || 0);
+  const classe = n < 0 ? 'analises-lucro-negativo' : (n > 0 ? 'analises-lucro-positivo' : 'analises-lucro-zero');
+  return `<td class="${classe}${ehTotal ? ' analises-celula-total' : ''}">${moedaAnalisesSIGA(n)}</td>`;
 }
 
 let analisesAlunosPorTurmaCache = new Map();
@@ -1261,12 +2025,38 @@ function ordenarTabelaMensalidadesPeriodoAnalisesSIGA(campo) {
  * pra ordenar por ele. Clicar no nome da turma expande a lista de
  * alunos ativos/suspensos e quanto cada um pagou.
  */
+
+function analisesCentavos_(valor) {
+  return Math.round(Number(valor || 0) * 100);
+}
+
+function analisesTotaisPivot_(linhas, periodos) {
+  const porMes = new Map(periodos.map(p => [p, 0]));
+  let total = 0;
+  linhas.forEach(linha => {
+    periodos.forEach(p => {
+      const centavos = analisesCentavos_(linha.porMes.get(p));
+      porMes.set(p, porMes.get(p) + centavos);
+      total += centavos;
+    });
+  });
+  return { porMes, total };
+}
+
+function analisesLinhaTotalPivot_(totais, periodos, mesFiltro) {
+  const celula = valor => '<td class="analises-celula-total">' +
+    moedaAnalisesSIGA(valor / 100) + '</td>';
+  return '<tr class="analises-linha-total"><td><strong>Total</strong></td>' +
+    (mesFiltro
+      ? celula(totais.porMes.get(mesFiltro) || 0)
+      : periodos.map(p => celula(totais.porMes.get(p) || 0)).join('') +
+        celula(totais.total)) + '</tr>';
+}
+
 function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
   const cabecalho = document.getElementById('cabecalhoTabelaAnalisesLucro');
   const corpo = document.getElementById('corpoTabelaAnalisesLucro');
   if (!cabecalho || !corpo) return;
-
-  analisesAlunosPorTurmaCache = new Map();
 
   const lista = Array.isArray(detalheMensalPorTurma) ? detalheMensalPorTurma : [];
   if (!lista.length) {
@@ -1278,7 +2068,7 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
   const mesFiltro = document.getElementById('analisesMensalidadesMes')?.value || '';
   const periodosRotulos = Array.from(new Set(lista.map(x => x.periodo)));
   const linhas = analisesOrdenarPivot_(analisesAgruparPorTurmaEMes_(lista), analisesOrdenacaoPivotPeriodo);
-
+  const totais = analisesTotaisPivot_(linhas, periodosRotulos);
   const botaoTurma = turma =>
     `<button type="button" class="analises-link-turma" onclick="alternarAlunosTurmaAnalisesSIGA(this)" data-turma="${escAnalisesSIGA(turma)}">${escAnalisesSIGA(turma)}</button>`;
 
@@ -1291,22 +2081,22 @@ function preencherTabelaMensalidadesAnalisesSIGA(detalheMensalPorTurma) {
         <td>${botaoTurma(linha.turma)}</td>
         <td style="font-weight:700">${moedaAnalisesSIGA(linha.porMes.get(mesFiltro) || 0)}</td>
       </tr>
-    `).join('');
+    `).join('') + analisesLinhaTotalPivot_(totais, periodosRotulos, mesFiltro);
     return;
   }
 
   cabecalho.innerHTML =
     analisesThOrdenavelPivot_('Turma', 'turma', analisesOrdenacaoPivotPeriodo) +
     periodosRotulos.map(p => analisesThOrdenavelPivot_(p, p, analisesOrdenacaoPivotPeriodo)).join('') +
-    analisesThOrdenavelPivot_('Total', 'total', analisesOrdenacaoPivotPeriodo);
+    analisesThOrdenavelPivot_('Total (' + periodosRotulos.length + ' meses)', 'total', analisesOrdenacaoPivotPeriodo);
 
   corpo.innerHTML = linhas.map(linha => `
     <tr>
       <td>${botaoTurma(linha.turma)}</td>
       ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(linha.porMes.get(p) || 0)}</td>`).join('')}
-      <td style="font-weight:800">${moedaAnalisesSIGA(linha.total)}</td>
+      <td class="analises-celula-total">${moedaAnalisesSIGA(linha.total)}</td>
     </tr>
-  `).join('');
+  `).join('') + analisesLinhaTotalPivot_(totais, periodosRotulos, '');
 }
 
 /**
@@ -1331,51 +2121,49 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
   const linha = botao.closest('tr');
   const colspan = linha.children.length;
   const proxima = linha.nextElementSibling;
-
   if (proxima && proxima.classList.contains('analises-linha-alunos')) {
     proxima.remove();
     return;
   }
-
   document.querySelectorAll('#corpoTabelaAnalisesLucro tr.analises-linha-alunos').forEach(tr => tr.remove());
-
   const linhaDetalhe = document.createElement('tr');
   linhaDetalhe.className = 'analises-linha-alunos';
   linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Carregando alunos...</div></td>`;
   linha.after(linhaDetalhe);
 
-  // Se um mês específico estiver selecionado no filtro "Mês" da tabela,
-  // o valor mostrado por aluno deve ser só o daquele mês — não a soma do
-  // período inteiro.
   const mesFiltroRotulo = document.getElementById('analisesMensalidadesMes')?.value || '';
   const chaveMesFiltro = mesFiltroRotulo ? analisesRotuloParaChave_(mesFiltroRotulo) : null;
-  const chaveCache = turma + '::' + (chaveMesFiltro || 'PERIODO');
-
+  const resultado = analisesDadosCache;
+  const chaveCache = turma + '::' + (chaveMesFiltro || 'PERIODO') + '::' +
+    (resultado?.mesInicial || '') + '::' + (resultado?.mesFinal || '') + '::' +
+    (resultado?.atualizadoEm || '');
   const cache = analisesAlunosPorTurmaCache.get(chaveCache);
   if (cache) {
-    renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, cache, colspan);
+    renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, cache.alunos, colspan, cache);
     return;
   }
 
   const token = typeof obterTokenPagamentosUnificadosSIGA === 'function'
-    ? obterTokenPagamentosUnificadosSIGA()
-    : '';
-  const resultado = analisesDadosCache;
-
+    ? obterTokenPagamentosUnificadosSIGA() : '';
   google.script.run
     .withSuccessHandler(resposta => {
-      const alunos = (resposta && resposta.alunos) || [];
-      analisesAlunosPorTurmaCache.set(chaveCache, alunos);
-      renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan);
+      if (!linhaDetalhe.isConnected) return;
+      if (!resposta || resposta.sucesso !== true || resposta.rateioVersao !== 2) {
+        linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">O detalhamento ainda não usa o rateio consolidado. Instale a correção do backend e recalcule os dados.</div></td>`;
+        return;
+      }
+      analisesAlunosPorTurmaCache.set(chaveCache, resposta);
+      renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, resposta.alunos || [], colspan, resposta);
     })
-    .withFailureHandler(() => {
-      linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.</div></td>`;
+    .withFailureHandler(erro => {
+      if (!linhaDetalhe.isConnected) return;
+      const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
+      linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.<br><small>${escAnalisesSIGA(motivo)}</small></div></td>`;
     })
     .obterAlunosPagamentosPorTurmaAnalisesSIGA({
-      token,
-      turma,
-      mesInicial: chaveMesFiltro || (resultado ? resultado.mesInicial : null),
-      mesFinal: chaveMesFiltro || (resultado ? resultado.mesFinal : null)
+      token, turma,
+      mesInicial: chaveMesFiltro || resultado?.mesInicial || null,
+      mesFinal: chaveMesFiltro || resultado?.mesFinal || null
     });
 }
 
@@ -1386,38 +2174,58 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
  * filtro "Mês", só existe uma coluna de qualquer forma, então o Total
  * não aparece (seria redundante com a única coluna de mês).
  */
-function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan) {
-  const mesFiltroRotulo = document.getElementById('analisesMensalidadesMes')?.value || '';
-
-  if (!alunos.length) {
-    linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Nenhum aluno ativo ou suspenso encontrado nessa turma${mesFiltroRotulo ? ' em ' + escAnalisesSIGA(mesFiltroRotulo) : ' no período'}.</div></td>`;
-    return;
-  }
-
-  const periodosRotulos = Array.from(new Set(
+function renderizarAlunosTurmaAnalisesSIGA(linhaDetalhe, alunos, colspan, resposta) {
+  if (!linhaDetalhe || !linhaDetalhe.isConnected) return;
+  const mesFiltro = document.getElementById('analisesMensalidadesMes')?.value || '';
+  const periodos = mesFiltro ? [mesFiltro] : (analisesDadosCache?.periodos || []);
+  const periodosRotulos = periodos.length ? periodos : Array.from(new Set(
     alunos.flatMap(a => (a.porMes || []).map(p => p.periodo))
   )).sort((a, b) => String(analisesRotuloParaChave_(a)).localeCompare(String(analisesRotuloParaChave_(b))));
-
   const mostrarTotal = periodosRotulos.length > 1;
-
-  const cabecalho =
-    '<th>Aluno (ativo/suspenso)</th>' +
+  const totais = new Map(periodosRotulos.map(p => [p, 0]));
+  const cabecalho = '<th>Aluno</th>' +
     periodosRotulos.map(p => `<th>${escAnalisesSIGA(p)}</th>`).join('') +
     (mostrarTotal ? '<th>Total</th>' : '');
 
   const linhas = alunos.map(a => {
-    const porMesMapa = new Map((a.porMes || []).map(p => [p.periodo, p.valor]));
-    return `<tr>
-      <td>${escAnalisesSIGA(a.aluno)}</td>
-      ${periodosRotulos.map(p => `<td>${moedaAnalisesSIGA(porMesMapa.get(p) || 0)}</td>`).join('')}
-      ${mostrarTotal ? `<td style="font-weight:700">${moedaAnalisesSIGA(a.total)}</td>` : ''}
-    </tr>`;
+    const porMes = new Map((a.porMes || []).map(p => [p.periodo, p.valor]));
+    let total = 0;
+    const celulas = periodosRotulos.map(p => {
+      const centavos = analisesCentavos_(porMes.get(p));
+      totais.set(p, totais.get(p) + centavos);
+      total += centavos;
+      return `<td>${moedaAnalisesSIGA(centavos / 100)}</td>`;
+    }).join('');
+    return `<tr><td>${escAnalisesSIGA(a.aluno)}</td>${celulas}` +
+      (mostrarTotal ? `<td style="font-weight:700">${moedaAnalisesSIGA(total / 100)}</td>` : '') + '</tr>';
   }).join('');
-  linhaDetalhe.innerHTML = `<td colspan="${colspan}">
+
+  const totalGeral = Array.from(totais.values()).reduce((s, v) => s + v, 0);
+  const rodape = '<tr class="analises-linha-total"><td><strong>Total conferido</strong></td>' +
+    periodosRotulos.map(p => `<td><strong>${moedaAnalisesSIGA(totais.get(p) / 100)}</strong></td>`).join('') +
+    (mostrarTotal ? `<td><strong>${moedaAnalisesSIGA(totalGeral / 100)}</strong></td>` : '') + '</tr>';
+
+  // Compara também com a linha principal. Uma divergência é informada,
+  // nunca escondida alterando artificialmente o total da turma.
+  const turma = resposta?.turma || '';
+  const esperado = new Map();
+  (analisesDadosCache?.detalheMensalPorTurma || []).forEach(x => {
+    if (x.turma === turma && periodosRotulos.includes(x.periodo)) {
+      esperado.set(x.periodo, (esperado.get(x.periodo) || 0) + analisesCentavos_(x.receita));
+    }
+  });
+  const divergencias = periodosRotulos.filter(p =>
+    (esperado.get(p) || 0) !== (totais.get(p) || 0));
+  const aviso = divergencias.length
+    ? '<div class="analises-aviso-movimentacao">A apuração da tabela e a do detalhamento não estão na mesma versão. Atualize ou recalcule os dados. Meses divergentes: ' +
+      divergencias.map(escAnalisesSIGA).join(', ') + '.</div>'
+    : '';
+
+  linhaDetalhe.innerHTML = `<td colspan="${colspan}">${aviso}
     <div class="analises-subtabela-alunos-wrap">
       <table class="analises-subtabela-alunos">
         <thead><tr>${cabecalho}</tr></thead>
-        <tbody>${linhas}</tbody>
+        <tbody>${linhas}${rodape}</tbody>
       </table>
     </div>
   </td>`;
