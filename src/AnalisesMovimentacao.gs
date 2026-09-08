@@ -367,3 +367,122 @@ function analisesReconciliarMatriculasSIGA(meses) {
   console.log(JSON.stringify(diagnostico, null, 2));
   return diagnostico;
 }
+
+
+/**
+ * "De onde saiu esse número?" — lista NOME por NOME as matrículas que o
+ * gráfico contou como entrada num mês.
+ *
+ * Uso, no editor do Apps Script:
+ *     listarEntradasDoMesSIGA('2026-09')
+ *
+ * Devolve a lista e, no fim, a conferência com a célula que a tela lê
+ * (AnalisesCache_Geral, coluna Novas). Se a lista tiver 57 linhas e o
+ * cache disser 57, o número é esse mesmo e o assunto vira "essas 57
+ * linhas estão certas no cadastro?". Se divergir, o cache está velho:
+ * rode recalcularCacheAnalisesSIGA().
+ *
+ * Cada linha mostra QUAL data foi usada. `dataUsada: 'DATA_ALTERACAO'`
+ * quer dizer que a matrícula caiu neste mês porque a LINHA foi editada
+ * neste mês — não porque o aluno entrou nele.
+ */
+function listarEntradasDoMesSIGA(chaveMes) {
+  const alvo = String(chaveMes || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(alvo)) {
+    throw new Error('Informe o mês no formato aaaa-mm. Ex.: listarEntradasDoMesSIGA("2026-09")');
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName('DimMatricula');
+  if (!aba || aba.getLastRow() < 2) throw new Error('DimMatricula não encontrada ou vazia.');
+
+  const dados = aba.getDataRange().getValues();
+  const mapa = mapaGenericoPagUnif_(dados[0]);
+  const fusoDaPlanilha = Session.getScriptTimeZone();
+  const dia = d => d ? Utilities.formatDate(d, fusoDaPlanilha, 'dd/MM/yyyy') : '';
+
+  const entradas = [];
+  const forasPorTipo = [];
+  const forasPorCadastro = [];
+
+  for (let i = 1; i < dados.length; i++) {
+    const linha = dados[i];
+    const nome = String(campoPagUnif_(linha, mapa, ['NOME_ALUNO', 'NOME ALUNO']) || '').trim();
+    const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
+    const tipo = String(campoPagUnif_(linha, mapa, [
+      'TIPO_MATRICULA/ALTERACAO', 'TIPO_MATRICULA', 'TIPO DE MATRÍCULA'
+    ]) || '').trim();
+    const status = String(campoPagUnif_(linha, mapa, ['STATUS']) || '').trim();
+
+    const dataEfetivo = parseDataPagUnif_(
+      campoPagUnif_(linha, mapa, ['DATA_EFETIVO_TURMA', 'DATA EFETIVO TURMA'])
+    );
+    const dataAlteracao = parseDataPagUnif_(
+      campoPagUnif_(linha, mapa, ['DATA_ALTERACAO/MATRICULA', 'DATA ALTERACAO/MATRICULA'])
+    );
+    const inicio = dataEfetivo || dataAlteracao;
+    if (!inicio || analisesMesRotulo_(inicio).chave !== alvo) continue;
+
+    const registro = {
+      linhaNaPlanilha: i + 1,
+      nome: nome || '(sem nome)',
+      turma: turma || '(sem turma)',
+      tipo: tipo || '(em branco)',
+      status: status || '(em branco)',
+      dataUsada: dataEfetivo ? 'DATA_EFETIVO_TURMA' : 'DATA_ALTERACAO',
+      dataEfetivoTurma: dia(dataEfetivo),
+      dataAlteracao: dia(dataAlteracao)
+    };
+
+    // O sistema descarta a linha inteira antes de qualquer conta.
+    if (!nome || !turma) {
+      forasPorCadastro.push(registro);
+      continue;
+    }
+    // Passa no cadastro, mas o TIPO não é entrada.
+    if (!analisesTipoEntradaMatricula_(tipo)) {
+      forasPorTipo.push(registro);
+      continue;
+    }
+    entradas.push(registro);
+  }
+
+  const noCache = analisesLerCacheGeral_().get(alvo);
+  const contaDoGrafico = noCache ? Number(noCache.novas || 0) : null;
+  const comFiltroDeTipo = entradas.length;
+  const semFiltroDeTipo = entradas.length + forasPorTipo.length;
+
+  let veredito;
+  if (contaDoGrafico === null) {
+    veredito = 'O mês ' + alvo + ' não existe no AnalisesCache_Geral — a tela mostraria 0.';
+  } else if (contaDoGrafico === comFiltroDeTipo) {
+    veredito = 'BATE com o filtro de TIPO. O gráfico está contando o que promete.';
+  } else if (contaDoGrafico === semFiltroDeTipo) {
+    veredito = 'BATE com a conta SEM filtro de TIPO (' + semFiltroDeTipo + '). ' +
+      'A legenda diz ATIVAÇÃO/NOVA/UPGRADE, mas a versão antiga de ' +
+      'calcularSerieMatriculasAnalisesSIGA_ ainda está valendo. ' +
+      'Apague a antiga do Analises.gs e rode recalcularCacheAnalisesSIGA().';
+  } else {
+    veredito = 'NÃO bate com nenhuma das duas contas — o cache está velho. ' +
+      'Rode recalcularCacheAnalisesSIGA() e repita.';
+  }
+
+  const resultado = {
+    mes: alvo,
+    contaQueATelaMostra: contaDoGrafico,
+    recalculadoAgoraComFiltroDeTipo: comFiltroDeTipo,
+    recalculadoAgoraSemFiltroDeTipo: semFiltroDeTipo,
+    veredito,
+    cacheAtualizadoEm:
+      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || '(nunca)',
+    entradasContadas: entradas,
+    // Caíram no mês, mas o TIPO não é entrada.
+    ignoradasPeloTipo: forasPorTipo,
+    // Nem chegaram a ser lidas: falta NOME_ALUNO ou TURMA.
+    ignoradasPorCadastroIncompleto: forasPorCadastro,
+    entrouPelaDataDeEdicao: entradas.filter(x => x.dataUsada === 'DATA_ALTERACAO').length
+  };
+
+  console.log(JSON.stringify(resultado, null, 2));
+  return resultado;
+}
