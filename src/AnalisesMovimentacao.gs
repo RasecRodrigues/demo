@@ -373,8 +373,10 @@ function analisesReconciliarMatriculasSIGA(meses) {
  * "De onde saiu esse número?" — lista NOME por NOME as matrículas que o
  * gráfico contou como entrada num mês.
  *
- * Uso, no editor do Apps Script:
- *     listarEntradasDoMesSIGA('2026-09')
+ * Uso: escolha listarEntradasDoMesSIGA no menu de funções e clique em
+ * Executar. Sem argumento nenhum ela usa o MÊS ATUAL — o botão Executar
+ * do Apps Script não sabe passar parâmetro. Para outro mês, digite a
+ * chamada no editor: listarEntradasDoMesSIGA('2026-03').
  *
  * Devolve a lista e, no fim, a conferência com a célula que a tela lê
  * (AnalisesCache_Geral, coluna Novas). Se a lista tiver 57 linhas e o
@@ -387,9 +389,9 @@ function analisesReconciliarMatriculasSIGA(meses) {
  * neste mês — não porque o aluno entrou nele.
  */
 function listarEntradasDoMesSIGA(chaveMes) {
-  const alvo = String(chaveMes || '').trim();
+  const alvo = String(chaveMes || '').trim() || analisesMesRotulo_(new Date()).chave;
   if (!/^\d{4}-\d{2}$/.test(alvo)) {
-    throw new Error('Informe o mês no formato aaaa-mm. Ex.: listarEntradasDoMesSIGA("2026-09")');
+    throw new Error('Mês inválido: use o formato aaaa-mm. Ex.: listarEntradasDoMesSIGA("2026-03")');
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
