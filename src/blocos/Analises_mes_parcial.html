@@ -1,0 +1,218 @@
+<!--
+  SIGA — Análises: marcar o mês em curso como parcial
+
+  PROBLEMA
+  A última coluna de "Matrículas vs. cancelamentos" cobre só os dias já
+  decorridos. As entradas de começo de semestre acontecem quase todas nos
+  primeiros dias; as saídas se espalham pelo mês inteiro. Então a última
+  barra nasce com muita entrada e quase nenhuma saída — e é lida como se
+  fosse um mês fechado. No print de set-26: 85 entradas contra 2 saídas.
+
+  SOLUÇÃO
+  A coluna do mês corrente sai hachurada, com "(parcial)" no rótulo do
+  eixo e uma nota abaixo do gráfico. O número continua o mesmo: o que
+  muda é o leitor saber que aquela barra ainda vai crescer.
+
+  COMO INSTALAR — quatro trocas no Analises_.html, todas unidades
+  completas (função inteira ou linha inteira).
+-->
+
+
+<!-- ==========================================================
+     1) MARCAÇÃO — troque a linha do subtítulo do cartão
+        "Frequência média por turma".
+
+     O texto dizia 85/75 enquanto vizStatusFrequencia_ e a legenda usam
+     80/60. Quem lia o subtítulo via uma régua, quem olhava as cores via
+     outra.
+     ========================================================== -->
+<span class="subtitulo">Turmas coloridas pela situação: boa (≥80%), atenção (&gt;60% e &lt;80%) ou crítica (≤60%).</span>
+
+
+<!-- ==========================================================
+     2) SCRIPT — ACRESCENTE esta função (não existe ainda).
+        Pode colar logo acima de desenharGraficoMatriculasAnalisesSIGA.
+     ========================================================== -->
+<script>
+/**
+ * O rótulo do mês corrente no mesmo formato do eixo ("set-26").
+ *
+ * Compara por rótulo em vez de assumir "é sempre a última coluna":
+ * analisesGerarPeriodos_ hoje termina no mês corrente, mas se algum dia
+ * a janela mudar, a hachura continua caindo no mês certo em vez de
+ * marcar uma coluna qualquer.
+ */
+function analisesRotuloMesAtual_() {
+  const hoje = new Date();
+  return ANALISES_MESES_ABREV_PT[hoje.getMonth()] +
+    '-' + String(hoje.getFullYear()).slice(-2);
+}
+</script>
+
+
+<!-- ==========================================================
+     3) SCRIPT — SUBSTITUA a função vizGraficoColunas inteira.
+
+     Ganha três opções, todas opcionais: indiceParcial (qual coluna
+     hachurar), rotuloParcial e notaRodape. Os outros dois gráficos que
+     usam esta função não passam nenhuma delas e ficam idênticos.
+     ========================================================== -->
+<script>
+/**
+ * Colunas verticais agrupadas. `series` é [{ nome, cor, valores:[numero] }].
+ *
+ * opcoes.indiceParcial marca uma coluna como período incompleto: ela sai
+ * hachurada, com sufixo no rótulo do eixo e aviso no tooltip.
+ */
+function vizGraficoColunas(alvo, opcoes) {
+  if (!alvo) return;
+  const largura = vizLargura_(alvo);
+  const altura = opcoes.altura || 280;
+  const margem = { topo: 20, direita: 16, baixo: 52, esquerda: 68 };
+  const largPlot = largura - margem.esquerda - margem.direita;
+  const altPlot = altura - margem.topo - margem.baixo;
+
+  const n = opcoes.categorias.length;
+  const numSeries = opcoes.series.length;
+  const valorMax = Math.max(0, ...opcoes.series.flatMap(s => s.valores));
+  const { max: maxNice } = vizEscalaNice_(valorMax, 5);
+  const faixa = maxNice || 1;
+  const y = v => margem.topo + altPlot - (v / faixa) * altPlot;
+
+  const indiceParcial = Number.isInteger(opcoes.indiceParcial) ? opcoes.indiceParcial : -1;
+
+  /*
+   * Um id único por render: a tela desenha três gráficos de coluna, e
+   * dois <pattern> com o mesmo id fariam o segundo herdar as cores do
+   * primeiro.
+   */
+  const uid = 'p' + Math.random().toString(36).slice(2, 8);
+  let defsSvg = '';
+  if (indiceParcial >= 0) {
+    defsSvg = '<defs>' + opcoes.series.map((serie, si) =>
+      `<pattern id="${uid}-${si}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+      `<rect width="7" height="7" fill="${serie.cor}" opacity="0.45"/>` +
+      `<line x1="0" y1="0" x2="0" y2="7" stroke="${serie.cor}" stroke-width="3.5"/>` +
+      `</pattern>`
+    ).join('') + '</defs>';
+  }
+
+  let gridSvg = '';
+  let ticksSvg = '';
+  for (let i = 0; i <= 5; i++) {
+    const valor = (faixa * i) / 5;
+    const yPos = y(valor);
+    gridSvg += `<line x1="${margem.esquerda}" y1="${yPos.toFixed(1)}" x2="${largura - margem.direita}" y2="${yPos.toFixed(1)}" stroke="${VIZ_COR.grade}" stroke-width="1"/>`;
+    ticksSvg += `<text x="${margem.esquerda - 8}" y="${(yPos + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${VIZ_COR.inkMudo}">${vizFormatarEixoY(valor, opcoes.moeda)}</text>`;
+  }
+
+  const larguraGrupo = largPlot / n;
+  const gap = 3;
+  const larguraBarra = Math.min(24, (larguraGrupo - gap * (numSeries + 1)) / numSeries);
+  const baselineY = y(0);
+
+  let barrasSvg = '';
+  let rotulosValoresSvg = '';
+  let xLabelsSvg = '';
+
+  opcoes.categorias.forEach((cat, i) => {
+    const centroGrupo = margem.esquerda + i * larguraGrupo + larguraGrupo / 2;
+    const inicioGrupo = centroGrupo - (larguraBarra * numSeries + gap * (numSeries - 1)) / 2;
+    const ehParcial = i === indiceParcial;
+
+    opcoes.series.forEach((serie, si) => {
+      const valor = Number(serie.valores[i] || 0);
+      const xBarra = inicioGrupo + si * (larguraBarra + gap);
+      const yTopo = y(Math.max(0, valor));
+      const d = vizBarraArredondadaTopo_(xBarra, yTopo, larguraBarra, baselineY, 4);
+      const tituloValor = opcoes.moeda ? moedaAnalisesSIGA(valor) : valor.toLocaleString('pt-BR');
+      const preenchimento = ehParcial ? `url(#${uid}-${si})` : serie.cor;
+      const sufixo = ehParcial ? ' · ' + (opcoes.rotuloParcial || 'período incompleto') : '';
+
+      barrasSvg += `<path d="${d}" fill="${preenchimento}"><title>${vizEsc(cat)} · ${vizEsc(serie.nome)}: ${tituloValor}${vizEsc(sufixo)}</title></path>`;
+
+      if (opcoes.mostrarRotulosValores) {
+        const yRotulo = Math.max(margem.topo + 11, yTopo - 6);
+        // VIZ_COR.ink não existe na paleta — o rótulo saía com fill
+        // "undefined" e o navegador caía no preto padrão por acidente.
+        rotulosValoresSvg += `<text x="${(xBarra + larguraBarra / 2).toFixed(1)}" y="${yRotulo.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${VIZ_COR.inkPrimario}">${vizEsc(tituloValor)}</text>`;
+      }
+    });
+
+    const rotuloEixo = ehParcial ? cat + ' (parcial)' : cat;
+    const corRotulo = ehParcial ? VIZ_COR.inkPrimario : VIZ_COR.inkMudo;
+    const pesoRotulo = ehParcial ? ' font-weight="700"' : '';
+    xLabelsSvg += `<text x="${centroGrupo.toFixed(1)}" y="${altura - margem.baixo + 20}" text-anchor="middle" font-size="11" fill="${corRotulo}"${pesoRotulo} transform="rotate(-40 ${centroGrupo.toFixed(1)} ${altura - margem.baixo + 20})">${vizEsc(rotuloEixo)}</text>`;
+  });
+
+  const baselineSvg = `<line x1="${margem.esquerda}" y1="${baselineY.toFixed(1)}" x2="${largura - margem.direita}" y2="${baselineY.toFixed(1)}" stroke="${VIZ_COR.linhaBase}" stroke-width="1"/>`;
+
+  const nota = opcoes.notaRodape
+    ? `<div class="analises-nota-parcial">${vizEsc(opcoes.notaRodape)}</div>`
+    : '';
+
+  alvo.innerHTML = `
+    <svg viewBox="0 0 ${largura} ${altura}" width="100%" height="${altura}" role="img" aria-label="${vizEsc(opcoes.titulo || '')}">
+      ${defsSvg}${gridSvg}${barrasSvg}${rotulosValoresSvg}${baselineSvg}${ticksSvg}${xLabelsSvg}
+    </svg>
+    ${numSeries > 1 ? vizLegenda(opcoes.series) : ''}
+    ${nota}
+  `;
+}
+</script>
+
+
+<!-- ==========================================================
+     4) SCRIPT — SUBSTITUA desenharGraficoMatriculasAnalisesSIGA inteira.
+     ========================================================== -->
+<script>
+function desenharGraficoMatriculasAnalisesSIGA(serie) {
+  const alvo = document.getElementById('graficoAnalisesMatriculas');
+  if (!alvo) return;
+  if (!serie.length) {
+    alvo.innerHTML = '<div class="estado-vazio">Sem dados no período.</div>';
+    return;
+  }
+
+  // Só marca se o mês corrente estiver mesmo na janela exibida.
+  const rotuloAtual = analisesRotuloMesAtual_();
+  const indiceParcial = serie.findIndex(x => x.periodo === rotuloAtual);
+
+  const hoje = new Date();
+  const diasNoMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate();
+
+  vizGraficoColunas(alvo, {
+    titulo: 'Matrículas vs. cancelamentos',
+    categorias: serie.map(x => x.periodo),
+    mostrarRotulosValores: true,
+    indiceParcial: indiceParcial,
+    rotuloParcial: 'mês em curso',
+    notaRodape: indiceParcial >= 0
+      ? 'A coluna hachurada é o mês em curso (' + hoje.getDate() + ' de ' + diasNoMes +
+        ' dias). As saídas se espalham pelo mês inteiro, então ela ainda vai crescer — ' +
+        'não compare com um mês fechado.'
+      : '',
+    series: [
+      { nome: 'Matrículas (ATIVAÇÃO, NOVA, UPGRADE)', cor: VIZ_COR.categorico[0], valores: serie.map(x => x.novas) },
+      { nome: 'Cancelamentos / saídas (CANCELADO, FINALIZADO, ABANDONO, SUSPENSO)', cor: VIZ_COR.categorico[1], valores: serie.map(x => x.canceladas) }
+    ]
+  });
+}
+</script>
+
+
+<!-- ==========================================================
+     5) ESTILO — acrescente ao <style> que já existe.
+     ========================================================== -->
+<style>
+#tela-analises .analises-nota-parcial{
+  margin:8px 4px 0;
+  padding:8px 11px;
+  border-radius:8px;
+  border:1px solid #f0dfae;
+  background:#fff8e6;
+  color:#8a5a00;
+  font-size:12px;
+  line-height:1.45;
+}
+</style>
