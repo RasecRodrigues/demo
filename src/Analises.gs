@@ -2944,9 +2944,40 @@ function procurarCopiaDoAnalisesSIGA() {
     copiaDetectada: temCopia,
     constantesQueVieramDeOutroArquivo: aindaExistem,
     versaoEmUso: versoes,
+    arquivoDesteCodigo: analisesNomeDoArquivoDesteCodigoSIGA_(),
+    pistaDeOrdem: versaoVelhaVencendo.length
+      ? 'A cópia está ABAIXO deste arquivo na lista (ela carrega depois e vence).'
+      : 'A cópia está ACIMA deste arquivo na lista (ela carrega antes e perde).',
     veredito
   };
 
   console.log(JSON.stringify(resultado, null, 2));
   return resultado;
+}
+
+/**
+ * Em qual arquivo .gs este código está?
+ *
+ * O Apps Script põe o nome do arquivo na pilha de erro. É a única forma
+ * de o código se localizar: ele não enxerga a lista de arquivos do
+ * projeto. Serve para você saber qual dos dois arquivos MANTER — o outro
+ * é a cópia.
+ *
+ * O formato da pilha muda entre versões do runtime, então volta também o
+ * texto cru: se a extração falhar, o nome ainda está lá para ler a olho.
+ */
+function analisesNomeDoArquivoDesteCodigoSIGA_() {
+  let pilha = '';
+  try {
+    throw new Error('sonda');
+  } catch (erro) {
+    pilha = String(erro && erro.stack || '');
+  }
+
+  // Ex.: "    at analisesNomeDoArquivoDesteCodigoSIGA_ (Analises:2960:11)"
+  const achado = pilha.match(/\(([^:()]+):\d+:\d+\)/);
+  return {
+    nomeProvavel: achado ? achado[1] + '.gs' : '(não consegui extrair — leia em pilhaCrua)',
+    pilhaCrua: pilha.split('\n').slice(0, 4).join(' | ')
+  };
 }
