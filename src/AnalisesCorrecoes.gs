@@ -400,3 +400,129 @@ function diagnosticarTiposMatriculaAnalisesSIGA() {
   console.log(JSON.stringify(diagnostico, null, 2));
   return diagnostico;
 }
+
+
+/* =========================================================
+ * DIAGNÓSTICO E FORÇA-BARRA
+ * Rode estes dois pelo editor do Apps Script.
+ * ========================================================= */
+
+/**
+ * Responde "por que não deu certo" sem chute.
+ *
+ * Verifica três coisas que costumam ser a causa:
+ *
+ * 1. As funções antigas continuam no Analises.gs. Se as duas versões
+ *    existirem, a ordem de carregamento decide qual vale — e pode ser a
+ *    antiga. A checagem lê o código da função em memória e procura uma
+ *    marca que só a versão corrigida tem.
+ *
+ * 2. O cache ainda está com a coluna de frequência em branco. A correção
+ *    PRESERVA o que existe, mas não inventa o que nunca foi calculado:
+ *    se o bug antigo apagou tudo, a coluna se enche ao longo de várias
+ *    execuções, 4,5 min por vez. Uma rodada só não basta — use
+ *    preencherFrequenciaAgoraSIGA abaixo para acelerar.
+ *
+ * 3. Falta alguma constante que as funções usam (nomes mudam entre
+ *    versões do Analises.gs).
+ */
+function diagnosticarInstalacaoCorrecoesSIGA() {
+  const versaoCorrigida = (fn, marca) => {
+    if (typeof fn !== 'function') return 'FUNCAO NAO EXISTE';
+    return fn.toString().indexOf(marca) >= 0
+      ? 'CORRIGIDA'
+      : 'AINDA A ANTIGA — apague a versão do Analises.gs';
+  };
+
+  const relatorio = {
+    funcoes: {
+      analisesGravarCacheComparativoTurmas_: versaoCorrigida(
+        typeof analisesGravarCacheComparativoTurmas_ !== 'undefined'
+          ? analisesGravarCacheComparativoTurmas_ : null,
+        'analisesLerFrequenciasCacheComparativo_'
+      ),
+      analisesAtualizarFrequenciaCacheComOrcamento_: versaoCorrigida(
+        typeof analisesAtualizarFrequenciaCacheComOrcamento_ !== 'undefined'
+          ? analisesAtualizarFrequenciaCacheComOrcamento_ : null,
+        'pendentes.concat(preenchidas)'
+      ),
+      calcularSerieMatriculasAnalisesSIGA_: versaoCorrigida(
+        typeof calcularSerieMatriculasAnalisesSIGA_ !== 'undefined'
+          ? calcularSerieMatriculasAnalisesSIGA_ : null,
+        'analisesTipoEntradaMatricula_'
+      )
+    },
+    auxiliares: {
+      analisesNumeroFrequenciaCacheV3_: typeof analisesNumeroFrequenciaCacheV3_ === 'function',
+      analisesLerFrequenciasCacheComparativo_: typeof analisesLerFrequenciasCacheComparativo_ === 'function',
+      analisesTipoEntradaMatricula_: typeof analisesTipoEntradaMatricula_ === 'function',
+      analisesStatusSaidaMatricula_: typeof analisesStatusSaidaMatricula_ === 'function'
+    },
+    constantesNecessarias: {
+      ANALISES_CACHE_SHEETS: typeof ANALISES_CACHE_SHEETS !== 'undefined',
+      ANALISES_CACHE_PROP_FREQ_CURSOR: typeof ANALISES_CACHE_PROP_FREQ_CURSOR !== 'undefined',
+      obterPainelFrequenciaTurma: typeof obterPainelFrequenciaTurma === 'function'
+    }
+  };
+
+  // Estado real da aba de cache.
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = typeof ANALISES_CACHE_SHEETS !== 'undefined'
+    ? ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO)
+    : null;
+
+  if (!aba || aba.getLastRow() < 2) {
+    relatorio.cache = 'A aba AnalisesCache_ComparativoTurmas não existe ou está vazia. '
+      + 'Clique em "Recalcular dados" na tela primeiro.';
+  } else {
+    const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 6).getValues();
+    const ativas = dados.filter(l => Number(l[1]) > 0);
+    const comFrequencia = ativas.filter(
+      l => analisesNumeroFrequenciaCacheV3_(l[5]) !== null
+    );
+
+    relatorio.cache = {
+      turmasNaAba: dados.length,
+      turmasAtivas: ativas.length,
+      comFrequencia: comFrequencia.length,
+      semFrequencia: ativas.length - comFrequencia.length,
+      cursor: PropertiesService.getScriptProperties()
+        .getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR) || '(no começo da fila)',
+      semFrequenciaExemplos: ativas
+        .filter(l => analisesNumeroFrequenciaCacheV3_(l[5]) === null)
+        .slice(0, 10)
+        .map(l => String(l[0]))
+    };
+  }
+
+  console.log(JSON.stringify(relatorio, null, 2));
+  return relatorio;
+}
+
+/**
+ * Preenche a frequência AGORA, sem esperar o gatilho.
+ *
+ * Cada execução tem o orçamento de 4,5 min do Apps Script e retoma de
+ * onde a anterior parou. Se "pendentes" voltar maior que zero, rode de
+ * novo — repita até chegar a zero. Numa escola com muitas turmas isso
+ * pode levar três, quatro execuções na primeira vez, porque o bug antigo
+ * deixou a coluna inteira em branco.
+ *
+ * Não recalcula matrículas, receita nem lucro: só a coluna de frequência.
+ */
+function preencherFrequenciaAgoraSIGA() {
+  const resultado = analisesAtualizarFrequenciaCacheComOrcamento_(
+    SpreadsheetApp.getActiveSpreadsheet(),
+    null,          // sem lista: lê as turmas da própria aba de cache
+    Date.now()     // orçamento novo para esta execução
+  );
+
+  console.log(JSON.stringify(resultado, null, 2));
+
+  if (resultado && Number(resultado.pendentes) > 0) {
+    console.log('AINDA FALTAM ' + resultado.pendentes +
+      ' turma(s) sem frequência. Rode preencherFrequenciaAgoraSIGA de novo.');
+  }
+
+  return resultado;
+}
