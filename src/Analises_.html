@@ -1458,7 +1458,7 @@ function carregarMovimentacaoAnalisesSIGA(forcarServidor) {
       const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
       alvo.innerHTML = '<div class="estado-vazio">Não foi possível carregar a movimentação.<br><small>' + escAnalisesSIGA(motivo) + '</small></div>';
     })
-    .obterMovimentacaoTurmaV2AnalisesSIGA({ token, turma, meses });
+    .obterMovimentacaoTurmaAnalisesSIGA({ token, turma, meses });
 }
 
 function preencherTurmasMovimentacaoAnalisesSIGA_(turmas) {
@@ -2160,7 +2160,7 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
       const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
       linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.<br><small>${escAnalisesSIGA(motivo)}</small></div></td>`;
     })
-    .obterAlunosPagamentosPorTurmaV2AnalisesSIGA({
+    .obterAlunosPagamentosPorTurmaAnalisesSIGA({
       token, turma,
       mesInicial: chaveMesFiltro || resultado?.mesInicial || null,
       mesFinal: chaveMesFiltro || resultado?.mesFinal || null

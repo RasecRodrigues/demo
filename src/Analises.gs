@@ -17,17 +17,17 @@
  * algumas dezenas/centenas de linhas é quase instantânea.
  */
 
-const ANALISES_CACHE_SHEETS_SIGA2 = {
+const ANALISES_CACHE_SHEETS = {
   GERAL: 'AnalisesCache_Geral',
   TURMA: 'AnalisesCache_Turma',
   COMPARATIVO: 'AnalisesCache_ComparativoTurmas',
   PAGAMENTO_ALUNO: 'AnalisesCache_PagamentoAluno'
 };
-const ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2 = 'ANALISES_CACHE_ATUALIZADO_EM';
+const ANALISES_CACHE_PROP_ATUALIZADO_EM = 'ANALISES_CACHE_ATUALIZADO_EM';
 // Turma em que o cálculo de frequência parou por falta de tempo; a próxima
 // execução retoma dela em vez de recomeçar do início da lista.
-const ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2 = 'ANALISES_CACHE_FREQ_CURSOR';
-const ANALISES_CACHE_MESES_MAX_SIGA2 = 36;
+const ANALISES_CACHE_PROP_FREQ_CURSOR = 'ANALISES_CACHE_FREQ_CURSOR';
+const ANALISES_CACHE_MESES_MAX = 36;
 
 /**
  * Endpoint principal chamado pela tela. Só LÊ o cache — não faz nenhuma
@@ -38,7 +38,7 @@ function obterAnalisesSIGA(filtros) {
   filtros = filtros || {};
   validarPermissaoPagamentosSIGA_(filtros.token);
 
-  const mesesJanela = Math.min(ANALISES_CACHE_MESES_MAX_SIGA2, Math.max(3, Number(filtros.meses) || 12));
+  const mesesJanela = Math.min(ANALISES_CACHE_MESES_MAX, Math.max(3, Number(filtros.meses) || 12));
   const periodos = analisesGerarPeriodos_(mesesJanela);
   const chaves = periodos.map(p => analisesMesRotulo_(p).chave);
   const chavesSet = new Set(chaves);
@@ -141,8 +141,44 @@ function obterAnalisesSIGA(filtros) {
       });
     });
 
-  const ultimaChaveComDados = chaves.slice().reverse().find(chave => geral.has(chave));
-  const alunosAtivos = ultimaChaveComDados ? geral.get(ultimaChaveComDados).ativos : 0;
+  /*
+   * Indicadores "AGORA":
+   * - matriculasAtivasAgora = quantidade de linhas da DimMatricula com STATUS = ATIVO/ATIVA;
+   * - alunosUnicosAtivosAgora = quantidade de alunos distintos com pelo menos uma matrícula ativa.
+   *
+   * Esses dois números são lidos diretamente da DimMatricula em cada abertura,
+   * portanto não dependem do cache histórico da tela.
+   */
+  const ssAgora = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMatAgora = ssAgora.getSheetByName('DimMatricula');
+  const matriculasAgora = abaMatAgora ? lerMatriculasPagUnif_(abaMatAgora) : [];
+
+  const ativasAgora = matriculasAgora.filter(m => {
+    const status = normalizarPagUnif_(m && m.status || '');
+    return status === 'ATIVO' || status === 'ATIVA';
+  });
+
+  const matriculasAtivasAgora = ativasAgora.length;
+
+  const alunosAtivosSet = new Set();
+  ativasAgora.forEach(m => {
+    const chaveAluno =
+      String(m.idAluno || '').trim() ||
+      normalizarPagUnif_(m.nome || '');
+
+    if (chaveAluno) {
+      alunosAtivosSet.add(chaveAluno);
+    }
+  });
+
+  const alunosUnicosAtivosAgora = alunosAtivosSet.size;
+
+  /*
+   * Mantém alunosAtivos por compatibilidade com o front atual.
+   * Agora ele representa ALUNOS ÚNICOS ativos, que é coerente com
+   * o rótulo "Alunos ativos agora".
+   */
+  const alunosAtivos = alunosUnicosAtivosAgora;
 
   return {
     sucesso: true,
@@ -155,9 +191,11 @@ function obterAnalisesSIGA(filtros) {
     serieMensalidadesPorTurma,
     detalheMensalPorTurma,
     lucroPorTurma,
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || null,
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
     resumo: {
       alunosAtivos,
+      alunosUnicosAtivosAgora,
+      matriculasAtivasAgora,
       turmasComparadas: comparativoTurmas.length,
       mensalidadesTotalPeriodo: arredPagUnif_(resumoPorTurma.reduce((s, x) => s + Number(x.receita || 0), 0))
     }
@@ -169,6 +207,13 @@ function obterAnalisesSIGA(filtros) {
  * devido) no período selecionado — chamado sob demanda quando o usuário
  * clica numa turma na tabela de mensalidades. Não faz parte do cache: é
  * um recorte de UMA turma só, então é rápido o bastante para rodar na hora.
+ *
+ * A conta é a MESMA de calcularMensalidadesPorTurmaAnalisesSIGA_, que
+ * produziu a linha da tabela: mesmo filtro de vigência
+ * (analisesMatriculaNoRateio_), mesmo recorte por turmas ativas e mesmo
+ * arredondamento por mês. Só assim o rodapé "Total conferido" fecha com a
+ * linha de cima por construção — e é isso que rateioVersao: 2 promete à
+ * tela. Qualquer divergência que apareça depois é dado, não versão.
  */
 function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   filtros = filtros || {};
@@ -177,7 +222,7 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   const turmaAlvo = String(filtros.turma || '').trim();
   const periodos = analisesPeriodosEntreChaves_(filtros.mesInicial, filtros.mesFinal);
   if (!turmaAlvo || !periodos.length) {
-    return { sucesso: true, turma: turmaAlvo, alunos: [] };
+    return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos: [] };
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -192,7 +237,19 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
   criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
   const valorPagoPorAlunoMesTurma = analisesLerCachePagamentoAluno_();
 
+  /*
+   * O mesmo conjunto de turmas que o cache usou ao montar a tabela. Sem
+   * este recorte, uma matrícula em turma fora da lista entra no rateio e
+   * leva uma fatia embora: a soma dos alunos sai MENOR que a linha da
+   * tabela, e a tela acusa divergência sem que nada esteja errado nos
+   * dados.
+   */
+  const turmasAtivas = new Set(
+    analisesLerCacheComparativoTurmas_().filter(x => x.ativos > 0).map(x => x.turma)
+  );
+
   const matriculasPorAluno = new Map();
+  const nomePorAluno = new Map();
   matriculas.forEach(m => {
     const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
     if (!chave) return;
@@ -200,11 +257,16 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       matriculasPorAluno.set(chave, []);
     }
     matriculasPorAluno.get(chave).push(m);
+    if (!nomePorAluno.has(chave) && m.nome) nomePorAluno.set(chave, m.nome);
   });
 
   const hoje = new Date();
   const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-  const totalPorAluno = new Map();
+
+  // chaveAluno -> (chaveMes -> parcela em reais, ainda sem arredondar)
+  const parcelaPorAlunoMes = new Map();
+  // chaveMes -> soma bruta da turma, para arredondar igual à tabela
+  const brutoPorMes = new Map();
 
   periodos.forEach(ref => {
     let dataCalculo;
@@ -228,18 +290,11 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       const vigentes = matsAluno.filter(m => analisesMatriculaNoRateio_(m, ref, dataCalculo));
       if (!vigentes.length) return;
 
-      const matriculaDaTurma = vigentes.find(m => String(m.turma || '').trim() === turmaAlvo);
-      if (!matriculaDaTurma) return;
-
       // Valor REALMENTE pago pelo aluno nesse mês (boleto pago +
       // comprovante), atribuído à turma certa quando o próprio pagamento
       // já identifica qual foi (turma na Comprovante de pagamento, ou
       // "Nome - Turma" no boleto); só cai no rateio proporcional (por
-      // valor devido) a parte de turma desconhecida. Isso evita que o
-      // pagamento de uma turma que o aluno já deixou apareça como se
-      // fosse desta. Não usa obterTurmasEValorDevidoDimPagUnif_ porque
-      // ela parte do status atual do aluno, e o que vale aqui é a
-      // vigência da matrícula na competência.
+      // valor devido) a parte de turma desconhecida.
       const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
       if (!porTurmaPagamento) return;
 
@@ -249,34 +304,24 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
           turma: String(m.turma || '').trim(),
           valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
         }))
-        .filter(d => d.turma);
+        .filter(d => d.turma && turmasAtivas.has(d.turma));
       if (!turmasDoMes.length) return;
 
-      const atribuicao = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes);
-      const valor = atribuicao.get(turmaAlvo) || 0;
-      if (!(valor > 0)) return;
+      const parcela = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes).get(turmaAlvo) || 0;
+      if (!(parcela > 0)) return;
 
-      const nome = matriculaDaTurma.nome || matriculaDaTurma.idAluno || '(sem nome)';
-
-      if (!totalPorAluno.has(chaveAluno)) {
-        totalPorAluno.set(chaveAluno, { aluno: nome, total: 0, porMes: new Map() });
-      }
-      const registro = totalPorAluno.get(chaveAluno);
-      registro.total += valor;
-      const rotuloMes = analisesChaveParaRotulo_(chaveMes);
-      registro.porMes.set(rotuloMes, (registro.porMes.get(rotuloMes) || 0) + valor);
+      if (!parcelaPorAlunoMes.has(chaveAluno)) parcelaPorAlunoMes.set(chaveAluno, new Map());
+      const mapaMes = parcelaPorAlunoMes.get(chaveAluno);
+      mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + parcela);
+      brutoPorMes.set(chaveMes, (brutoPorMes.get(chaveMes) || 0) + parcela);
     });
   });
 
-  const alunos = Array.from(totalPorAluno.values())
-    .map(x => ({
-      aluno: x.aluno,
-      total: arredPagUnif_(x.total),
-      porMes: Array.from(x.porMes.entries()).map(([periodo, valor]) => ({ periodo, valor: arredPagUnif_(valor) }))
-    }))
-    .sort((a, b) => b.total - a.total);
+  const alunos = analisesFecharCentavosPorMesAnalises_(
+    parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos
+  );
 
-  return { sucesso: true, turma: turmaAlvo, alunos };
+  return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos };
 }
 
 function analisesPeriodosEntreChaves_(mesInicial, mesFinal) {
@@ -305,7 +350,7 @@ function recalcularCacheAnalisesManualSIGA(filtros) {
   recalcularCacheAnalisesSIGA();
   return {
     sucesso: true,
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2)
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM)
   };
 }
 
@@ -338,7 +383,7 @@ function configurarGatilhoCacheAnalisesSIGA() {
 function garantirCacheAnalisesSIGA_() {
   const inicioExecucao = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL)) {
+  if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
     return;
   }
 
@@ -348,7 +393,7 @@ function garantirCacheAnalisesSIGA_() {
   }
   let nucleo;
   try {
-    if (ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL)) {
+    if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
       return; // outra execução já terminou de criar o cache enquanto esperávamos o lock
     }
     nucleo = analisesRecalcularCacheNucleoSemLock_(ss);
@@ -407,7 +452,7 @@ function analisesRecalcularCacheNucleoComLock_(ss) {
  * do zero.
  */
 function analisesRecalcularCacheNucleoSemLock_(ss) {
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
 
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
@@ -457,7 +502,7 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
 
-  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2, new Date().toISOString());
+  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
 }
 
 
@@ -467,7 +512,7 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
    EXPORTAÇÃO EM PDF
    ========================================================================== */
 
-const ANALISES_PDF_CONFIG_SIGA2 = {
+const ANALISES_PDF_CONFIG_ = {
   NOME_ESCOLA: 'Casa de Artes Gabriel Engel',
   NOME_PASTA: 'SIGA - Relatórios de Análises'
 };
@@ -511,7 +556,7 @@ function gerarPdfAnalisesSIGA(dados) {
   const partes = [];
 
   partes.push('<div class="capa">');
-  partes.push('<div class="escola">' + escapeHtmlAnalisesPdf_(ANALISES_PDF_CONFIG_SIGA2.NOME_ESCOLA) + '</div>');
+  partes.push('<div class="escola">' + escapeHtmlAnalisesPdf_(ANALISES_PDF_CONFIG_.NOME_ESCOLA) + '</div>');
   partes.push('<h1>Análises</h1>');
   partes.push('<div class="meta">Período: <strong>' + escapeHtmlAnalisesPdf_(dados.periodo || '—') + '</strong>'
     + ' &nbsp;·&nbsp; Gerado em ' + escapeHtmlAnalisesPdf_(geradoEm)
@@ -620,8 +665,8 @@ function obterPastaRelatoriosAnalisesSIGA_() {
       // pasta apagada: cai fora e cria outra
     }
   }
-  const iterador = DriveApp.getFoldersByName(ANALISES_PDF_CONFIG_SIGA2.NOME_PASTA);
-  const pasta = iterador.hasNext() ? iterador.next() : DriveApp.createFolder(ANALISES_PDF_CONFIG_SIGA2.NOME_PASTA);
+  const iterador = DriveApp.getFoldersByName(ANALISES_PDF_CONFIG_.NOME_PASTA);
+  const pasta = iterador.hasNext() ? iterador.next() : DriveApp.createFolder(ANALISES_PDF_CONFIG_.NOME_PASTA);
   propriedades.setProperty('PASTA_RELATORIOS_ANALISES_ID', pasta.getId());
   return pasta;
 }
@@ -664,21 +709,44 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
   const periodos = analisesGerarPeriodos_(meses);
   const entradas = new Map();
   const saidas = new Map();
-  const ativos = new Map();
+
+  /*
+   * IMPORTANTE:
+   * Este gráfico chama-se "ALUNOS ativos por mês".
+   * Portanto a contagem precisa ser por ALUNO ÚNICO, e não por linha
+   * de matrícula. Um aluno em duas turmas não pode aparecer duas vezes
+   * quando o filtro está em "Todas as turmas".
+   */
+  const alunosAtivosPorMes = new Map();
+
+  /*
+   * A tela mostra DUAS séries: alunos únicos e matrículas ativas. Um
+   * aluno em duas turmas é 1 aluno e 2 matrículas — por isso o Set para
+   * um e um contador simples para o outro. Mandar o mesmo número nas
+   * duas seria mentira, e é por isso que a tela recusa a resposta que
+   * não traz as duas.
+   */
+  const matriculasAtivasPorMes = new Map();
+
   periodos.forEach(p => {
     const chave = analisesMesRotulo_(p).chave;
     entradas.set(chave, 0);
     saidas.set(chave, 0);
-    ativos.set(chave, 0);
+    alunosAtivosPorMes.set(chave, new Set());
+    matriculasAtivasPorMes.set(chave, 0);
   });
 
   const turmas = new Set();
   let saidasSemData = 0;
 
+  const hoje = new Date();
   const limites = periodos.map(p => ({
     chave: analisesMesRotulo_(p).chave,
     inicio: p,
-    fim: new Date(p.getFullYear(), p.getMonth() + 1, 0, 23, 59, 59, 999)
+    fim: new Date(p.getFullYear(), p.getMonth() + 1, 0, 23, 59, 59, 999),
+    ehMesAtual:
+      p.getFullYear() === hoje.getFullYear() &&
+      p.getMonth() === hoje.getMonth()
   }));
 
   matriculas.forEach(m => {
@@ -686,21 +754,48 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     if (turma) turmas.add(turma);
     if (turmaAlvo && turma !== turmaAlvo) return;
 
+    const chaveAluno =
+      String(m.idAluno || '').trim() ||
+      normalizarPagUnif_(m.nome || '');
+
+    if (!chaveAluno) return;
+
     if (m.inicio instanceof Date) {
       const chave = analisesMesRotulo_(m.inicio).chave;
-      if (entradas.has(chave)) entradas.set(chave, entradas.get(chave) + 1);
+      if (entradas.has(chave)) {
+        entradas.set(chave, entradas.get(chave) + 1);
+      }
     }
 
     if (m.fim instanceof Date) {
       const chave = analisesMesRotulo_(m.fim).chave;
-      if (saidas.has(chave)) saidas.set(chave, saidas.get(chave) + 1);
+      if (saidas.has(chave)) {
+        saidas.set(chave, saidas.get(chave) + 1);
+      }
     } else if (!analisesEmCursoParaMovimentacao_(m)) {
       saidasSemData++;
     }
 
     limites.forEach(lim => {
-      if (analisesAtivoNoMes_(m, lim.inicio, lim.fim)) {
-        ativos.set(lim.chave, ativos.get(lim.chave) + 1);
+      let estaAtivo = false;
+
+      if (lim.ehMesAtual) {
+        /*
+         * MÊS ATUAL = situação de AGORA.
+         * Não projetamos até o último dia do mês.
+         */
+        const statusAtual = normalizarPagUnif_(m.status || '');
+        estaAtivo = statusAtual === 'ATIVO' || statusAtual === 'ATIVA';
+      } else {
+        /*
+         * MESES FECHADOS = vigência histórica.
+         */
+        estaAtivo = analisesAtivoNoMes_(m, lim.inicio, lim.fim);
+      }
+
+      if (estaAtivo) {
+        alunosAtivosPorMes.get(lim.chave).add(chaveAluno);
+        matriculasAtivasPorMes.set(lim.chave, matriculasAtivasPorMes.get(lim.chave) + 1);
       }
     });
   });
@@ -709,7 +804,20 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
     const { chave, rotulo } = analisesMesRotulo_(p);
     const ent = entradas.get(chave) || 0;
     const sai = saidas.get(chave) || 0;
-    return { periodo: rotulo, ativos: ativos.get(chave) || 0, entradas: ent, saidas: sai, saldo: ent - sai };
+
+    const alunos = alunosAtivosPorMes.get(chave) ? alunosAtivosPorMes.get(chave).size : 0;
+
+    return {
+      periodo: rotulo,
+      alunosAtivos: alunos,
+      matriculasAtivas: matriculasAtivasPorMes.get(chave) || 0,
+      // Mantido pelo nome antigo para não quebrar nada que ainda leia
+      // `ativos`. Continua sendo a contagem de ALUNOS, como antes.
+      ativos: alunos,
+      entradas: ent,
+      saidas: sai,
+      saldo: ent - sai
+    };
   });
 
   return {
@@ -823,7 +931,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
     return vazio;
   }
 
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
   if (!aba || aba.getLastRow() < 2 || aba.getLastColumn() < 6) return vazio;
 
   // O orçamento conta a execução INTEIRA: as etapas anteriores já
@@ -867,11 +975,11 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
 
   const props = PropertiesService.getScriptProperties();
   if (!fila.length) {
-    props.deleteProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2);
+    props.deleteProperty(ANALISES_CACHE_PROP_FREQ_CURSOR);
     return vazio;
   }
 
-  const retomada = props.getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2) || '';
+  const retomada = props.getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR) || '';
   const encontrado = retomada ? fila.indexOf(retomada) : -1;
   const indiceInicial = encontrado >= 0 ? encontrado : 0;
 
@@ -933,7 +1041,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
   }
 
   try {
-    const atual = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
+    const atual = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
     if (atual && atual.getLastRow() >= 2 && atual.getLastColumn() >= 6) {
       const linhas = atual.getRange(2, 1, atual.getLastRow() - 1, 6).getValues();
 
@@ -952,7 +1060,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
       }
     }
 
-    props.setProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2, proximaTurma);
+    props.setProperty(ANALISES_CACHE_PROP_FREQ_CURSOR, proximaTurma);
   } finally {
     lock.releaseLock();
   }
@@ -979,12 +1087,12 @@ function analisesGerarPeriodos_(mesesJanela) {
   return periodos;
 }
 
-const ANALISES_MESES_ABREV_PT_SIGA2 = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const ANALISES_MESES_ABREV_PT_ = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 function analisesChaveParaRotulo_(chave) {
   const partes = String(chave).split('-');
   const mes = Number(partes[1]);
-  return ANALISES_MESES_ABREV_PT_SIGA2[mes - 1] + '-' + partes[0].slice(-2);
+  return ANALISES_MESES_ABREV_PT_[mes - 1] + '-' + partes[0].slice(-2);
 }
 
 function analisesObterOuCriarAbaCache_(ss, nome, cabecalhos) {
@@ -1016,7 +1124,7 @@ function analisesNormalizarChaveMes_(valor) {
 }
 
 function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.GERAL, ['Mes', 'Ativos', 'Novas', 'Cancelamentos', 'Receita']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.GERAL, ['Mes', 'Ativos', 'Novas', 'Cancelamentos', 'Receita']);
   const linhas = periodos.map((p, i) => {
     const chave = analisesMesRotulo_(p).chave;
     const mat = serieMatriculas[i] || {};
@@ -1029,7 +1137,7 @@ function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceir
 }
 
 function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfessorPorTurmaMes) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.TURMA, ['Mes', 'Turma', 'Receita', 'CustoProfessor']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita', 'CustoProfessor']);
   const linhas = [];
   detalhesPorTurma.forEach((pontos, turma) => {
     periodos.forEach((p, i) => {
@@ -1053,7 +1161,7 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfesso
  * turma não pôde ser identificada — ver analisesAtribuirPagamentoPorTurma_).
  */
 function analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.PAGAMENTO_ALUNO, ['ChaveAlunoMes', 'Turma', 'Valor']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO, ['ChaveAlunoMes', 'Turma', 'Valor']);
   const linhas = [];
   valorPagoPorAlunoMesTurma.forEach((porTurma, chaveAlunoMes) => {
     porTurma.forEach((valor, turma) => {
@@ -1084,7 +1192,7 @@ function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequencia
 
   const aba = analisesObterOuCriarAbaCache_(
     ss,
-    ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO,
+    ANALISES_CACHE_SHEETS.COMPARATIVO,
     ['Turma', 'Ativos', 'Saidas', 'Total', 'TaxaEvasao', 'FrequenciaMedia']
   );
 
@@ -1108,7 +1216,7 @@ function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequencia
 
 function analisesLerCacheGeral_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL);
   const mapa = new Map();
   if (!aba || aba.getLastRow() < 2) {
     return mapa;
@@ -1131,7 +1239,7 @@ function analisesLerCacheGeral_() {
 
 function analisesLerCacheTurma_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.TURMA);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.TURMA);
   const lista = [];
   if (!aba || aba.getLastRow() < 2) {
     return lista;
@@ -1150,7 +1258,7 @@ function analisesLerCacheTurma_() {
 
 function analisesLerCacheComparativoTurmas_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
   const lista = [];
   if (!aba || aba.getLastRow() < 2) {
     return lista;
@@ -1181,7 +1289,7 @@ function analisesLerCacheComparativoTurmas_() {
  */
 function analisesLerCachePagamentoAluno_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.PAGAMENTO_ALUNO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO);
   const mapa = new Map();
   if (!aba || aba.getLastRow() < 2) {
     return mapa;
@@ -1589,7 +1697,7 @@ function diagnosticarCacheMensalidadesAnalisesSIGA() {
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
   const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
 
   const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
   let totalAoVivo = 0;
@@ -1610,7 +1718,7 @@ function diagnosticarCacheMensalidadesAnalisesSIGA() {
   cachePagamentoAluno.forEach(porTurma => porTurma.forEach(v => { totalGravadoCachePagamentoAluno += v; }));
 
   const diagnostico = {
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2),
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM),
     totalAoVivo_semNenhumFiltro: arredPagUnif_(totalAoVivo),
     totalAposFiltroTurmaAtiva_calculadoAgora: arredPagUnif_(totalAposFiltroTurma),
     totalGravadoNoCache_AnalisesCache_Turma: arredPagUnif_(totalGravadoCacheTurma),
@@ -1660,7 +1768,7 @@ function diagnosticarAlunoAnalisesSIGA(nomeParcial, mesChave) {
 
   const chavesAluno = new Set(matsDoAluno.map(m => m.chaveAluno).filter(Boolean));
 
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
   const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
 
   const pagamentos = [];
@@ -1789,7 +1897,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
 
 function analisesMesRotulo_(data) {
   const chave = Utilities.formatDate(data, Session.getScriptTimeZone(), 'yyyy-MM');
-  const rotulo = ANALISES_MESES_ABREV_PT_SIGA2[data.getMonth()] + '-' + String(data.getFullYear()).slice(-2);
+  const rotulo = ANALISES_MESES_ABREV_PT_[data.getMonth()] + '-' + String(data.getFullYear()).slice(-2);
   return { chave, rotulo };
 }
 
@@ -1879,14 +1987,19 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas, incluirTodas) {
   return incluirTodas ? lista : lista.slice(0, 20);
 }
 
+
 /* =========================================================
- * CORREÇÕES — tudo o que segue foi acrescentado a este arquivo
- * (nada de arquivo novo). Três funções acima foram trocadas no
- * lugar: analisesGravarCacheComparativoTurmas_,
- * analisesAtualizarFrequenciaCacheComOrcamento_ e
- * calcularSerieMatriculasAnalisesSIGA_.
+ * AUXILIARES E DIAGNÓSTICOS
  *
- * Depois de colar, rode uma vez recalcularCacheAnalisesSIGA().
+ * Daqui para baixo é tudo função nova. As correções em si já estão
+ * acima, dentro das funções que sempre existiram — não há nada para
+ * apagar nem arquivo separado para criar.
+ *
+ * Para rodar pelo botão Executar (nenhuma pede argumento):
+ *   listarEntradasDoMesSIGA          por que o mês tem esse número de entradas
+ *   analisesReconciliarMatriculasSIGA  DimMatricula x o que o sistema lê x o gráfico
+ *   diagnosticarTiposMatriculaAnalisesSIGA  todos os TIPO/STATUS que existem
+ *   preencherFrequenciaAgoraSIGA     enche a coluna de frequência do cache
  * ========================================================= */
 
 /** Aceita número, "81,25" e "81,25%". Fora de 0..100 é dado inválido. */
@@ -1901,14 +2014,13 @@ function analisesNumeroFrequenciaCacheV3_(valor) {
   return Number.isFinite(numero) && numero >= 0 && numero <= 100 ? numero : null;
 }
 
-
 /**
  * Médias já gravadas, por turma. Zero verdadeiro é preservado — só o
  * vazio vira null.
  */
 function analisesLerFrequenciasCacheComparativo_(ss) {
   const mapa = new Map();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
 
   // Aba recém-criada pode ainda não ter as 6 colunas; ler além do que
   // existe lança exceção e derrubaria o recálculo inteiro.
@@ -1923,13 +2035,11 @@ function analisesLerFrequenciasCacheComparativo_(ss) {
   return mapa;
 }
 
-
 /** ATIVAÇÃO vira ATIVACAO em normalizarPagUnif_ (o acento é removido). */
 function analisesTipoEntradaMatricula_(tipo) {
   const t = normalizarPagUnif_(tipo || '');
   return t === 'ATIVACAO' || t === 'NOVA' || t === 'UPGRADE';
 }
-
 
 /** Aceita as duas formas de gênero: a planilha traz as duas. */
 function analisesStatusSaidaMatricula_(status) {
@@ -1939,7 +2049,6 @@ function analisesStatusSaidaMatricula_(status) {
     || s === 'ABANDONO'
     || s === 'SUSPENSO' || s === 'SUSPENSA';
 }
-
 
 /**
  * Diagnóstico — rode pelo editor do Apps Script antes de estranhar os
@@ -1984,100 +2093,6 @@ function diagnosticarTiposMatriculaAnalisesSIGA() {
   return diagnostico;
 }
 
-
-/**
- * Responde "por que não deu certo" sem chute.
- *
- * Verifica três coisas que costumam ser a causa:
- *
- * 1. As funções antigas continuam no Analises.gs. Se as duas versões
- *    existirem, a ordem de carregamento decide qual vale — e pode ser a
- *    antiga. A checagem lê o código da função em memória e procura uma
- *    marca que só a versão corrigida tem.
- *
- * 2. O cache ainda está com a coluna de frequência em branco. A correção
- *    PRESERVA o que existe, mas não inventa o que nunca foi calculado:
- *    se o bug antigo apagou tudo, a coluna se enche ao longo de várias
- *    execuções, 4,5 min por vez. Uma rodada só não basta — use
- *    preencherFrequenciaAgoraSIGA abaixo para acelerar.
- *
- * 3. Falta alguma constante que as funções usam (nomes mudam entre
- *    versões do Analises.gs).
- */
-function diagnosticarInstalacaoCorrecoesSIGA() {
-  const versaoCorrigida = (fn, marca) => {
-    if (typeof fn !== 'function') return 'FUNCAO NAO EXISTE';
-    return fn.toString().indexOf(marca) >= 0
-      ? 'CORRIGIDA'
-      : 'AINDA A ANTIGA — este arquivo não é o corrigido; cole a versão nova por cima';
-  };
-
-  const relatorio = {
-    funcoes: {
-      analisesGravarCacheComparativoTurmas_: versaoCorrigida(
-        typeof analisesGravarCacheComparativoTurmas_ !== 'undefined'
-          ? analisesGravarCacheComparativoTurmas_ : null,
-        'analisesLerFrequenciasCacheComparativo_'
-      ),
-      analisesAtualizarFrequenciaCacheComOrcamento_: versaoCorrigida(
-        typeof analisesAtualizarFrequenciaCacheComOrcamento_ !== 'undefined'
-          ? analisesAtualizarFrequenciaCacheComOrcamento_ : null,
-        'pendentes.concat(preenchidas)'
-      ),
-      calcularSerieMatriculasAnalisesSIGA_: versaoCorrigida(
-        typeof calcularSerieMatriculasAnalisesSIGA_ !== 'undefined'
-          ? calcularSerieMatriculasAnalisesSIGA_ : null,
-        'analisesTipoEntradaMatricula_'
-      )
-    },
-    auxiliares: {
-      analisesNumeroFrequenciaCacheV3_: typeof analisesNumeroFrequenciaCacheV3_ === 'function',
-      analisesLerFrequenciasCacheComparativo_: typeof analisesLerFrequenciasCacheComparativo_ === 'function',
-      analisesTipoEntradaMatricula_: typeof analisesTipoEntradaMatricula_ === 'function',
-      analisesStatusSaidaMatricula_: typeof analisesStatusSaidaMatricula_ === 'function'
-    },
-    constantesNecessarias: {
-      ANALISES_CACHE_SHEETS_SIGA2: typeof ANALISES_CACHE_SHEETS_SIGA2 !== 'undefined',
-      ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2: typeof ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2 !== 'undefined',
-      obterPainelFrequenciaTurma: typeof obterPainelFrequenciaTurma === 'function'
-    }
-  };
-
-  // Estado real da aba de cache.
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = typeof ANALISES_CACHE_SHEETS_SIGA2 !== 'undefined'
-    ? ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO)
-    : null;
-
-  if (!aba || aba.getLastRow() < 2) {
-    relatorio.cache = 'A aba AnalisesCache_ComparativoTurmas não existe ou está vazia. '
-      + 'Clique em "Recalcular dados" na tela primeiro.';
-  } else {
-    const dados = aba.getRange(2, 1, aba.getLastRow() - 1, 6).getValues();
-    const ativas = dados.filter(l => Number(l[1]) > 0);
-    const comFrequencia = ativas.filter(
-      l => analisesNumeroFrequenciaCacheV3_(l[5]) !== null
-    );
-
-    relatorio.cache = {
-      turmasNaAba: dados.length,
-      turmasAtivas: ativas.length,
-      comFrequencia: comFrequencia.length,
-      semFrequencia: ativas.length - comFrequencia.length,
-      cursor: PropertiesService.getScriptProperties()
-        .getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2) || '(no começo da fila)',
-      semFrequenciaExemplos: ativas
-        .filter(l => analisesNumeroFrequenciaCacheV3_(l[5]) === null)
-        .slice(0, 10)
-        .map(l => String(l[0]))
-    };
-  }
-
-  console.log(JSON.stringify(relatorio, null, 2));
-  return relatorio;
-}
-
-
 /**
  * Preenche a frequência AGORA, sem esperar o gatilho.
  *
@@ -2105,7 +2120,6 @@ function preencherFrequenciaAgoraSIGA() {
 
   return resultado;
 }
-
 
 /**
  * Diagnóstico do gráfico "Matrículas vs. cancelamentos".
@@ -2224,167 +2238,65 @@ function diagnosticarSerieMatriculasAnalisesSIGA(meses) {
   return diagnostico;
 }
 
-
 /**
- * Entradas, saídas, alunos únicos e matrículas ativas por mês —
- * opcionalmente de UMA turma.
+ * Fecha os centavos: a tabela arredonda a SOMA do mês, o detalhamento
+ * arredonda aluno por aluno. Arredondar dez parcelas e somar pode dar um
+ * ou dois centavos a mais que arredondar a soma — e é isso que faria a
+ * tela acusar divergência num mês em que ninguém errou nada.
  *
- * Fora do cache de Análises de propósito: lê só a DimMatricula (nada de
- * TodosBoletos), roda em segundos e reflete o cadastro de agora, sem
- * esperar o recálculo de 6 horas.
- *
- * Entrada = matrícula cuja data de início cai no mês.
- * Saída   = matrícula cuja data de encerramento cai no mês.
- *
- * Matrícula encerrada SEM data de encerramento não entra em mês nenhum —
- * não há como saber quando saiu. O total volta em `saidasSemData` para a
- * tela avisar em vez de fingir que o histórico está completo.
+ * A sobra vai para o aluno de maior valor no mês. É alocação de exibição,
+ * nunca invenção: o total do mês continua sendo exatamente o da tabela.
  */
-function obterMovimentacaoTurmaV2AnalisesSIGA(filtros) {
-  filtros = filtros || {};
-  validarPermissaoPagamentosSIGA_(filtros.token);
+function analisesFecharCentavosPorMesAnalises_(parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos) {
+  const chavesMes = periodos.map(p => analisesMesRotulo_(p).chave);
+  const centavosPorAlunoMes = new Map();
 
-  const meses = Math.max(1, Math.min(36, Number(filtros.meses || 12)));
-  const turmaAlvo = String(filtros.turma || '').trim();
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const matriculas = lerMatriculasPagUnif_(ss.getSheetByName('DimMatricula'));
-
-  const periodos = analisesGerarPeriodos_(meses);
-
-  /*
-   * Um Set de alunos por mês, não um contador: é o que separa "quantas
-   * pessoas" de "quantas matrículas". Sem isso, um aluno matriculado em
-   * teatro e em formação apareceria como duas pessoas.
-   */
-  const porMes = new Map();
-  const limites = periodos.map(p => {
-    const { chave } = analisesMesRotulo_(p);
-    porMes.set(chave, {
-      entradas: 0,
-      saidas: 0,
-      matriculasAtivas: 0,
-      alunos: new Set()
+  chavesMes.forEach(chaveMes => {
+    const doMes = [];
+    parcelaPorAlunoMes.forEach((mapaMes, chaveAluno) => {
+      const valor = mapaMes.get(chaveMes);
+      if (valor > 0) doMes.push({ chaveAluno, valor });
     });
-    return {
-      chave,
-      inicio: p,
-      fim: new Date(p.getFullYear(), p.getMonth() + 1, 0, 23, 59, 59, 999)
-    };
-  });
+    if (!doMes.length) return;
 
-  const turmas = new Set();
-  let saidasSemData = 0;
+    const alvoCentavos = Math.round(arredPagUnif_(brutoPorMes.get(chaveMes) || 0) * 100);
+    let somaCentavos = 0;
+    doMes.forEach(item => {
+      item.centavos = Math.round(item.valor * 100);
+      somaCentavos += item.centavos;
+    });
 
-  matriculas.forEach(m => {
-    const turma = String(m.turma || '').trim();
-    if (turma) turmas.add(turma);
-    if (turmaAlvo && turma !== turmaAlvo) return;
-
-    const aluno = analisesChaveAlunoMovimentacaoV2_(m);
-
-    if (m.inicio instanceof Date) {
-      const registro = porMes.get(analisesMesRotulo_(m.inicio).chave);
-      if (registro) registro.entradas++;
+    const sobra = alvoCentavos - somaCentavos;
+    if (sobra !== 0) {
+      doMes.reduce((maior, item) => (item.centavos > maior.centavos ? item : maior), doMes[0]).centavos += sobra;
     }
 
-    if (m.fim instanceof Date) {
-      const registro = porMes.get(analisesMesRotulo_(m.fim).chave);
-      if (registro) registro.saidas++;
-    } else if (!analisesEmCursoMovimentacaoV2_(m)) {
-      saidasSemData++;
-    }
-
-    limites.forEach(lim => {
-      if (!analisesAtivoNoMesV2_(m, lim.inicio, lim.fim)) return;
-      const registro = porMes.get(lim.chave);
-      registro.matriculasAtivas++;
-      if (aluno) registro.alunos.add(aluno);
+    doMes.forEach(item => {
+      if (!(item.centavos > 0)) return;
+      if (!centavosPorAlunoMes.has(item.chaveAluno)) centavosPorAlunoMes.set(item.chaveAluno, new Map());
+      centavosPorAlunoMes.get(item.chaveAluno).set(chaveMes, item.centavos);
     });
   });
 
-  const serie = periodos.map(p => {
-    const { chave, rotulo } = analisesMesRotulo_(p);
-    const registro = porMes.get(chave);
-    return {
-      periodo: rotulo,
-      alunosAtivos: registro.alunos.size,
-      matriculasAtivas: registro.matriculasAtivas,
-      // Mantido pelo nome antigo para não quebrar nada que ainda leia
-      // `ativos`. É a contagem de LINHAS, igual a matriculasAtivas.
-      ativos: registro.matriculasAtivas,
-      entradas: registro.entradas,
-      saidas: registro.saidas,
-      saldo: registro.entradas - registro.saidas
-    };
+  const lista = [];
+  centavosPorAlunoMes.forEach((mapaMes, chaveAluno) => {
+    let total = 0;
+    const porMes = [];
+    chavesMes.forEach(chaveMes => {
+      const centavos = mapaMes.get(chaveMes) || 0;
+      if (!centavos) return;
+      total += centavos;
+      porMes.push({ periodo: analisesChaveParaRotulo_(chaveMes), valor: centavos / 100 });
+    });
+    lista.push({
+      aluno: nomePorAluno.get(chaveAluno) || '(sem nome)',
+      total: total / 100,
+      porMes
+    });
   });
 
-  return {
-    sucesso: true,
-    turma: turmaAlvo,
-    turmas: Array.from(turmas).sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    serie,
-    saidasSemData
-  };
+  return lista.sort((a, b) => b.total - a.total);
 }
-
-/**
- * Identidade do aluno para contar pessoas únicas.
- *
- * ID_ALUNO manda quando existe. Sem ele, o nome normalizado — imperfeito
- * (dois homônimos viram um), mas melhor que contar a mesma pessoa duas
- * vezes só porque ela está em duas turmas.
- */
-function analisesChaveAlunoMovimentacaoV2_(m) {
-  const id = String(m && m.idAluno || '').trim();
-  if (id) return 'ID:' + id;
-  const nome = normalizarPagUnif_(m && m.nome || '');
-  return nome ? 'NOME:' + nome : '';
-}
-
-/** Matrícula que ainda não é uma saída: em curso, em espera ou suspensa. */
-function analisesEmCursoMovimentacaoV2_(m) {
-  const status = normalizarPagUnif_(m && m.status || '');
-  return status === 'ATIVO' || status === 'ATIVA'
-    || status === 'EM ESPERA'
-    || status === 'SUSPENSO' || status === 'SUSPENSA';
-}
-
-/**
- * A matrícula estava ativa NAQUELE mês?
- *
- * Conta por VIGÊNCIA, não pelo status de hoje. É a diferença para
- * calcularSerieMatriculasAnalisesSIGA_, que exige status ativo AGORA —
- * por isso lá quem já saiu some até dos meses em que ainda estava na
- * turma, e a série histórica fica menor do que foi de verdade.
- *
- * Sem data de fim não dá para saber quando saiu: aí o status atual decide.
- */
-function analisesAtivoNoMesV2_(m, inicioMes, fimMes) {
-  if (!m || !(m.inicio instanceof Date)) return false;
-  if (m.inicio > fimMes) return false;
-  if (m.fim instanceof Date) return m.fim >= inicioMes;
-  return analisesEmCursoMovimentacaoV2_(m);
-}
-
-
-/* =========================================================
- * RECONCILIAÇÃO — "os valores do gráfico não batem com a DimMatricula"
- *
- * Rode analisesReconciliarMatriculasSIGA(12) pelo editor do Apps Script e
- * leia o JSON. Ele responde as três perguntas, mês a mês, sem chute:
- *
- *   1. O que a DimMatricula tem de verdade (linha crua, sem nenhum filtro).
- *   2. O que o sistema consegue LER dela (lerMatriculasPagUnif_ descarta
- *      linha sem NOME_ALUNO ou sem TURMA — se sobrar diferença aqui, é
- *      cadastro, não código).
- *   3. O que o gráfico está MOSTRANDO (lido do AnalisesCache_Geral, que é
- *      de onde a tela tira os números).
- *
- * Se 1 ≠ 2 → falta preencher nome/turma em algumas linhas.
- * Se 2 ≠ 3 → o cache está velho (recalcule) ou a correção do TIPO/STATUS
- *            não está valendo (veja diagnosticarInstalacaoCorrecoesSIGA).
- * ========================================================= */
 
 function analisesReconciliarMatriculasSIGA(meses) {
   const janela = Math.max(1, Math.min(36, Number(meses) || 12));
@@ -2544,7 +2456,7 @@ function analisesReconciliarMatriculasSIGA(meses) {
   const diagnostico = {
     janelaMeses: janela,
     atualizadoEmDoCache:
-      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || '(nunca)',
+      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || '(nunca)',
     linhasNaDimMatricula: linhasTotais,
     linhasQueOSistemaNaoLe: {
       semNomeAluno: descartadasSemNome,
@@ -2561,7 +2473,6 @@ function analisesReconciliarMatriculasSIGA(meses) {
   console.log(JSON.stringify(diagnostico, null, 2));
   return diagnostico;
 }
-
 
 /**
  * "De onde saiu esse número?" — lista NOME por NOME as matrículas que o
@@ -2655,9 +2566,9 @@ function listarEntradasDoMesSIGA(chaveMes) {
     veredito = 'BATE com o filtro de TIPO. O gráfico está contando o que promete.';
   } else if (contaDoGrafico === semFiltroDeTipo) {
     veredito = 'BATE com a conta SEM filtro de TIPO (' + semFiltroDeTipo + '). ' +
-      'A legenda diz ATIVAÇÃO/NOVA/UPGRADE, mas o cache foi gravado pela ' +
-      'versão antiga de calcularSerieMatriculasAnalisesSIGA_. ' +
-      'Rode recalcularCacheAnalisesSIGA() para regravar com a conta certa.';
+      'A legenda diz ATIVAÇÃO/NOVA/UPGRADE, mas a versão antiga de ' +
+      'calcularSerieMatriculasAnalisesSIGA_ ainda está valendo. ' +
+      'Apague a antiga do Analises.gs e rode recalcularCacheAnalisesSIGA().';
   } else {
     veredito = 'NÃO bate com nenhuma das duas contas — o cache está velho. ' +
       'Rode recalcularCacheAnalisesSIGA() e repita.';
@@ -2670,7 +2581,7 @@ function listarEntradasDoMesSIGA(chaveMes) {
     recalculadoAgoraSemFiltroDeTipo: semFiltroDeTipo,
     veredito,
     cacheAtualizadoEm:
-      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || '(nunca)',
+      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || '(nunca)',
     entradasContadas: entradas,
     // Caíram no mês, mas o TIPO não é entrada.
     ignoradasPeloTipo: forasPorTipo,
@@ -2681,303 +2592,4 @@ function listarEntradasDoMesSIGA(chaveMes) {
 
   console.log(JSON.stringify(resultado, null, 2));
   return resultado;
-}
-
-
-/* =========================================================
- * DETALHAMENTO DE ALUNOS — "O detalhamento ainda não usa o rateio
- * consolidado. Instale a correção do backend."
- *
- * Mesmo caso do cartão vazio: a tela exige rateioVersao: 2 e o backend
- * não manda. Mas carimbar a versão sem mais nada só trocaria a mensagem
- * cinza por uma amarela ("A apuração da tabela e a do detalhamento não
- * estão na mesma versão"), porque as duas contas eram MESMO diferentes:
- *
- *   tabela  → analisesMatriculaNoRateio_ + filtro por turmas ativas
- *   detalhe → status ATIVO/SUSPENSO + exigia matrícula na turma clicada
- *
- * A versão abaixo roda o MESMO laço de calcularMensalidadesPorTurmaAnalisesSIGA_,
- * só que guardando a parcela de cada aluno em vez de somar tudo na turma.
- * Assim o rodapé "Total conferido" fecha com a linha da tabela por
- * construção, não por coincidência.
- * ========================================================= */
-
-function obterAlunosPagamentosPorTurmaV2AnalisesSIGA(filtros) {
-  filtros = filtros || {};
-  validarPermissaoPagamentosSIGA_(filtros.token);
-
-  const turmaAlvo = String(filtros.turma || '').trim();
-  const periodos = analisesPeriodosEntreChaves_(filtros.mesInicial, filtros.mesFinal);
-  if (!turmaAlvo || !periodos.length) {
-    return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos: [] };
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  garantirCacheAnalisesSIGA_();
-
-  const matriculas = lerMatriculasPagUnif_(ss.getSheetByName('DimMatricula'));
-  criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
-  const valorPagoPorAlunoMesTurma = analisesLerCachePagamentoAluno_();
-
-  /*
-   * O mesmo conjunto de turmas que o cache usou. Sem esse filtro, um
-   * aluno com matrícula numa turma fora da lista dividiria o pagamento
-   * dele com ela, e a fatia desta turma sairia menor do que a da tabela.
-   */
-  const turmasAtivas = new Set(
-    analisesLerCacheComparativoTurmas_().filter(x => x.ativos > 0).map(x => x.turma)
-  );
-
-  const matriculasPorAluno = new Map();
-  const nomePorAluno = new Map();
-  matriculas.forEach(m => {
-    const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
-    if (!chave) return;
-    if (!matriculasPorAluno.has(chave)) matriculasPorAluno.set(chave, []);
-    matriculasPorAluno.get(chave).push(m);
-    if (!nomePorAluno.has(chave) && m.nome) nomePorAluno.set(chave, m.nome);
-  });
-
-  const hoje = new Date();
-  const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-
-  // chaveAluno -> (chaveMes -> parcela em reais, ainda sem arredondar)
-  const parcelaPorAlunoMes = new Map();
-  // chaveMes -> soma bruta da turma, para arredondar igual à tabela
-  const brutoPorMes = new Map();
-
-  periodos.forEach(ref => {
-    let dataCalculo;
-    if (ref < inicioMesAtual) {
-      dataCalculo = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
-    } else if (ref.getFullYear() === hoje.getFullYear() && ref.getMonth() === hoje.getMonth()) {
-      dataCalculo = hoje;
-    } else {
-      dataCalculo = new Date(ref.getFullYear(), ref.getMonth(), 1);
-    }
-
-    const chaveMes = analisesMesRotulo_(ref).chave;
-
-    matriculasPorAluno.forEach((matsAluno, chaveAluno) => {
-      const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
-      if (!porTurmaPagamento) return;
-
-      const ativas = matsAluno.filter(m => analisesMatriculaNoRateio_(m, ref, dataCalculo));
-      if (!ativas.length) return;
-
-      const combo = ativas.length > 1;
-      const turmasDoMes = ativas
-        .map(m => ({
-          turma: String(m.turma || '').trim(),
-          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
-        }))
-        .filter(d => d.turma && turmasAtivas.has(d.turma));
-      if (!turmasDoMes.length) return;
-
-      const parcela = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes).get(turmaAlvo) || 0;
-      if (!(parcela > 0)) return;
-
-      if (!parcelaPorAlunoMes.has(chaveAluno)) parcelaPorAlunoMes.set(chaveAluno, new Map());
-      const mapaMes = parcelaPorAlunoMes.get(chaveAluno);
-      mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + parcela);
-      brutoPorMes.set(chaveMes, (brutoPorMes.get(chaveMes) || 0) + parcela);
-    });
-  });
-
-  const alunos = analisesFecharCentavosPorMesV2_(parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos);
-
-  return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos };
-}
-
-/**
- * Fecha os centavos: a tabela arredonda a SOMA do mês, o detalhamento
- * arredonda aluno por aluno. Arredondar dez parcelas e somar pode dar um
- * ou dois centavos a mais que arredondar a soma — e é isso que faria a
- * tela acusar divergência num mês em que ninguém errou nada.
- *
- * A sobra vai para o aluno de maior valor no mês. É alocação de exibição,
- * nunca invenção: o total do mês continua sendo exatamente o da tabela.
- */
-function analisesFecharCentavosPorMesV2_(parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos) {
-  const chavesMes = periodos.map(p => analisesMesRotulo_(p).chave);
-  const centavosPorAlunoMes = new Map();
-
-  chavesMes.forEach(chaveMes => {
-    const doMes = [];
-    parcelaPorAlunoMes.forEach((mapaMes, chaveAluno) => {
-      const valor = mapaMes.get(chaveMes);
-      if (valor > 0) doMes.push({ chaveAluno, valor });
-    });
-    if (!doMes.length) return;
-
-    const alvoCentavos = Math.round(arredPagUnif_(brutoPorMes.get(chaveMes) || 0) * 100);
-    let somaCentavos = 0;
-    doMes.forEach(item => {
-      item.centavos = Math.round(item.valor * 100);
-      somaCentavos += item.centavos;
-    });
-
-    const sobra = alvoCentavos - somaCentavos;
-    if (sobra !== 0) {
-      doMes.reduce((maior, item) => (item.centavos > maior.centavos ? item : maior), doMes[0]).centavos += sobra;
-    }
-
-    doMes.forEach(item => {
-      if (!(item.centavos > 0)) return;
-      if (!centavosPorAlunoMes.has(item.chaveAluno)) centavosPorAlunoMes.set(item.chaveAluno, new Map());
-      centavosPorAlunoMes.get(item.chaveAluno).set(chaveMes, item.centavos);
-    });
-  });
-
-  const lista = [];
-  centavosPorAlunoMes.forEach((mapaMes, chaveAluno) => {
-    let total = 0;
-    const porMes = [];
-    chavesMes.forEach(chaveMes => {
-      const centavos = mapaMes.get(chaveMes) || 0;
-      if (!centavos) return;
-      total += centavos;
-      porMes.push({ periodo: analisesChaveParaRotulo_(chaveMes), valor: centavos / 100 });
-    });
-    lista.push({
-      aluno: nomePorAluno.get(chaveAluno) || '(sem nome)',
-      total: total / 100,
-      porMes
-    });
-  });
-
-  return lista.sort((a, b) => b.total - a.total);
-}
-
-
-/* =========================================================
- * VERSÃO PONTE — por que as constantes deste arquivo terminam em _SIGA2
- *
- * O projeto parou com "Identifier 'ANALISES_CACHE_SHEETS' has already
- * been declared": existe OUTRO arquivo .gs no projeto com uma cópia
- * deste. Como todos os .gs dividem o mesmo escopo, dois `const` de mesmo
- * nome derrubam o projeto inteiro antes de qualquer função rodar.
- *
- * Renomear as seis constantes daqui tira a colisão e o projeto volta a
- * rodar. NÃO é o conserto: as 59 funções continuam existindo em dobro, e
- * aí quem vale é a que o Apps Script carregar por último — pode ser a
- * cópia velha. É ponte para você conseguir rodar o diagnóstico abaixo,
- * achar a cópia e apagá-la.
- *
- * Rode: procurarCopiaDoAnalisesSIGA
- * ========================================================= */
-
-/**
- * Existe uma cópia deste arquivo no projeto? E, se existe, qual das duas
- * versões está valendo?
- *
- * O truque: este arquivo não declara mais nenhum dos seis nomes antigos.
- * Se `typeof ANALISES_CACHE_SHEETS` ainda responder "object", só pode ter
- * vindo de outro arquivo. typeof não estoura com nome inexistente, então
- * o teste é seguro nos dois casos.
- */
-function procurarCopiaDoAnalisesSIGA() {
-  const nomesAntigos = [
-    'ANALISES_CACHE_SHEETS',
-    'ANALISES_CACHE_PROP_ATUALIZADO_EM',
-    'ANALISES_CACHE_PROP_FREQ_CURSOR',
-    'ANALISES_CACHE_MESES_MAX',
-    'ANALISES_PDF_CONFIG_',
-    'ANALISES_MESES_ABREV_PT_'
-  ];
-
-  const aindaExistem = nomesAntigos.filter(nome => {
-    try {
-      // eslint-disable-next-line no-eval
-      return eval('typeof ' + nome) !== 'undefined';
-    } catch (erro) {
-      // Nome em TDZ também prova que alguém o declarou.
-      return true;
-    }
-  });
-
-  /*
-   * Qual versão de cada função o projeto está usando de verdade. Lê o
-   * código da função em memória e procura uma marca que só a versão
-   * corrigida tem — se a cópia venceu a ordem de carregamento, aparece
-   * "A DA CÓPIA (antiga)".
-   */
-  const marcas = [
-    ['analisesGravarCacheComparativoTurmas_', 'analisesLerFrequenciasCacheComparativo_(ss)'],
-    ['analisesAtualizarFrequenciaCacheComOrcamento_', 'pendentes.concat(preenchidas)'],
-    ['calcularSerieMatriculasAnalisesSIGA_', 'analisesTipoEntradaMatricula_(m.tipo)']
-  ];
-
-  const versoes = marcas.map(([nome, marca]) => {
-    let situacao;
-    try {
-      situacao = eval(nome).toString().indexOf(marca) >= 0
-        ? 'ESTA (corrigida)'
-        : 'A DA CÓPIA (antiga)';
-    } catch (erro) {
-      situacao = 'NÃO EXISTE — ' + (erro && erro.message ? erro.message : String(erro));
-    }
-    return { funcao: nome, valendoAgora: situacao };
-  });
-
-  const temCopia = aindaExistem.length > 0;
-  const versaoVelhaVencendo = versoes.filter(v => v.valendoAgora === 'A DA CÓPIA (antiga)');
-
-  let veredito;
-  if (!temCopia && !versaoVelhaVencendo.length) {
-    veredito = 'LIMPO. Não há cópia no projeto — este é o único arquivo do Análises. ' +
-      'Pode me avisar que eu devolvo as constantes com os nomes originais.';
-  } else if (temCopia) {
-    veredito = 'CÓPIA CONFIRMADA. Outro arquivo .gs declara: ' + aindaExistem.join(', ') + '. ' +
-      'Abra os arquivos .gs um a um e apague o que tiver ' +
-      '"const ANALISES_CACHE_SHEETS = {" na linha 20 e NÃO for este aqui. ' +
-      (versaoVelhaVencendo.length
-        ? 'Atenção: a cópia está VENCENDO em ' + versaoVelhaVencendo.length +
-          ' função(ões), então a tela ainda mostra os números errados.'
-        : 'A boa notícia é que as funções que valem são as corrigidas.');
-  } else {
-    veredito = 'Há uma cópia sem as constantes (só as funções). ' +
-      'Ela está vencendo em: ' + versaoVelhaVencendo.map(v => v.funcao).join(', ') + '.';
-  }
-
-  const resultado = {
-    copiaDetectada: temCopia,
-    constantesQueVieramDeOutroArquivo: aindaExistem,
-    versaoEmUso: versoes,
-    arquivoDesteCodigo: analisesNomeDoArquivoDesteCodigoSIGA_(),
-    pistaDeOrdem: versaoVelhaVencendo.length
-      ? 'A cópia está ABAIXO deste arquivo na lista (ela carrega depois e vence).'
-      : 'A cópia está ACIMA deste arquivo na lista (ela carrega antes e perde).',
-    veredito
-  };
-
-  console.log(JSON.stringify(resultado, null, 2));
-  return resultado;
-}
-
-/**
- * Em qual arquivo .gs este código está?
- *
- * O Apps Script põe o nome do arquivo na pilha de erro. É a única forma
- * de o código se localizar: ele não enxerga a lista de arquivos do
- * projeto. Serve para você saber qual dos dois arquivos MANTER — o outro
- * é a cópia.
- *
- * O formato da pilha muda entre versões do runtime, então volta também o
- * texto cru: se a extração falhar, o nome ainda está lá para ler a olho.
- */
-function analisesNomeDoArquivoDesteCodigoSIGA_() {
-  let pilha = '';
-  try {
-    throw new Error('sonda');
-  } catch (erro) {
-    pilha = String(erro && erro.stack || '');
-  }
-
-  // Ex.: "    at analisesNomeDoArquivoDesteCodigoSIGA_ (Analises:2960:11)"
-  const achado = pilha.match(/\(([^:()]+):\d+:\d+\)/);
-  return {
-    nomeProvavel: achado ? achado[1] + '.gs' : '(não consegui extrair — leia em pilhaCrua)',
-    pilhaCrua: pilha.split('\n').slice(0, 4).join(' | ')
-  };
 }
