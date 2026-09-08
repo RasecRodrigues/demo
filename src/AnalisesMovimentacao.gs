@@ -486,3 +486,169 @@ function listarEntradasDoMesSIGA(chaveMes) {
   console.log(JSON.stringify(resultado, null, 2));
   return resultado;
 }
+
+
+/* =========================================================
+ * DETALHAMENTO DE ALUNOS — "O detalhamento ainda não usa o rateio
+ * consolidado. Instale a correção do backend."
+ *
+ * Mesmo caso do cartão vazio: a tela exige rateioVersao: 2 e o backend
+ * não manda. Mas carimbar a versão sem mais nada só trocaria a mensagem
+ * cinza por uma amarela ("A apuração da tabela e a do detalhamento não
+ * estão na mesma versão"), porque as duas contas eram MESMO diferentes:
+ *
+ *   tabela  → analisesMatriculaNoRateio_ + filtro por turmas ativas
+ *   detalhe → status ATIVO/SUSPENSO + exigia matrícula na turma clicada
+ *
+ * A versão abaixo roda o MESMO laço de calcularMensalidadesPorTurmaAnalisesSIGA_,
+ * só que guardando a parcela de cada aluno em vez de somar tudo na turma.
+ * Assim o rodapé "Total conferido" fecha com a linha da tabela por
+ * construção, não por coincidência.
+ * ========================================================= */
+
+function obterAlunosPagamentosPorTurmaV2AnalisesSIGA(filtros) {
+  filtros = filtros || {};
+  validarPermissaoPagamentosSIGA_(filtros.token);
+
+  const turmaAlvo = String(filtros.turma || '').trim();
+  const periodos = analisesPeriodosEntreChaves_(filtros.mesInicial, filtros.mesFinal);
+  if (!turmaAlvo || !periodos.length) {
+    return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos: [] };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  garantirCacheAnalisesSIGA_();
+
+  const matriculas = lerMatriculasPagUnif_(ss.getSheetByName('DimMatricula'));
+  criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
+  const valorPagoPorAlunoMesTurma = analisesLerCachePagamentoAluno_();
+
+  /*
+   * O mesmo conjunto de turmas que o cache usou. Sem esse filtro, um
+   * aluno com matrícula numa turma fora da lista dividiria o pagamento
+   * dele com ela, e a fatia desta turma sairia menor do que a da tabela.
+   */
+  const turmasAtivas = new Set(
+    analisesLerCacheComparativoTurmas_().filter(x => x.ativos > 0).map(x => x.turma)
+  );
+
+  const matriculasPorAluno = new Map();
+  const nomePorAluno = new Map();
+  matriculas.forEach(m => {
+    const chave = m.chaveAluno || normalizarPagUnif_(m.idAluno || m.nome);
+    if (!chave) return;
+    if (!matriculasPorAluno.has(chave)) matriculasPorAluno.set(chave, []);
+    matriculasPorAluno.get(chave).push(m);
+    if (!nomePorAluno.has(chave) && m.nome) nomePorAluno.set(chave, m.nome);
+  });
+
+  const hoje = new Date();
+  const inicioMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+  // chaveAluno -> (chaveMes -> parcela em reais, ainda sem arredondar)
+  const parcelaPorAlunoMes = new Map();
+  // chaveMes -> soma bruta da turma, para arredondar igual à tabela
+  const brutoPorMes = new Map();
+
+  periodos.forEach(ref => {
+    let dataCalculo;
+    if (ref < inicioMesAtual) {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth() + 1, 0);
+    } else if (ref.getFullYear() === hoje.getFullYear() && ref.getMonth() === hoje.getMonth()) {
+      dataCalculo = hoje;
+    } else {
+      dataCalculo = new Date(ref.getFullYear(), ref.getMonth(), 1);
+    }
+
+    const chaveMes = analisesMesRotulo_(ref).chave;
+
+    matriculasPorAluno.forEach((matsAluno, chaveAluno) => {
+      const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
+      if (!porTurmaPagamento) return;
+
+      const ativas = matsAluno.filter(m => analisesMatriculaNoRateio_(m, ref, dataCalculo));
+      if (!ativas.length) return;
+
+      const combo = ativas.length > 1;
+      const turmasDoMes = ativas
+        .map(m => ({
+          turma: String(m.turma || '').trim(),
+          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
+        }))
+        .filter(d => d.turma && turmasAtivas.has(d.turma));
+      if (!turmasDoMes.length) return;
+
+      const parcela = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes).get(turmaAlvo) || 0;
+      if (!(parcela > 0)) return;
+
+      if (!parcelaPorAlunoMes.has(chaveAluno)) parcelaPorAlunoMes.set(chaveAluno, new Map());
+      const mapaMes = parcelaPorAlunoMes.get(chaveAluno);
+      mapaMes.set(chaveMes, (mapaMes.get(chaveMes) || 0) + parcela);
+      brutoPorMes.set(chaveMes, (brutoPorMes.get(chaveMes) || 0) + parcela);
+    });
+  });
+
+  const alunos = analisesFecharCentavosPorMesV2_(parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos);
+
+  return { sucesso: true, rateioVersao: 2, turma: turmaAlvo, alunos };
+}
+
+/**
+ * Fecha os centavos: a tabela arredonda a SOMA do mês, o detalhamento
+ * arredonda aluno por aluno. Arredondar dez parcelas e somar pode dar um
+ * ou dois centavos a mais que arredondar a soma — e é isso que faria a
+ * tela acusar divergência num mês em que ninguém errou nada.
+ *
+ * A sobra vai para o aluno de maior valor no mês. É alocação de exibição,
+ * nunca invenção: o total do mês continua sendo exatamente o da tabela.
+ */
+function analisesFecharCentavosPorMesV2_(parcelaPorAlunoMes, brutoPorMes, nomePorAluno, periodos) {
+  const chavesMes = periodos.map(p => analisesMesRotulo_(p).chave);
+  const centavosPorAlunoMes = new Map();
+
+  chavesMes.forEach(chaveMes => {
+    const doMes = [];
+    parcelaPorAlunoMes.forEach((mapaMes, chaveAluno) => {
+      const valor = mapaMes.get(chaveMes);
+      if (valor > 0) doMes.push({ chaveAluno, valor });
+    });
+    if (!doMes.length) return;
+
+    const alvoCentavos = Math.round(arredPagUnif_(brutoPorMes.get(chaveMes) || 0) * 100);
+    let somaCentavos = 0;
+    doMes.forEach(item => {
+      item.centavos = Math.round(item.valor * 100);
+      somaCentavos += item.centavos;
+    });
+
+    const sobra = alvoCentavos - somaCentavos;
+    if (sobra !== 0) {
+      doMes.reduce((maior, item) => (item.centavos > maior.centavos ? item : maior), doMes[0]).centavos += sobra;
+    }
+
+    doMes.forEach(item => {
+      if (!(item.centavos > 0)) return;
+      if (!centavosPorAlunoMes.has(item.chaveAluno)) centavosPorAlunoMes.set(item.chaveAluno, new Map());
+      centavosPorAlunoMes.get(item.chaveAluno).set(chaveMes, item.centavos);
+    });
+  });
+
+  const lista = [];
+  centavosPorAlunoMes.forEach((mapaMes, chaveAluno) => {
+    let total = 0;
+    const porMes = [];
+    chavesMes.forEach(chaveMes => {
+      const centavos = mapaMes.get(chaveMes) || 0;
+      if (!centavos) return;
+      total += centavos;
+      porMes.push({ periodo: analisesChaveParaRotulo_(chaveMes), valor: centavos / 100 });
+    });
+    lista.push({
+      aluno: nomePorAluno.get(chaveAluno) || '(sem nome)',
+      total: total / 100,
+      porMes
+    });
+  });
+
+  return lista.sort((a, b) => b.total - a.total);
+}

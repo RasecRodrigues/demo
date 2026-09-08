@@ -2160,7 +2160,7 @@ function alternarAlunosTurmaAnalisesSIGA(botao) {
       const motivo = erro && erro.message ? erro.message : String(erro || 'erro desconhecido');
       linhaDetalhe.innerHTML = `<td colspan="${colspan}"><div class="estado-vazio">Não foi possível carregar os alunos dessa turma.<br><small>${escAnalisesSIGA(motivo)}</small></div></td>`;
     })
-    .obterAlunosPagamentosPorTurmaAnalisesSIGA({
+    .obterAlunosPagamentosPorTurmaV2AnalisesSIGA({
       token, turma,
       mesInicial: chaveMesFiltro || resultado?.mesInicial || null,
       mesFinal: chaveMesFiltro || resultado?.mesFinal || null
