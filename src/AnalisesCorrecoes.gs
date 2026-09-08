@@ -526,3 +526,121 @@ function preencherFrequenciaAgoraSIGA() {
 
   return resultado;
 }
+
+
+/**
+ * Diagnóstico do gráfico "Matrículas vs. cancelamentos".
+ *
+ * Responde se os números do gráfico podem ser lidos como estão. Duas
+ * coisas distorcem a série mesmo com o TIPO e o STATUS certos:
+ *
+ * 1. MÊS CORRENTE INCOMPLETO. A última coluna cobre só os dias já
+ *    decorridos. As entradas de um começo de semestre acontecem quase
+ *    todas nos primeiros dias, e as saídas se espalham pelo mês inteiro —
+ *    então a última coluna nasce com muita entrada e quase nenhuma saída.
+ *    Comparar essa barra com um mês fechado é comparar coisas diferentes.
+ *
+ * 2. ENTRADA PELA DATA DE EDIÇÃO. lerMatriculasPagUnif_ usa
+ *    DATA_EFETIVO_TURMA e, quando ela está vazia, cai em
+ *    DATA_ALTERACAO/MATRICULA — que é quando a LINHA foi mexida, não
+ *    quando o aluno entrou. Uma edição em massa joga um monte de entrada
+ *    para o mês da edição. A coluna "entradasPorDataDeEdicao" abaixo mede
+ *    exatamente isso: se for alta em algum mês, aquela barra está inflada.
+ *
+ * 3. Saída sem DATA_CANCELAMENTO/FINALIZACAO não entra em mês nenhum —
+ *    fica fora do gráfico inteiro (campo saidasSemDataForaDoGrafico).
+ */
+function diagnosticarSerieMatriculasAnalisesSIGA(meses) {
+  const janela = Math.max(1, Math.min(36, Number(meses) || 12));
+  const aba = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('DimMatricula');
+  if (!aba || aba.getLastRow() < 2) {
+    throw new Error('DimMatricula não encontrada ou vazia.');
+  }
+
+  const dados = aba.getDataRange().getValues();
+  const mapa = mapaGenericoPagUnif_(dados[0]);
+
+  const periodos = analisesGerarPeriodos_(janela);
+  const porMes = new Map();
+  periodos.forEach(p => {
+    porMes.set(analisesMesRotulo_(p).chave, {
+      mes: analisesMesRotulo_(p).rotulo,
+      entradas: 0,
+      entradasPorDataDeEdicao: 0,
+      saidas: 0
+    });
+  });
+
+  const hoje = new Date();
+  const chaveMesCorrente = analisesMesRotulo_(hoje).chave;
+  let saidasSemData = 0;
+
+  for (let i = 1; i < dados.length; i++) {
+    const linha = dados[i];
+
+    const tipo = campoPagUnif_(linha, mapa, [
+      'TIPO_MATRICULA/ALTERACAO', 'TIPO_MATRICULA', 'TIPO DE MATRÍCULA'
+    ]);
+    const status = campoPagUnif_(linha, mapa, ['STATUS']);
+
+    const dataEfetivo = parseDataPagUnif_(
+      campoPagUnif_(linha, mapa, ['DATA_EFETIVO_TURMA', 'DATA EFETIVO TURMA'])
+    );
+    const dataAlteracao = parseDataPagUnif_(
+      campoPagUnif_(linha, mapa, ['DATA_ALTERACAO/MATRICULA', 'DATA ALTERACAO/MATRICULA'])
+    );
+    // Mesma precedência de lerMatriculasPagUnif_.
+    const inicio = dataEfetivo || dataAlteracao;
+
+    const fim = parseDataPagUnif_(campoPagUnif_(linha, mapa, [
+      'DATA_CANCELAMENTO/FINALIZACAO', 'DATA CANCELAMENTO/FINALIZACAO'
+    ]));
+
+    if (inicio && analisesTipoEntradaMatricula_(tipo)) {
+      const registro = porMes.get(analisesMesRotulo_(inicio).chave);
+      if (registro) {
+        registro.entradas++;
+        // Entrou pela data de edição, não pela data real de início.
+        if (!dataEfetivo) registro.entradasPorDataDeEdicao++;
+      }
+    }
+
+    if (analisesStatusSaidaMatricula_(status)) {
+      if (!fim) {
+        saidasSemData++;
+      } else {
+        const registro = porMes.get(analisesMesRotulo_(fim).chave);
+        if (registro) registro.saidas++;
+      }
+    }
+  }
+
+  const linhas = Array.from(porMes.entries()).map(([chave, registro]) => {
+    const parcial = chave === chaveMesCorrente;
+    return {
+      mes: registro.mes,
+      entradas: registro.entradas,
+      saidas: registro.saidas,
+      saldo: registro.entradas - registro.saidas,
+      entradasPorDataDeEdicao: registro.entradasPorDataDeEdicao,
+      // Um mês em curso não é comparável com os fechados.
+      observacao: parcial
+        ? 'MÊS INCOMPLETO — faltam ' +
+          (new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate() - hoje.getDate()) +
+          ' dia(s); as saídas ainda vão acontecer'
+        : (registro.entradasPorDataDeEdicao > registro.entradas / 2
+            ? 'ATENÇÃO — mais da metade das entradas veio da data de edição'
+            : '')
+    };
+  });
+
+  const diagnostico = {
+    janelaMeses: janela,
+    saidasSemDataForaDoGrafico: saidasSemData,
+    totalEntradasPorDataDeEdicao: linhas.reduce((s, l) => s + l.entradasPorDataDeEdicao, 0),
+    meses: linhas
+  };
+
+  console.log(JSON.stringify(diagnostico, null, 2));
+  return diagnostico;
+}
