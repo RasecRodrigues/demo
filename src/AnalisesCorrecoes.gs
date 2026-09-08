@@ -4,19 +4,25 @@
  * 1. Frequência que some de parte das turmas.
  * 2. Matrículas vs. cancelamentos contando por TIPO e STATUS.
  *
- * COMO INSTALAR — substitua no Analises.gs as funções abaixo pelas destes
- * blocos. As que têm "NOVA" não existem lá: acrescente.
+ * COMO INSTALAR — dois passos, sem emendar nada no meio do arquivo:
  *
- *   NOVA        analisesNumeroFrequenciaCacheV3_
- *   NOVA        analisesLerFrequenciasCacheComparativo_
- *   SUBSTITUIR  analisesGravarCacheComparativoTurmas_
- *   SUBSTITUIR  analisesAtualizarFrequenciaCacheComOrcamento_
- *   NOVA        analisesTipoEntradaMatricula_
- *   NOVA        analisesStatusSaidaMatricula_
- *   SUBSTITUIR  calcularSerieMatriculasAnalisesSIGA_
- *   NOVA        diagnosticarTiposMatriculaAnalisesSIGA  (só diagnóstico)
+ * 1) No Analises.gs, APAGUE estas três funções inteiras (da linha
+ *    "function" até a chave que a fecha). Só apagar, não colar nada:
  *
- * NÃO substitua analisesRecalcularCacheNucleoSemLock_ nem nada de
+ *       analisesGravarCacheComparativoTurmas_
+ *       analisesAtualizarFrequenciaCacheComOrcamento_
+ *       calcularSerieMatriculasAnalisesSIGA_
+ *
+ * 2) Crie um arquivo novo (+ → Script) chamado AnalisesCorrecoes e cole
+ *    ESTE arquivo inteiro. As versões corrigidas das três, mais quatro
+ *    auxiliares novos e um diagnóstico, já vêm aqui.
+ *
+ * No Apps Script todos os .gs dividem o mesmo escopo global, então as
+ * funções deste arquivo passam a valer para o projeto todo. É por isso
+ * que o passo 1 é obrigatório: duas funções com o mesmo nome fazem a
+ * ordem de carregamento decidir qual vale, e isso não é confiável.
+ *
+ * NÃO mexa em analisesRecalcularCacheNucleoSemLock_ nem em nada de
  * Chamadas, pagamentos ou professores.
  */
 
