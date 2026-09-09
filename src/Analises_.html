@@ -1175,13 +1175,52 @@ function desenharGraficosAnalisesSIGA(resultado) {
  */
 /* Gráficos da tela, na ordem em que aparecem, para o PDF sair na mesma
    sequência do que está na tela. */
+/*
+ * `alargarNoPdf` só existe nos dois gráficos de barras HORIZONTAIS.
+ *
+ * Eles crescem para baixo: cada turma acrescenta uma linha, então com 18
+ * turmas o desenho fica mais alto do que largo. Na folha, object-fit:
+ * contain encolhe a imagem até a ALTURA caber, e ela acaba ocupando um
+ * quarto da largura, com o resto em branco. Os outros três são gráficos
+ * de coluna/linha, de altura fixa — esses já enchem a página.
+ */
 const ANALISES_GRAFICOS_PARA_PDF = [
   { id: 'graficoAnalisesMatriculas', titulo: 'Matrículas vs. cancelamentos' },
   { id: 'graficoAnalisesFinanceiro', titulo: 'Receita financeira no tempo' },
-  { id: 'graficoAnalisesTurmas', titulo: 'Comparação entre turmas' },
-  { id: 'graficoAnalisesFrequencia', titulo: 'Frequência média por turma' },
+  { id: 'graficoAnalisesTurmas', titulo: 'Comparação entre turmas', alargarNoPdf: true },
+  { id: 'graficoAnalisesFrequencia', titulo: 'Frequência média por turma', alargarNoPdf: true },
   { id: 'graficoAnalisesMovimentacao', titulo: 'Alunos ativos no fim de cada mês' }
 ];
+
+/*
+ * Proporção largura/altura que a folha comporta: A4 paisagem com as
+ * margens do relatório dá ~277mm x ~186mm, e o título do bloco come um
+ * pedaço. 1,75 deixa a imagem em ~158mm de altura quando ela ocupa a
+ * largura inteira, com folga para não empurrar o bloco para a página
+ * seguinte.
+ */
+const ANALISES_PROPORCAO_PDF_ = 1.75;
+
+/**
+ * Redesenha um gráfico com os dados que já estão na tela.
+ *
+ * Só serve aos dois gráficos de barras horizontais: são os únicos que
+ * precisam ser desenhados de novo, numa largura maior, antes de virar
+ * imagem do PDF. vizGraficoBarrasHorizontais mede o container
+ * (vizLargura_), então mudar a largura dele e chamar de novo é o que
+ * produz um SVG com outra proporção — esticar o viewBox distorceria o
+ * texto dos nomes das turmas.
+ */
+function analisesRedesenharGraficoSIGA_(id) {
+  const comparativo = (analisesDadosCache && analisesDadosCache.comparativoTurmas) || [];
+  if (!comparativo.length) return;
+
+  if (id === 'graficoAnalisesTurmas') {
+    desenharGraficoTurmasAnalisesSIGA(comparativo);
+  } else if (id === 'graficoAnalisesFrequencia') {
+    desenharGraficoFrequenciaAnalisesSIGA(comparativo);
+  }
+}
 
 /**
  * Mostra o PDF pronto como link na própria tela.
@@ -1225,7 +1264,7 @@ function mostrarResultadoPdfAnalisesSIGA_(resposta) {
  * Se algo falhar (gráfico ainda não desenhado, canvas indisponível),
  * devolve null e o gráfico simplesmente não entra — o resto do PDF sai.
  */
-function analisesGraficoParaPngSIGA_(id) {
+function analisesGraficoParaPngSIGA_(id, alargar) {
   return new Promise(resolve => {
     /*
      * Trava de segurança: se onload/onerror não dispararem (já aconteceu com
@@ -1238,8 +1277,32 @@ function analisesGraficoParaPngSIGA_(id) {
     setTimeout(() => responder(null), 8000);
 
     try {
-      const svg = document.querySelector('#' + id + ' svg');
+      const alvo = document.getElementById(id);
+      let svg = alvo && alvo.querySelector('svg');
       if (!svg) { responder(null); return; }
+
+      /*
+       * Redesenha largo o bastante para a altura atual caber na folha, e
+       * devolve a tela ao normal em seguida. A largura sai da altura que
+       * o gráfico REALMENTE tem, não de um número fixo: com 6 turmas ele
+       * é baixo, com 30 é o dobro disso, e um valor cravado encheria a
+       * largura num caso e não no outro.
+       *
+       * Tudo isto é síncrono: quando o XML é serializado, o desenho largo
+       * já existe; quando a tela volta ao tamanho normal, o XML já está
+       * na mão. O usuário não chega a ver o gráfico piscar.
+       */
+      let larguraOriginal = null;
+      if (alargar && alvo) {
+        const caixaAtual = svg.viewBox && svg.viewBox.baseVal;
+        const alturaAtual = (caixaAtual && caixaAtual.height) || svg.clientHeight || 300;
+        const larguraDesejada = Math.max(1200, Math.round(alturaAtual * ANALISES_PROPORCAO_PDF_));
+
+        larguraOriginal = alvo.style.width;
+        alvo.style.width = larguraDesejada + 'px';
+        analisesRedesenharGraficoSIGA_(id);
+        svg = alvo.querySelector('svg') || svg;
+      }
 
       const caixa = svg.viewBox && svg.viewBox.baseVal;
       const largura = (caixa && caixa.width) || svg.clientWidth || 900;
@@ -1253,6 +1316,14 @@ function analisesGraficoParaPngSIGA_(id) {
       clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 
       const xml = new XMLSerializer().serializeToString(clone);
+
+      // Tela de volta ao normal antes de qualquer espera: o XML acima já
+      // é uma cópia, e o que vem a seguir é assíncrono.
+      if (larguraOriginal !== null && alvo) {
+        alvo.style.width = larguraOriginal;
+        analisesRedesenharGraficoSIGA_(id);
+      }
+
       const imagem = new Image();
       imagem.onload = () => {
         try {
@@ -1292,7 +1363,7 @@ function exportarPdfAnalisesSIGA() {
     if (botao) { botao.disabled = false; botao.textContent = rotulo; }
   }
 
-  Promise.all(ANALISES_GRAFICOS_PARA_PDF.map(g => analisesGraficoParaPngSIGA_(g.id)))
+  Promise.all(ANALISES_GRAFICOS_PARA_PDF.map(g => analisesGraficoParaPngSIGA_(g.id, g.alargarNoPdf)))
     .then(imagens => {
       let blocosGraficos = ANALISES_GRAFICOS_PARA_PDF
         .map((g, i) => imagens[i] ? { titulo: g.titulo, imagem: imagens[i] } : null)

@@ -589,7 +589,18 @@ function gerarPdfAnalisesSIGA(dados) {
   }
 
   blocos.forEach(bloco => {
-    partes.push('<section class="bloco' + (bloco.imagem ? ' grafico-bloco' : '') + '">');
+    /*
+     * Tabela com muitas colunas (as de turma x mês passam de dez) recebe
+     * uma classe própria: sem ela o navegador alarga a tabela além da
+     * folha e as últimas colunas saem cortadas do PDF.
+     */
+    const colunasDoBloco = (bloco.colunas || []).length;
+    partes.push(
+      '<section class="bloco'
+      + (bloco.imagem ? ' grafico-bloco' : '')
+      + (!bloco.imagem && colunasDoBloco > 8 ? ' tabela-larga' : '')
+      + '">'
+    );
     partes.push('<h2>' + escapeHtmlAnalisesPdf_(bloco.titulo || '') + '</h2>');
     if (bloco.subtitulo) {
       partes.push('<p class="sub">' + escapeHtmlAnalisesPdf_(bloco.subtitulo) + '</p>');
@@ -639,7 +650,18 @@ function gerarPdfAnalisesSIGA(dados) {
     + '.kpi strong{display:block;font-size:14px;margin-top:2px}'
     + '.bloco{page-break-inside:auto;margin-bottom:16px}'
     + '.bloco.grafico-bloco{page-break-inside:avoid}'
-    + 'img.grafico{width:100%;max-height:95mm;object-fit:contain;display:block}'
+    /*
+     * 95mm espremia os gráficos de barras horizontais: object-fit contain
+     * escala pela dimensão mais apertada, então uma imagem alta encolhia
+     * até a altura caber e sobrava metade da folha em branco dos dois
+     * lados. 162mm é o que resta da altura útil (A4 paisagem, 186mm)
+     * depois do título do bloco, e faz a LARGURA voltar a ser o limite.
+     */
+    + 'img.grafico{width:100%;max-height:162mm;object-fit:contain;display:block}'
+    + 'td,th{overflow-wrap:anywhere}'
+    + '.bloco.tabela-larga table{table-layout:fixed;font-size:7px}'
+    + '.bloco.tabela-larga th,.bloco.tabela-larga td{padding:3px 4px}'
+    + '.bloco.tabela-larga th:first-child,.bloco.tabela-larga td:first-child{width:13%}'
     + 'h2{font-size:12px;margin:0 0 2px;color:#6B007B}'
     + '.sub{font-size:8px;color:#666;margin:0 0 6px}'
     + 'table{width:100%;border-collapse:collapse}'
