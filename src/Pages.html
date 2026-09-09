@@ -984,24 +984,28 @@ function gerarBeneficiosMatriculaSIGA(matricula) {
    * Os demais valores ficam identificados abaixo.
    */
 
-  let valorPrincipal =
-    semComboAntes;
-
   /*
-   * Aplica bolsa ao valor exibido.
+   * A BOLSA NÃO É APLICADA AQUI — e não é esquecimento.
+   *
+   * As colunas SEM_COMBO_* e COM_COMBO_* da DimMatricula já vêm com o
+   * desconto embutido: quem cadastra digita o valor que o aluno paga de
+   * verdade. Multiplicar por (1 - bolsa/100) na exibição descontava uma
+   * segunda vez, e a ficha prometia um valor menor do que o boleto ia
+   * cobrar — 22% de bolsa mostrava R$ 140,40 numa mensalidade de R$ 180.
+   *
+   * A única exceção é a isenção total, porque ela não está nas colunas de
+   * valor: calcularValorMatriculaPagUnifV38_ devolve 0 quando a matrícula
+   * é APPAI ou bolsa de 100%, independentemente do que estiver ali. Aqui
+   * a ficha repete essa mesma regra, e só ela.
    */
+  const isentoDeMensalidade =
+    ehAppai ||
+    Number(percentualBolsa) === 100;
 
-  if (
-    percentualBolsa !== '' &&
-    Number(percentualBolsa) > 0
-  ) {
-    valorPrincipal =
-      valorPrincipal *
-      (
-        1 -
-        Number(percentualBolsa) / 100
-      );
-  }
+  const valorPrincipal =
+    isentoDeMensalidade
+      ? 0
+      : semComboAntes;
 
 
   const moeda = valor =>
@@ -1015,56 +1019,37 @@ function gerarBeneficiosMatriculaSIGA(matricula) {
       );
 
 
+  // Isento não tem "após vencimento" nem "combo": o valor é zero em
+  // qualquer um deles.
   const detalhesValores = [];
 
   if (
+    !isentoDeMensalidade &&
     semComboDepois > 0 &&
     semComboDepois !== semComboAntes
   ) {
     detalhesValores.push(
-      `Após vencimento: ${moeda(
-        percentualBolsa !== ''
-          ? semComboDepois *
-            (
-              1 -
-              Number(percentualBolsa) / 100
-            )
-          : semComboDepois
-      )}`
+      `Após vencimento: ${moeda(semComboDepois)}`
     );
   }
 
   if (
+    !isentoDeMensalidade &&
     comComboAntes > 0 &&
     comComboAntes !== semComboAntes
   ) {
     detalhesValores.push(
-      `Combo: ${moeda(
-        percentualBolsa !== ''
-          ? comComboAntes *
-            (
-              1 -
-              Number(percentualBolsa) / 100
-            )
-          : comComboAntes
-      )}`
+      `Combo: ${moeda(comComboAntes)}`
     );
   }
 
   if (
+    !isentoDeMensalidade &&
     comComboDepois > 0 &&
     comComboDepois !== comComboAntes
   ) {
     detalhesValores.push(
-      `Combo após vencimento: ${moeda(
-        percentualBolsa !== ''
-          ? comComboDepois *
-            (
-              1 -
-              Number(percentualBolsa) / 100
-            )
-          : comComboDepois
-      )}`
+      `Combo após vencimento: ${moeda(comComboDepois)}`
     );
   }
 
@@ -1108,9 +1093,11 @@ function gerarBeneficiosMatriculaSIGA(matricula) {
 
         <strong>
           ${
-            valorPrincipal > 0
-              ? moeda(valorPrincipal)
-              : 'Não informado'
+            isentoDeMensalidade
+              ? moeda(0)
+              : (valorPrincipal > 0
+                  ? moeda(valorPrincipal)
+                  : 'Não informado')
           }
         </strong>
 
