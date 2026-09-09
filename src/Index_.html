@@ -1,0 +1,1680 @@
+<div id="mensagem" class="mensagem oculto"></div>
+        <!-- TELA ALUNOS -->
+        <section id="tela-alunos">
+          <div class="cabecalho-pagina">
+            <div>
+              <h1>Alunos</h1>
+
+              <div class="subtitulo">
+                Pesquise, abra a ficha, edite os dados e acompanhe as matrículas.
+              </div>
+            </div>
+
+            <div class="acoes-cabecalho-alunos">
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="abrirPainelFrequenciaAlunos()"
+              >
+                Frequência
+              </button>
+
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="abrirTelaEncomendasCamisasSIGA()"
+              >
+                👕 Encomenda
+              </button>
+
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="abrirCancelamentoBoletosSIGA()"
+              >
+                Cancelamento de boletos
+              </button>
+
+              <button
+                type="button"
+                class="botao botao-primario"
+                onclick="abrirNovoAluno()"
+              >
+                + Novo aluno
+              </button>
+            </div>
+          </div>
+
+          <section class="cartao painel-busca">
+  <div class="painel-busca-conteudo">
+    <div>
+      <h2>Encontre um aluno</h2>
+
+      <p>
+        Pesquise por nome, CPF, telefone ou ID.
+      </p>
+    </div>
+
+    <div class="busca-global">
+      <span class="icone">⌕</span>
+
+      <input
+        id="buscaGlobal"
+        type="search"
+        placeholder="Pesquisar aluno por nome, CPF, telefone ou ID..."
+        autocomplete="off"
+        oninput="agendarBuscaGlobal()"
+      >
+    </div>
+  </div>
+</section>
+
+          <section class="cartao">
+            <div class="cartao-cabecalho">
+              <h2 id="tituloResultados">Resultados da pesquisa</h2>
+              <span id="quantidadeResultados" class="subtitulo"></span>
+            </div>
+
+            <div id="resultadosAlunos" class="lista-resultados">
+              <div class="estado-vazio">
+                Digite um nome, CPF, telefone ou ID na pesquisa superior.
+              </div>
+            </div>
+          </section>
+        </section>
+
+
+        <!-- TELA CANCELAMENTO DE BOLETOS -->
+        <section id="tela-cancelamento-boletos" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="voltarCancelamentoBoletosParaAlunosSIGA()"
+                style="margin-bottom:12px"
+              >
+                ← Voltar para Alunos
+              </button>
+              <h1>Cancelamento de boletos</h1>
+              <div class="subtitulo">
+                Matrículas encerradas cuja recorrência ainda precisa ser cancelada.
+              </div>
+            </div>
+
+            <button
+              id="botaoAtualizarCancelamentoBoletosSIGA"
+              type="button"
+              class="botao botao-secundario"
+              onclick="carregarCancelamentoBoletosSIGA()"
+            >
+              ↻ Atualizar
+            </button>
+          </div>
+
+          <section class="cartao cancelamento-boletos-resumo-siga">
+            <span>Pendentes de cancelamento</span>
+            <strong id="totalCancelamentoBoletosSIGA">0</strong>
+          </section>
+
+          <section class="cartao">
+            <div class="cancelamento-boletos-busca-siga">
+              <div class="campo">
+                <label>Pesquisar</label>
+                <input
+                  id="buscaCancelamentoBoletosSIGA"
+                  type="search"
+                  placeholder="Nome, turma ou status..."
+                  oninput="filtrarCancelamentoBoletosSIGA()"
+                >
+              </div>
+            </div>
+
+            <div class="cancelamento-boletos-tabela-wrap-siga">
+              <table class="cancelamento-boletos-tabela-siga">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Turma</th>
+                    <th>Status</th>
+                    <th>Recorrência cancelada</th>
+                  </tr>
+                </thead>
+                <tbody id="corpoCancelamentoBoletosSIGA">
+                  <tr>
+                    <td colspan="4" class="estado-vazio">Abra a tela para carregar.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+
+        
+
+        <!-- TELA FREQUÊNCIA DOS ALUNOS -->
+        <section id="tela-frequencia-alunos" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="voltarPainelFrequenciaParaAlunos()"
+                style="margin-bottom: 12px;"
+              >
+                ← Voltar para alunos
+              </button>
+              
+              <h1>Frequência dos alunos</h1>
+
+              <div class="subtitulo">
+                Analise presenças e faltas por turma.
+              </div>
+            </div>
+          </div>
+
+          <section class="cartao">
+            <div class="cartao-corpo">
+              <div class="filtros-painel-frequencia">
+                <div class="campo campo-filtro-turma-frequencia">
+                  <label>Turma *</label>
+
+                  <select id="filtroTurmaFrequencia">
+                    <option value="">Carregando turmas...</option>
+                  </select>
+                </div>
+
+                <div class="campo">
+                  <label>Mês inicial</label>
+
+                  <input
+                    id="filtroMesInicialFrequencia"
+                    type="month"
+                  >
+                </div>
+
+                <div class="campo">
+                  <label>Mês final</label>
+
+                  <input
+                    id="filtroMesFinalFrequencia"
+                    type="month"
+                  >
+                </div>
+
+                <button
+                  id="botaoCarregarPainelFrequencia"
+                  type="button"
+                  class="botao botao-primario"
+                  onclick="carregarPainelFrequenciaAlunos()"
+                >
+                  Atualizar
+                </button>
+              </div>
+
+              <div class="barra-relatorios-frequencia">
+                <div class="barra-relatorios-frequencia-texto">
+                  <strong>Relatórios de frequência</strong>
+                  <span>
+                    Gere o relatório da turma selecionada ou o consolidado
+                    de todas as turmas em andamento.
+                  </span>
+                </div>
+
+                <div class="barra-relatorios-frequencia-acoes">
+                  <button
+                    id="botaoPdfTurmaFrequencia"
+                    type="button"
+                    class="botao botao-secundario botao-relatorio-pdf"
+                    onclick="exportarPdfTurmaFrequencia()"
+                  >
+                    <span class="icone-botao-relatorio">▣</span>
+                    PDF da turma
+                  </button>
+
+                  <button
+                    id="botaoPdfGeralFrequencia"
+                    type="button"
+                    class="botao botao-primario botao-relatorio-pdf"
+                    onclick="exportarPdfGeralFrequencia()"
+                  >
+                    <span class="icone-botao-relatorio">▦</span>
+                    PDF geral das turmas
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="indicadores-painel-frequencia">
+            <section class="cartao indicador-painel-frequencia">
+              <span>Total de aulas</span>
+              <strong id="indicadorTotalAulasFrequencia">0</strong>
+            </section>
+
+            <section class="cartao indicador-painel-frequencia indicador-media-frequencia">
+              <span>Frequência média</span>
+              <strong id="indicadorMediaFrequencia">0%</strong>
+            </section>
+
+            <section class="cartao indicador-painel-frequencia indicador-alunos-frequencia">
+              <span>Alunos avaliados</span>
+              <strong id="indicadorTotalAlunosFrequencia">0</strong>
+            </section>
+
+            <section class="cartao indicador-painel-frequencia indicador-alerta-frequencia">
+              <span>Abaixo de 75%</span>
+              <strong id="indicadorAlunosBaixaFrequencia">0</strong>
+            </section>
+          </div>
+
+          <div class="grade-painel-frequencia">
+            <section class="cartao painel-matriz-frequencia">
+              <div class="cartao-cabecalho">
+                <div>
+                  <h2 id="tituloMatrizFrequencia">Frequência por aluno</h2>
+                  <span id="subtituloMatrizFrequencia" class="subtitulo"></span>
+                </div>
+              </div>
+
+              <div class="tabela-responsiva-frequencia">
+                <table class="tabela-painel-frequencia">
+                  <thead>
+                    <tr>
+                      <th>Aluno</th>
+                      <th>Total aulas</th>
+                      <th>Presenças</th>
+                      <th>Faltas</th>
+                      <th>% Presença</th>
+                    </tr>
+                  </thead>
+
+                  <tbody id="corpoTabelaPainelFrequencia">
+                    <tr>
+                      <td colspan="5" class="estado-vazio">
+                        Selecione uma turma para visualizar.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="cartao painel-grafico-frequencia">
+              <div class="cartao-cabecalho">
+                <div>
+                  <h2>% Presença por alunos</h2>
+                  <span class="subtitulo">
+                    Ordenado da maior para a menor frequência
+                  </span>
+                </div>
+              </div>
+
+              <div
+                id="graficoBarrasFrequenciaAlunos"
+                class="grafico-barras-frequencia"
+              >
+                <div class="estado-vazio">
+                  Selecione uma turma para visualizar.
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+
+        <!-- TELA MATRÍCULAS -->
+        <section id="tela-matriculas" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <h1>Matrículas</h1>
+              <div class="subtitulo">
+                Localize um aluno já cadastrado para criar, editar, cancelar ou fazer upgrade de matrícula.
+              </div>
+            </div>
+          </div>
+
+          <section class="cartao painel-busca">
+            <div class="painel-busca-conteudo">
+              <div>
+                <h2>Localizar aluno cadastrado</h2>
+                <p>Pesquise por nome, CPF, telefone ou ID.</p>
+              </div>
+
+              <div class="busca-global">
+                <span class="icone">⌕</span>
+                <input
+                  id="buscaMatriculas"
+                  type="search"
+                  placeholder="Pesquisar aluno para gerenciar matrículas..."
+                  autocomplete="off"
+                  oninput="agendarBuscaMatriculas()"
+                  onkeydown="tratarEnterBuscaMatriculas(event)"
+                >
+              </div>
+            </div>
+          </section>
+
+          <section id="resultadoPesquisaMatriculasCard" class="cartao">
+            <div class="cartao-cabecalho">
+              <h2>Resultados da pesquisa</h2>
+              <span id="quantidadeResultadosMatriculas" class="subtitulo"></span>
+            </div>
+
+            <div id="resultadosPesquisaMatriculas" class="lista-resultados">
+              <div class="estado-vazio">
+                Digite pelo menos 2 caracteres para pesquisar.
+              </div>
+            </div>
+          </section>
+
+          <section id="gestaoMatriculasAluno" class="oculto">
+            <div class="acoes-topo-gestao-matriculas">
+              <button
+                type="button"
+                class="botao botao-secundario"
+                onclick="voltarPesquisaMatriculas()"
+              >
+                ← Trocar aluno
+              </button>
+            </div>
+
+            <div
+              class="cabecalho-gestao-matriculas"
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 18px;
+                width: 100%;
+                margin: 10px 0 16px;
+              "
+            >
+              <div style="min-width: 0;">
+                <h2
+                  id="nomeAlunoGestaoMatriculas"
+                  style="margin: 0 0 4px;"
+                >
+                  Aluno
+                </h2>
+
+                <div
+                  id="dadosAlunoGestaoMatriculas"
+                  class="subtitulo"
+                ></div>
+              </div>
+
+              <button
+                type="button"
+                class="botao botao-primario"
+                style="
+                  margin-left: auto;
+                  flex: 0 0 auto;
+                  align-self: center;
+                "
+                onclick="abrirNovaMatricula()"
+              >
+                + Nova matrícula
+              </button>
+            </div>
+
+            <section class="cartao">
+              <div class="cartao-cabecalho">
+                <h2>Matrículas do aluno</h2>
+                <span id="quantidadeGestaoMatriculas" class="subtitulo"></span>
+              </div>
+
+              <div id="listaGestaoMatriculas" class="lista-gestao-matriculas">
+                <div class="estado-vazio">Carregando matrículas...</div>
+              </div>
+            </section>
+          </section>
+        </section>
+
+        <!-- FICHA DO ALUNO -->
+        <section id="tela-ficha" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <button
+                class="botao botao-secundario"
+                onclick="voltarParaPesquisa()"
+                style="margin-bottom:12px"
+              >
+                ← Voltar
+              </button>
+
+              <h1 id="tituloFicha">Ficha do aluno</h1>
+              <div id="subtituloFicha" class="subtitulo"></div>
+            </div>
+
+            <button class="botao botao-primario" onclick="abrirNovaMatricula()">
+              + Nova matrícula
+            </button>
+          </div>
+
+          <section class="cartao">
+            <div class="abas">
+              <button
+                id="abaDados"
+                class="aba ativa"
+                onclick="trocarAbaFicha('dados')"
+              >
+                Dados pessoais
+              </button>
+
+              <button
+                id="abaMatriculas"
+                class="aba"
+                onclick="trocarAbaFicha('matriculas')"
+              >
+                Matrículas
+              </button>
+            </div>
+
+            <div id="conteudoDados" class="cartao-corpo">
+              <input id="idAluno" type="hidden">
+
+              <div class="grade">
+                <div class="campo campo-2">
+                  <label>Nome do aluno</label>
+                  <input id="nomeAluno">
+                </div>
+
+                <div class="campo">
+                  <label>Nome social</label>
+                  <input id="nomeSocial">
+                </div>
+
+                <div class="campo">
+                  <label>Data de nascimento</label>
+                  <input id="dataNascimento" type="date">
+                </div>
+
+                <div class="campo">
+                  <label>CPF</label>
+                  <input id="cpf">
+                </div>
+
+                <div class="campo">
+                  <label>E-mail</label>
+                  <input id="email" type="email">
+                </div>
+
+                <div class="campo">
+                  <label>Telefone do aluno</label>
+                  <input id="telefoneAluno">
+                </div>
+
+                <div class="campo">
+                  <label>Nome do responsável</label>
+                  <input id="nomeResponsavel">
+                </div>
+
+                <div class="campo">
+                  <label>Telefone do responsável</label>
+                  <input id="telefoneResponsavel">
+                </div>
+
+                <div class="campo campo-2">
+                  <label>Endereço</label>
+                  <input id="endereco">
+                </div>
+                <div class="campo campo-total">
+                  <label>Observações</label>
+                  <textarea id="observacao"></textarea>
+                </div>
+              </div>
+
+              <div class="acoes">
+                <button class="botao botao-primario" onclick="salvarEdicaoAluno()">
+                  Salvar alterações
+                </button>
+              </div>
+            </div>
+
+            <div id="conteudoMatriculas" class="cartao-corpo oculto">
+              <div id="listaMatriculas"></div>
+            </div>
+          </section>
+        </section>
+
+        <!-- NOVO ALUNO -->
+        <section id="tela-novo-aluno" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <button
+                class="botao botao-secundario"
+                onclick="voltarParaPesquisa()"
+                style="margin-bottom:12px"
+              >
+                ← Voltar
+              </button>
+
+              <h1>Novo aluno</h1>
+              <div class="subtitulo">
+                Cadastre os dados pessoais e crie a primeira matrícula.
+              </div>
+            </div>
+          </div>
+
+          <section class="cartao">
+            <div class="cartao-cabecalho">
+              <h2>Dados pessoais</h2>
+            </div>
+
+            <div class="cartao-corpo">
+              <div class="grade">
+                <div class="campo campo-2">
+                  <label>Nome do aluno *</label>
+                  <input id="novoNomeAluno" required>
+                </div>
+
+                <div class="campo">
+                  <label>Nome social</label>
+                  <input id="novoNomeSocial">
+                </div>
+
+                <div class="campo">
+                  <label>Data de nascimento *</label>
+                  <input id="novoDataNascimento" type="date" required>
+                </div>
+
+                <div class="campo">
+                  <label>CPF *</label>
+                  <input id="novoCpf" required>
+                </div>
+
+                <div class="campo">
+                  <label>E-mail *</label>
+                  <input id="novoEmail" type="email" required>
+                </div>
+
+                <div class="campo">
+                  <label>Telefone do aluno *</label>
+                  <input id="novoTelefoneAluno" required>
+                </div>
+
+                <div class="campo">
+                  <label>Nome do responsável</label>
+                  <input id="novoNomeResponsavel">
+                </div>
+
+                <div class="campo">
+                  <label>Telefone do responsável</label>
+                  <input id="novoTelefoneResponsavel">
+                </div>
+
+                <div class="campo campo-2">
+                  <label>Endereço *</label>
+                  <input id="novoEndereco" required>
+                </div>
+
+                <div class="campo campo-total">
+                  <label>Observações</label>
+                  <textarea id="novoObservacao"></textarea>
+                </div>
+              </div></div>
+          </section>
+
+          <section class="cartao">
+            <div class="cartao-cabecalho">
+              <h2>Primeira matrícula</h2>
+            </div>
+
+            <div class="cartao-corpo">
+              <div class="grade">
+
+  <div class="campo campo-2">
+    <label>Turma *</label>
+    <select
+      id="novaTurma"
+      required
+      onchange="preencherModalidadeTurma(
+        'novaTurma',
+        'novoModalidade'
+      )"
+    >
+      <option value="">Selecione uma turma</option>
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>Modalidade *</label>
+    <input
+      id="novoModalidade"
+      type="text"
+      readonly
+      required
+    >
+  </div>
+
+  <div class="campo">
+    <label>Captação *</label>
+    <select id="novoCaptacao" required>
+      <option value="">Selecione</option>
+      <option value="INSTAGRAM">INSTAGRAM</option>
+      <option value="FACEBOOK">FACEBOOK</option>
+      <option value="GOOGLE">GOOGLE</option>
+      <option value="SITE">SITE</option>
+      <option value="WHATSAPP">WHATSAPP</option>
+      <option value="INDICAÇÃO">INDICAÇÃO</option>
+      <option value="EVENTO">EVENTO</option>
+      <option value="PASSANTE">PASSANTE</option>
+      <option value="OUTRO">OUTRO</option>
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>APPAI *</label>
+    <select id="novoAppai" required>
+      <option value="">Selecione</option>
+      <option value="NÃO">NÃO</option>
+      <option value="SIM">SIM</option>
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>Motivo da alteração</label>
+    <input
+      id="novoMotivoAlteracao"
+      type="text"
+      placeholder="Informe o motivo, caso exista"
+    >
+  </div>
+
+  <div class="campo">
+    <label>Data da matrícula *</label>
+    <input
+      id="novaDataMatricula"
+      type="date"
+      required
+    >
+  </div>
+
+  <div class="campo">
+    <label>Data em que o aluno iniciará na turma *</label>
+    <input
+      id="novaDataEfetivoTurma"
+      type="date"
+      required
+    >
+  </div>
+
+  <div class="campo">
+    <label>Status *</label>
+    <select id="novoStatus" required>
+      <option value="ATIVO">ATIVO</option>
+      <option value="EM ESPERA">EM ESPERA</option>
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>Isento de matrícula? *</label>
+    <select id="novoIsentoMatricula" required>
+      <option value="NÃO">NÃO</option>
+      <option value="SIM">SIM</option>
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>Bolsa (%)</label>
+    <input
+      id="novoBolsista"
+      type="number"
+      min="0"
+      max="100"
+      step="1"
+      inputmode="numeric"
+      placeholder="Deixe em branco se não for bolsista"
+    >
+    <small class="dado-secundario">
+      Em branco ou 0 = não é bolsista. 100 = bolsa integral.
+    </small>
+  </div>
+
+  <div class="campo">
+    <label>Sem combo — antes</label>
+    <input id="novoSemComboAntes" placeholder="R$ 0,00">
+  </div>
+
+  <div class="campo">
+    <label>Sem combo — após</label>
+    <input id="novoSemComboDepois" placeholder="R$ 0,00">
+  </div>
+
+  <div class="campo">
+    <label>Com combo — antes</label>
+    <input id="novoComComboAntes" placeholder="R$ 0,00">
+  </div>
+
+  <div class="campo">
+    <label>Com combo — após</label>
+    <input id="novoComComboDepois" placeholder="R$ 0,00">
+  </div>
+
+</div>
+  <button class="botao botao-secundario" onclick="voltarParaPesquisa()">
+                  Cancelar
+                </button>
+
+                <button
+                  id="botaoSalvarNovo"
+                  class="botao botao-primario"
+                  onclick="salvarNovoAluno()"
+                >
+                  Salvar aluno e matrícula
+                </button>
+              </div>
+            </div>
+          </section>
+        </section>
+       <!-- MÓDULO TURMAS -->
+<section id="tela-turmas" class="oculto">
+  <div class="cabecalho-pagina">
+    <div>
+      <h1>Turmas</h1>
+      <div class="subtitulo">
+        Cadastre, pesquise, edite e encerre as turmas da escola.
+      </div>
+    </div>
+
+    <button
+      type="button"
+      class="botao botao-primario"
+      onclick="abrirNovaTurma()"
+    >
+      + Nova turma
+    </button>
+  </div>
+
+  <section class="cartao">
+    <div class="cartao-corpo">
+      <div class="busca-turmas">
+        <div class="campo busca-turma-campo">
+          <label>Pesquisar turma</label>
+          <input
+            id="pesquisaTurma"
+            type="search"
+            placeholder="Digite o tipo, modalidade, dia ou horário..."
+            autocomplete="off"
+            oninput="agendarPesquisaTurmas()"
+          >
+        </div>
+
+        <div class="campo filtro-status-turma">
+          <label>Status</label>
+          <select
+            id="filtroStatusTurma"
+            onchange="carregarTurmasSistema()"
+          >
+            <option value="">Todos</option>
+            <option value="EM ANDAMENTO">EM ANDAMENTO</option>
+            <option value="EM ESPERA">EM ESPERA</option>
+            <option value="ENCERRADA">ENCERRADA</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <div class="cartao-cabecalho">
+      <h2>Turmas cadastradas</h2>
+      <span id="quantidadeTurmas" class="subtitulo"></span>
+    </div>
+
+    <div id="listaTurmasSistema">
+      <div class="estado-vazio">
+        Carregando turmas...
+      </div>
+    </div>
+  </section>
+</section>
+
+
+<!-- MODAL DE CADASTRO E EDIÇÃO DE TURMA -->
+<div
+  id="modalTurma"
+  class="modal-fundo oculto"
+  onclick="fecharModalTurmaFora(event)"
+>
+  <section
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="tituloModalTurma"
+  >
+    <div class="modal-cabecalho">
+      <div>
+        <h2 id="tituloModalTurma">Nova turma</h2>
+        <div id="subtituloModalTurma" class="subtitulo">
+          Preencha os dados da turma.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="modal-fechar"
+        aria-label="Fechar"
+        onclick="fecharModalTurma()"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="modal-corpo">
+      <input id="modoFormularioTurma" type="hidden" value="NOVO">
+
+      <div class="grade">
+        <div class="campo campo-2">
+          <label>Tipo da turma *</label>
+          <input
+            id="turmaTipoMatricula"
+            type="text"
+            placeholder="Ex.: TP25, FORMAÇÃO I23"
+            required
+          >
+          <small class="dado-secundario">
+            Esse campo é único e não poderá ser alterado depois do cadastro.
+          </small>
+        </div>
+
+        <div class="campo">
+          <label>Modalidade *</label>
+          <input
+            id="turmaModalidade"
+            type="text"
+            placeholder="Ex.: TEATRO"
+            required
+          >
+        </div>
+
+        <div class="campo">
+          <label>Dia *</label>
+          <select id="turmaDia" required>
+            <option value="">Selecione</option>
+            <option value="SEGUNDA">SEGUNDA</option>
+            <option value="TERÇA">TERÇA</option>
+            <option value="QUARTA">QUARTA</option>
+            <option value="QUINTA">QUINTA</option>
+            <option value="SEXTA">SEXTA</option>
+            <option value="SÁBADO">SÁBADO</option>
+            <option value="SEG e QUA">SEG e QUA</option>
+            <option value="TER e QUI">TER e QUI</option>
+            <option value="QUA e SEX">QUA e SEX</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Hora *</label>
+          <input id="turmaHora" type="time" required>
+        </div>
+
+        <div class="campo">
+          <label>Status da turma *</label>
+          <select id="turmaStatus" required>
+            <option value="EM ANDAMENTO">EM ANDAMENTO</option>
+            <option value="EM ESPERA">EM ESPERA</option>
+            <option value="ENCERRADA">ENCERRADA</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Data de início *</label>
+          <input id="turmaDataInicio" type="date" required>
+        </div>
+
+        <div class="campo">
+          <label>Data de fim</label>
+          <input id="turmaDataFim" type="date">
+        </div>
+
+        <div class="campo campo-total">
+          <label>Turma-Dia-Hora</label>
+          <input
+            id="turmaDiaHoraPreview"
+            type="text"
+            readonly
+            placeholder="Gerado automaticamente"
+          >
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-rodape">
+      <button
+        type="button"
+        class="botao botao-secundario"
+        onclick="fecharModalTurma()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        id="botaoSalvarTurma"
+        type="button"
+        class="botao botao-primario"
+        onclick="salvarTurmaSistema()"
+      >
+        Salvar turma
+      </button>
+    </div>
+  </section>
+</div>
+<!-- MÓDULO PROFESSORES / CONTROLE DE CHAMADAS -->
+        <section id="tela-professores" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <h1>Professores</h1>
+              <div class="subtitulo">
+                Acompanhe as aulas previstas e verifique quais chamadas foram realizadas.
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="botao botao-primario"
+              onclick="abrirModalNovoProfessorSIGA()"
+            >
+              ＋ Novo professor
+            </button>
+          </div>
+
+          <div class="abas-professores-siga">
+            <button id="abaControleProfessores" type="button" class="aba-professor-siga ativa" onclick="abrirAbaInternaProfessoresSIGA('controle')">Controle de chamadas</button>
+            <button id="abaPagamentosProfessores" type="button" class="aba-professor-siga" onclick="abrirAbaInternaProfessoresSIGA('pagamentos')">Pagamentos dos professores</button>
+          </div>
+
+          <div id="painelControleProfessoresSIGA">
+          <section class="cartao">
+            <div class="cartao-corpo">
+              <div class="filtro-controle-chamadas">
+                <div class="campo">
+                  <label>Mês de referência</label>
+                  <input
+                    id="mesControleChamadas"
+                    type="month"
+                    onchange="carregarControleChamadasMensal()"
+                  >
+                </div>
+
+                <button
+                  id="botaoAtualizarControleChamadas"
+                  type="button"
+                  class="botao botao-primario"
+                  onclick="carregarControleChamadasMensal()"
+                >
+                  Atualizar
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <div class="indicadores-controle-chamadas">
+            <section class="cartao indicador-controle-chamada">
+              <span>Aulas previstas</span>
+              <strong id="totalAulasPrevistas">0</strong>
+            </section>
+
+            <section class="cartao indicador-controle-chamada indicador-realizada">
+              <span>Chamadas realizadas</span>
+              <strong id="totalChamadasRealizadas">0</strong>
+            </section>
+
+            <section class="cartao indicador-controle-chamada indicador-pendente">
+              <span>Pendentes</span>
+              <strong id="totalChamadasPendentes">0</strong>
+            </section>
+
+            <section class="cartao indicador-controle-chamada indicador-percentual">
+              <span>Preenchimento</span>
+              <strong id="percentualChamadasRealizadas">0%</strong>
+            </section>
+          </div>
+
+          <section class="cartao">
+            <div class="cartao-cabecalho">
+              <div>
+                <h2>Controle mensal de chamadas</h2>
+                <span id="resumoMesControleChamadas" class="subtitulo"></span>
+              </div>
+            </div>
+
+            <div class="tabela-responsiva-controle">
+              <table class="tabela-controle-chamadas">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Dia</th>
+                    <th>Horário</th>
+                    <th>Turma</th>
+                    <th>Professor</th>
+                    <th>Situação</th>
+                    <th>Envio</th>
+                  </tr>
+                </thead>
+
+                <tbody id="corpoTabelaControleChamadas">
+                  <tr>
+                    <td colspan="7" class="estado-vazio">
+                      Selecione um mês para carregar o controle.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          </div>
+
+          <div id="painelPagamentosProfessoresSIGA" class="oculto">
+            <section class="cartao"><div class="cartao-corpo filtros-pagamentos-professores">
+              <div class="campo"><label>Mês/ano da aula</label><input id="mesPagamentoProfessor" type="month" onchange="carregarPagamentosProfessoresSIGA()"></div>
+              <div class="campo"><label>Professor</label><select id="filtroProfessorPagamento" onchange="carregarPagamentosProfessoresSIGA(true)"><option value="">Todos os professores</option></select></div>
+              <div class="campo"><label>Turma</label><select id="filtroTurmaPagamento" onchange="carregarPagamentosProfessoresSIGA(true)"><option value="">Todas as turmas</option></select></div>
+              <button id="botaoAtualizarPagamentosProfessores" type="button" class="botao botao-primario" onclick="carregarPagamentosProfessoresSIGA()">Atualizar</button>
+            </div></section>
+
+            <div class="cards-pagamentos-professores">
+              <section class="cartao card-pagamento-professor"><span>Valor a pagar</span><strong id="cardValorPagarProfessores">R$ 0,00</strong></section>
+              <section class="cartao card-pagamento-professor"><span>Total de horas</span><strong id="cardTotalHorasProfessores">0</strong></section>
+            </div>
+
+            <section class="cartao">
+              <div class="cartao-cabecalho"><h2>Valor a receber por professor</h2></div>
+              <div id="graficoPagamentosProfessores" class="grafico-pagamentos-professores"><div class="estado-vazio">Preencha as horas e o valor da hora/aula.</div></div>
+            </section>
+
+            <section class="cartao">
+              <div class="cartao-cabecalho">
+                <div><h2>Pagamentos dos professores</h2><span class="subtitulo">Preencha ou edite várias linhas e salve tudo de uma vez.</span></div>
+                <button id="botaoSalvarPagamentosEmLote" type="button" class="botao botao-primario" onclick="salvarPagamentosProfessoresEmLoteSIGA()">Salvar alterações</button>
+              </div>
+              <div class="tabela-responsiva-controle"><table class="tabela-controle-chamadas tabela-pagamentos-professores">
+                <thead><tr><th>Professor</th><th>Data da aula</th><th>Turma</th><th>Qtd. de horas</th><th>Valor hora/aula</th><th>Valor a pagar</th><th>Ação</th></tr></thead>
+                <tbody id="corpoTabelaPagamentosProfessores"><tr><td colspan="7" class="estado-vazio">Selecione o mês para carregar.</td></tr></tbody>
+              </table></div>
+            </section>
+          </div>
+
+          <style>
+            .abas-professores-siga{display:flex;gap:10px;margin:0 0 18px;flex-wrap:wrap}.aba-professor-siga{border:1px solid #ddd6fe;background:#fff;color:#4c1d95;border-radius:12px;padding:12px 18px;font-weight:800;cursor:pointer}.aba-professor-siga.ativa{background:#5b2be0;color:#fff;border-color:#5b2be0}
+            .filtros-pagamentos-professores{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr)) auto;gap:16px;align-items:end}.cards-pagamentos-professores{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:16px;margin:18px 0}.card-pagamento-professor{padding:22px}.card-pagamento-professor span{display:block;color:#6b7280;font-weight:700;margin-bottom:8px}.card-pagamento-professor strong{font-size:28px;color:#2f176f}
+            .entrada-pagamento-professor{width:110px;min-height:40px;padding:8px;border:1px solid #d1d5db;border-radius:8px}.grafico-pagamentos-professores{padding:18px;display:grid;gap:12px}.linha-grafico-professor{display:grid;grid-template-columns:minmax(130px,220px) 1fr 110px;gap:12px;align-items:center}.barra-fundo-professor{height:22px;background:#ede9fe;border-radius:999px;overflow:hidden}.barra-professor{height:100%;background:#5b2be0;border-radius:999px;min-width:2px}
+            @media(max-width:800px){.filtros-pagamentos-professores{grid-template-columns:1fr}.cards-pagamentos-professores{grid-template-columns:1fr}.linha-grafico-professor{grid-template-columns:110px 1fr 90px}}
+          </style>
+        </section>
+
+<!-- MODAL: NOVO PROFESSOR -->
+<div
+  id="modalNovoProfessorSIGA"
+  class="modal-fundo oculto"
+  onclick="fecharModalNovoProfessorForaSIGA(event)"
+>
+  <section
+    class="modal"
+    onclick="event.stopPropagation()"
+    style="max-width:520px;"
+  >
+    <div class="modal-cabecalho">
+      <div>
+        <h2>Novo professor</h2>
+        <div class="subtitulo">
+          Cadastre os dados do professor e a chave PIX para pagamentos.
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="modal-fechar"
+        onclick="fecharModalNovoProfessorSIGA()"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="modal-corpo">
+      <div
+        id="mensagemNovoProfessorSIGA"
+        class="oculto"
+        style="
+          margin-bottom:14px;
+          padding:10px 12px;
+          border-radius:9px;
+          font-size:13px;
+          font-weight:700;
+        "
+      ></div>
+
+      <div
+        class="grade"
+        style="grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;"
+      >
+        <div class="campo">
+          <label>Nome *</label>
+          <input
+            id="nomeNovoProfessorSIGA"
+            type="text"
+            autocomplete="off"
+            placeholder="Ex.: Maria"
+          >
+        </div>
+
+        <div class="campo">
+          <label>Sobrenome *</label>
+          <input
+            id="sobrenomeNovoProfessorSIGA"
+            type="text"
+            autocomplete="off"
+            placeholder="Ex.: Silva"
+          >
+        </div>
+
+        <div class="campo">
+          <label>Tipo da chave PIX *</label>
+          <select id="tipoChaveNovoProfessorSIGA">
+            <option value="">Selecione</option>
+            <option value="CPF">CPF</option>
+            <option value="CNPJ">CNPJ</option>
+            <option value="CELULAR">Celular</option>
+            <option value="EMAIL">E-mail</option>
+            <option value="ALEATORIA">Chave aleatória</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Chave PIX *</label>
+          <input
+            id="chavePixNovoProfessorSIGA"
+            type="text"
+            autocomplete="off"
+            placeholder="Digite a chave PIX"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();salvarNovoProfessorSIGA();}"
+          >
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-rodape">
+      <button
+        type="button"
+        class="botao botao-secundario"
+        onclick="fecharModalNovoProfessorSIGA()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        id="botaoSalvarNovoProfessorSIGA"
+        type="button"
+        class="botao botao-primario"
+        onclick="salvarNovoProfessorSIGA()"
+      >
+        Salvar professor
+      </button>
+    </div>
+  </section>
+</div>
+
+<!-- MÓDULO CENTRAL DE COMUNICAÇÃO -->
+<?!= include('CentralComunicacao_'); ?>
+
+<!-- MÓDULO AULA EXPERIMENTAL -->
+<?!= include('AulaExperimental_'); ?>
+
+<!-- MÓDULO PENDÊNCIAS DO DIA -->
+<?!= include('PendenciasDia_'); ?>
+
+<!-- MÓDULO EMPRÉSTIMO DE LIVROS -->
+<?!= include('EmprestimoLivros_'); ?>
+
+<!-- MÓDULO ENCOMENDAS DE CAMISAS -->
+<?!= include('EncomendasCamisas_'); ?>
+
+<!-- MÓDULO PAGAMENTOS -->
+<?!= include('Pagamentos_'); ?>
+
+<!-- MÓDULO ANÁLISES -->
+<?!= include('Analises_'); ?>
+
+<!-- MÓDULO COMPROVANTES -->
+<?!= include('Comprovantes_'); ?>
+
+        <!-- TELAS AINDA NÃO IMPLEMENTADAS -->
+        <section id="tela-placeholder" class="oculto">
+          <div class="cabecalho-pagina">
+            <div>
+              <h1 id="placeholderTitulo">Módulo</h1>
+              <div class="subtitulo">
+                Este módulo será adicionado em uma próxima etapa.
+              </div>
+            </div>
+          </div>
+
+          <section class="cartao">
+            <div class="estado-vazio">
+              A estrutura visual já está pronta. Agora podemos desenvolver
+              este módulo sem alterar o cadastro de alunos.
+            </div>
+          </section>
+        </section>
+      
+<!-- MODAL: NOVA MATRÍCULA PARA ALUNO EXISTENTE -->
+<div
+  id="modalNovaMatricula"
+  class="modal-fundo oculto"
+  onclick="fecharModalNovaMatriculaFora(event)"
+>
+  <section
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="tituloModalNovaMatricula"
+  >
+    <div class="modal-cabecalho">
+      <div>
+        <h2 id="tituloModalNovaMatricula">Nova matrícula</h2>
+        <div id="alunoNovaMatricula" class="subtitulo"></div>
+      </div>
+
+      <button
+        type="button"
+        class="modal-fechar"
+        aria-label="Fechar"
+        onclick="fecharNovaMatricula()"
+      >
+        ×
+      </button>
+    </div>
+
+    <div class="modal-corpo">
+      <input id="modoFormularioMatricula" type="hidden" value="NOVO">
+      <input id="idMatriculaEdicao" type="hidden" value="">
+      <input id="origemModalMatricula" type="hidden" value="FICHA">
+
+      <div
+    id="mensagemNovaMatricula"
+    class="mensagem oculto"
+  ></div>
+
+  <div class="grade">
+    
+        <div class="campo campo-2">
+          <label>Turma *</label>
+          <select id="matriculaTurma" required>
+            <option value="">Carregando turmas...</option>
+          </select>
+        </div>
+
+        <div class="campo">
+  <label>Modalidade *</label>
+
+  <input
+    id="matriculaModalidade"
+    type="text"
+    readonly
+    required
+  >
+</div>
+
+        <div class="campo">
+          <label>Status *</label>
+          <select id="matriculaStatus" required>
+            <option value="ATIVO">ATIVO</option>
+            <option value="EM ESPERA">EM ESPERA</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Tipo de matrícula *</label>
+          <select id="matriculaTipo" required>
+            <option value="" selected disabled hidden>Selecione</option>
+            <option value="ATIVAÇÃO">ATIVAÇÃO</option>
+            <option value="UPGRADE">UPGRADE</option>
+            <option value="RENOVAÇÃO">RENOVAÇÃO</option>
+            <option value="TRANSFERÊNCIA">TRANSFERÊNCIA</option>
+            <option value="MUDANÇA APPAI">MUDANÇA APPAI</option>
+          </select>
+        </div>
+
+        <div class="campo">
+  <label>Motivo da alteração</label>
+
+  <input
+    id="matriculaMotivoAlteracao"
+    type="text"
+    placeholder="Informe o motivo, caso exista"
+  >
+</div>
+
+
+        <div class="campo">
+          <label>APPAI *</label>
+          <select id="matriculaAppai" required>
+            <option value="">Selecione</option>
+            <option value="NÃO">NÃO</option>
+            <option value="SIM">SIM</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Data da matrícula *</label>
+          <input id="matriculaData" type="date" required>
+        </div>
+
+        <div class="campo">
+          <label>Data em que o aluno iniciará na turma *</label>
+          <input id="matriculaDataEfetivoTurma" 
+          type="date" 
+          required>
+        </div>
+
+        <div class="campo">
+          <label>Isento de matrícula? *</label>
+          <select id="matriculaIsento" required>
+            <option value="NÃO">NÃO</option>
+            <option value="SIM">SIM</option>
+          </select>
+        </div>
+
+        <div class="campo">
+          <label>Bolsa (%)</label>
+          <input
+            id="matriculaBolsista"
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            inputmode="numeric"
+            placeholder="Deixe em branco se não for bolsista"
+          >
+          <small class="dado-secundario">
+            Em branco ou 0 = não é bolsista. 100 = bolsa integral.
+          </small>
+        </div>
+
+        <div class="campo">
+          <label>Sem combo — antes do vencimento</label>
+          <input id="matriculaSemComboAntes" placeholder="R$ 0,00">
+        </div>
+
+        <div class="campo">
+          <label>Sem combo — após o vencimento</label>
+          <input id="matriculaSemComboDepois" placeholder="R$ 0,00">
+        </div>
+
+        <div class="campo">
+          <label>Com combo — antes do vencimento</label>
+          <input id="matriculaComComboAntes" placeholder="R$ 0,00">
+        </div>
+
+        <div class="campo">
+          <label>Com combo — após o vencimento</label>
+          <input id="matriculaComComboDepois" placeholder="R$ 0,00">
+        </div>
+      </div></div>
+
+    <div class="modal-rodape">
+      <button
+        type="button"
+        class="botao botao-secundario"
+        onclick="fecharNovaMatricula()"
+      >
+        Cancelar
+      </button>
+
+      <button
+        id="botaoSalvarNovaMatricula"
+        type="button"
+        class="botao botao-primario"
+        onclick="salvarNovaMatricula()"
+      >
+        Salvar matrícula
+      </button>
+    </div>
+  </section>
+</div>
+
+
+<script>
+function abrirModalNovoProfessorSIGA() {
+  const modal =
+    document.getElementById(
+      'modalNovoProfessorSIGA'
+    );
+
+  const mensagem =
+    document.getElementById(
+      'mensagemNovoProfessorSIGA'
+    );
+
+  if (mensagem) {
+    mensagem.textContent = '';
+    mensagem.classList.add('oculto');
+  }
+
+  [
+    'nomeNovoProfessorSIGA',
+    'sobrenomeNovoProfessorSIGA',
+    'chavePixNovoProfessorSIGA'
+  ].forEach(id => {
+    const campo =
+      document.getElementById(id);
+
+    if (campo) {
+      campo.value = '';
+    }
+  });
+
+  const tipoChave =
+    document.getElementById(
+      'tipoChaveNovoProfessorSIGA'
+    );
+
+  if (tipoChave) {
+    tipoChave.value = '';
+  }
+
+  modal?.classList.remove('oculto');
+
+  setTimeout(() => {
+    document
+      .getElementById(
+        'nomeNovoProfessorSIGA'
+      )
+      ?.focus();
+  }, 80);
+}
+
+function fecharModalNovoProfessorSIGA() {
+  document
+    .getElementById(
+      'modalNovoProfessorSIGA'
+    )
+    ?.classList
+    .add('oculto');
+}
+
+
+function fecharModalNovoProfessorForaSIGA(
+  evento
+) {
+  if (
+    evento.target ===
+    evento.currentTarget
+  ) {
+    fecharModalNovoProfessorSIGA();
+  }
+}
+
+
+function mostrarMensagemNovoProfessorSIGA(
+  texto,
+  tipo
+) {
+  const campo =
+    document.getElementById(
+      'mensagemNovoProfessorSIGA'
+    );
+
+  if (!campo) return;
+
+  campo.textContent =
+    String(texto || '');
+
+  campo.classList.remove('oculto');
+
+  if (tipo === 'sucesso') {
+    campo.style.background =
+      '#ecfdf3';
+    campo.style.color =
+      '#067647';
+    campo.style.border =
+      '1px solid #abefc6';
+  } else {
+    campo.style.background =
+      '#fef3f2';
+    campo.style.color =
+      '#b42318';
+    campo.style.border =
+      '1px solid #fecdca';
+  }
+}
+
+
+function salvarNovoProfessorSIGA() {
+  const campoNome =
+    document.getElementById(
+      'nomeNovoProfessorSIGA'
+    );
+
+  const campoSobrenome =
+    document.getElementById(
+      'sobrenomeNovoProfessorSIGA'
+    );
+
+  const campoTipoChave =
+    document.getElementById(
+      'tipoChaveNovoProfessorSIGA'
+    );
+
+  const campoChavePix =
+    document.getElementById(
+      'chavePixNovoProfessorSIGA'
+    );
+
+  const botao =
+    document.getElementById(
+      'botaoSalvarNovoProfessorSIGA'
+    );
+
+  const dados = {
+    nome:
+      String(
+        campoNome?.value || ''
+      ).trim(),
+
+    sobrenome:
+      String(
+        campoSobrenome?.value || ''
+      ).trim(),
+
+    tipoChave:
+      String(
+        campoTipoChave?.value || ''
+      ).trim(),
+
+    chavePix:
+      String(
+        campoChavePix?.value || ''
+      ).trim()
+  };
+
+  if (!dados.nome) {
+    mostrarMensagemNovoProfessorSIGA(
+      'Informe o nome do professor.',
+      'erro'
+    );
+    campoNome?.focus();
+    return;
+  }
+
+  if (!dados.sobrenome) {
+    mostrarMensagemNovoProfessorSIGA(
+      'Informe o sobrenome do professor.',
+      'erro'
+    );
+    campoSobrenome?.focus();
+    return;
+  }
+
+  if (!dados.tipoChave) {
+    mostrarMensagemNovoProfessorSIGA(
+      'Selecione o tipo da chave PIX.',
+      'erro'
+    );
+    campoTipoChave?.focus();
+    return;
+  }
+
+  if (!dados.chavePix) {
+    mostrarMensagemNovoProfessorSIGA(
+      'Informe a chave PIX.',
+      'erro'
+    );
+    campoChavePix?.focus();
+    return;
+  }
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent =
+      'Salvando...';
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent =
+          'Salvar professor';
+      }
+
+      mostrarMensagemNovoProfessorSIGA(
+        resultado?.mensagem ||
+        'Professor cadastrado com sucesso.',
+        'sucesso'
+      );
+
+      setTimeout(() => {
+        fecharModalNovoProfessorSIGA();
+
+        if (
+          typeof carregarControleChamadasMensal ===
+          'function'
+        ) {
+          carregarControleChamadasMensal();
+        }
+      }, 700);
+    })
+    .withFailureHandler(erro => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent =
+          'Salvar professor';
+      }
+
+      mostrarMensagemNovoProfessorSIGA(
+        erro?.message ||
+        String(
+          erro ||
+          'Não foi possível cadastrar o professor.'
+        ),
+        'erro'
+      );
+    })
+    .cadastrarNovoProfessorSIGA(
+      dados
+    );
+}
+</script>
