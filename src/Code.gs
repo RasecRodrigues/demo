@@ -36,13 +36,7 @@ function doGet(e) {
   )
     .trim()
     .toLowerCase();
-
-  // Endpoint de dados do Power BI. Vem antes das telas porque responde
-  // JSON (ContentService), não HTML — ver PowerBI.gs.
-  if (pagina === 'powerbi') {
-    return powerBIResponderSIGA_(e);
-  }
-
+   
   if (pagina === 'professor') {
 
     const token = String(
@@ -212,7 +206,7 @@ function include(nomeArquivo) {
 /**
  * Retorna as turmas cadastradas na DimTurma.
  */
-function listarTurmas() {
+function listarTurmasAntigo_() {
   const planilha = SpreadsheetApp.getActiveSpreadsheet();
   const aba = planilha.getSheetByName(CONFIG.ABAS.TURMAS);
 
@@ -342,14 +336,13 @@ function salvarCadastro(formulario) {
       NOME_ALUNO: formulario.nomeAluno,
       TURMA: formulario.turma,
       STATUS: formulario.status || 'ATIVO',
-      'TIPO_MATRICULA/ALTERACAO': 'NOVA',
-      MOTIVO_ALTERACAO:formulario.motivoAlteracao || '',
+      MOTIVO_ALTERACAO: formulario.motivoAlteracao || '',
       'TIPO_MATRICULA/ALTERACAO': formulario.tipoMatricula || 'NOVA',
       'DATA_ALTERACAO/MATRICULA': converterData(formulario.dataMatricula),
       'DATA_CANCELAMENTO/FINALIZACAO': '',
       DATA_EFETIVO_TURMA:converterData(formulario.dataEfetivoTurma),
       ISENTO_MATRICULA: formulario.isentoMatricula || 'NÃO',
-      BOLSISTA: formulario.bolsista || 'NÃO',
+      BOLSISTA: normalizarBolsaSIGA_(formulario.bolsista),
       SEM_COMBO_ANTES_VENCIMENTO:
         converterNumero(formulario.semComboAntes),
       SEM_COMBO_APOS_VENCIMENTO:
