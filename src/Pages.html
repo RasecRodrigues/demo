@@ -1,0 +1,6765 @@
+<script>
+let timerBuscaComp = null;
+let alunoComp = null;
+let matriculasComp = [];
+let cardsComp = [];
+let seqCardComp = 0;
+
+const CAMPOS_COMP = [
+  ['mensalidade', 'Mensalidade'],
+  ['matricula', 'Matrícula'],
+  ['camisa', 'Camisa'],
+  ['taxaFinalizacao', 'Taxa de finalização'],
+  ['residuoMensalidade', 'Resíduo de mensalidade'],
+  ['taxaCancelamento', 'Taxa de cancelamento'],
+  ['imersao', 'Imersão'],
+  ['workshop', 'Workshop'],
+  ['reservaSalaAr', 'Reserva de Sala com Ar'],
+  ['aulaParticular', 'Aula Particular'],
+  ['multaLivro', 'Multa atraso na entrega do livro'],
+  ['outro', 'Outro']
+];
+
+function abrirTelaComprovantes(botaoMenu) {
+  const telaComprovantes =
+    document.getElementById('tela-comprovantes');
+
+  const modalComprovante =
+    document.getElementById('modalComprovante');
+
+  const pagina =
+    document.querySelector('main.pagina');
+
+  if (!telaComprovantes) {
+    mostrarMensagem(
+      'A tela de comprovantes não foi encontrada.',
+      'erro'
+    );
+    return;
+  }
+
+  if (
+    pagina &&
+    telaComprovantes.parentElement !== pagina
+  ) {
+    pagina.appendChild(telaComprovantes);
+  }
+
+  if (
+    pagina &&
+    modalComprovante &&
+    modalComprovante.parentElement !== pagina
+  ) {
+    pagina.appendChild(modalComprovante);
+  }
+
+  marcarMenuAtivo(botaoMenu);
+  fecharMenuMobile();
+  esconderMensagem();
+  esconderTelas();
+
+  telaComprovantes.classList.remove('oculto');
+  carregarComprovantesRecentes();
+}
+
+let ultimoTermoPesquisado = '';
+let idAlunoAberto = '';
+let temporizadorBusca = null;
+let ultimaBuscaExecutada = '';
+let timerBuscaMatriculas = null;
+let baseBuscaMatriculasSIGA = null;
+let carregandoBaseBuscaMatriculasSIGA = false;
+let timeoutBaseBuscaMatriculasSIGA = null;
+let nomeAlunoAberto = '';
+let origemGestaoMatricula = 'FICHA';
+
+/* Layout profissional dos cartões de matrícula. */
+(function instalarLayoutMatriculasSIGA(){
+  if(document.getElementById('layoutMatriculasAppaiSIGA'))return;
+  const estilo=document.createElement('style');
+  estilo.id='layoutMatriculasAppaiSIGA';
+  estilo.textContent=`
+    .matricula-card-profissional{padding:22px!important;border:1px solid #e4e7ec!important;border-left:5px solid #6427e8!important;border-radius:18px!important;background:#fff!important;box-shadow:0 8px 24px rgba(16,24,40,.06)!important;margin-bottom:18px!important}
+    .matricula-card-profissional .matricula-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding-bottom:16px;border-bottom:1px solid #eaecf0}
+    .matricula-card-profissional .matricula-topo h3{margin:0 0 6px;font-size:20px;color:#101828}
+    .matricula-identificacao{display:flex!important;align-items:center;gap:9px;flex-wrap:wrap;color:#667085}
+    .matricula-identificacao span{display:inline-flex;padding:5px 10px;border-radius:999px;background:#eee9ff;color:#5420c8;font-size:11px;font-weight:900}
+    .detalhes-matricula-gestao{display:grid!important;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px!important;margin:16px 0!important}
+    .detalhes-matricula-gestao>div{padding:13px 14px;border:1px solid #eaecf0;border-radius:12px;background:#f9fafb}
+    .detalhes-matricula-gestao span,.matricula-beneficio span,.detalhes-encerramento-kan51 span{display:block;font-size:11px!important;font-weight:700;color:#667085;margin-bottom:5px}
+    .detalhes-matricula-gestao strong,.matricula-beneficio strong,.detalhes-encerramento-kan51 strong{display:block;font-size:14px;line-height:1.35;color:#101828}
+    .matricula-beneficios-siga{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(150px,1fr));
+  gap:12px;
+  margin:0 0 16px
+}
+    .matricula-beneficio{padding:13px 14px;border:1px solid #e4e7ec;border-radius:12px;background:#fff}
+    .matricula-beneficio.beneficio-sim{border-color:#86efac;background:#f0fdf4}
+    .matricula-beneficio.beneficio-sim strong{color:#067647}
+    .matricula-beneficio.beneficio-nao{background:#f9fafb}
+    .detalhes-encerramento-kan51{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px!important;margin:0 0 16px!important;padding:14px!important;background:#fff8f2!important;border:1px solid #fed7aa!important;border-radius:12px!important}
+    .linha-tempo-matricula{margin-top:14px!important;background:#faf9ff!important}
+    .acoes-matricula-gestao{display:flex;gap:10px;flex-wrap:wrap;padding-top:16px;border-top:1px solid #eaecf0}
+    @media(max-width:900px){.detalhes-matricula-gestao{grid-template-columns:repeat(2,minmax(0,1fr))!important}.matricula-beneficios-siga{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:600px){.matricula-card-profissional{padding:16px!important}.detalhes-matricula-gestao,.matricula-beneficios-siga,.detalhes-encerramento-kan51{grid-template-columns:1fr!important}.acoes-matricula-gestao .botao{flex:1;min-width:130px}}
+  `;
+  document.head.appendChild(estilo);
+})();
+
+    document.addEventListener('DOMContentLoaded', () => {
+      definirDataAtual();
+      carregarTurmas();
+      configurarEventosTurma();
+      
+    });
+
+
+    function alternarMenu() {
+      document.getElementById('menu').classList.toggle('aberto');
+    }
+
+
+    function fecharMenuMobile() {
+      document.getElementById('menu').classList.remove('aberto');
+    }
+
+
+    function marcarMenuAtivo(botao) {
+      document.querySelectorAll('.menu-item').forEach(item => {
+        item.classList.remove('ativo');
+      });
+
+      if (botao) {
+        botao.classList.add('ativo');
+      }
+    }
+
+
+ function esconderTelas() {
+  [
+    'tela-alunos',
+    'tela-frequencia-alunos',
+    'tela-matriculas',
+    'tela-ficha',
+    'tela-novo-aluno',
+    'tela-turmas',
+    'tela-professores',
+    'tela-comprovantes',
+    'tela-pagamentos',
+    'tela-despesas',
+    'tela-rh',
+    'tela-aula-experimental',
+    'tela-emprestimo-livros',
+    'tela-pendencias-dia',
+    'tela-aluno-360',
+    'tela-central-comunicacao',
+    'tela-cancelamento-boletos',
+    'tela-analises',
+    'tela-analises-preditivas',
+    'tela-placeholder'
+  ].forEach(id => {
+    const tela = document.getElementById(id);
+
+    if (tela) {
+      tela.classList.add('oculto');
+    }
+  });
+
+  if (typeof resetarRolagemPrincipalSIGA === 'function') {
+    resetarRolagemPrincipalSIGA();
+  }
+}
+
+
+function resetarRolagemPrincipalSIGA() {
+  const elementosComRolagem = [
+    document.scrollingElement,
+    document.documentElement,
+    document.body,
+    document.querySelector('.conteudo'),
+    document.querySelector('main.pagina')
+  ].filter(Boolean);
+
+  elementosComRolagem.forEach(elemento => {
+    elemento.scrollTop = 0;
+    elemento.scrollLeft = 0;
+  });
+
+  window.scrollTo(0, 0);
+
+  requestAnimationFrame(() => {
+    elementosComRolagem.forEach(elemento => {
+      elemento.scrollTop = 0;
+      elemento.scrollLeft = 0;
+    });
+
+    window.scrollTo(0, 0);
+  });
+}
+
+
+function abrirTela(tela, botao) {
+  marcarMenuAtivo(botao);
+  fecharMenuMobile();
+  esconderMensagem();
+  esconderTelas();
+
+  if (tela === 'alunos') {
+    const telaAlunos =
+      document.getElementById('tela-alunos');
+
+    if (telaAlunos) {
+      telaAlunos.classList.remove('oculto');
+    }
+
+    if (
+      typeof carregarBaseBuscaMatriculasSIGA ===
+      'function'
+    ) {
+      carregarBaseBuscaMatriculasSIGA();
+    }
+
+    return;
+  }
+
+  if (tela === 'analises') {
+    const telaAnalises =
+      document.getElementById('tela-analises');
+
+    if (!telaAnalises) {
+      if (typeof mostrarMensagem === 'function') {
+        mostrarMensagem(
+          'A tela de Análises não foi encontrada no Pages.html.',
+          'erro'
+        );
+      }
+      return;
+    }
+
+    const pagina =
+      document.querySelector('main.pagina');
+
+    if (
+      pagina &&
+      telaAnalises.parentElement !== pagina
+    ) {
+      pagina.appendChild(telaAnalises);
+    }
+
+    telaAnalises.classList.remove('oculto');
+    window.scrollTo(0, 0);
+
+    // Abre a tela imediatamente usando os dados já mantidos no navegador.
+    // Só consulta o Apps Script se for a primeira abertura da sessão.
+    setTimeout(() => {
+      if (typeof carregarAnalisesSIGA === 'function') {
+        carregarAnalisesSIGA(false);
+      }
+    }, 0);
+
+    return;
+  }
+
+  if (tela === 'professores') {
+    const telaProfessores =
+      document.getElementById('tela-professores');
+
+    if (!telaProfessores) {
+      mostrarMensagem(
+        'A tela de professores não foi encontrada.',
+        'erro'
+      );
+      return;
+    }
+
+    const pagina =
+      document.querySelector('main.pagina');
+
+    if (
+      pagina &&
+      telaProfessores.parentElement !== pagina
+    ) {
+      pagina.appendChild(telaProfessores);
+    }
+
+    telaProfessores.classList.remove('oculto');
+
+    if (
+      typeof definirMesAtualControleChamadas ===
+      'function'
+    ) {
+      definirMesAtualControleChamadas();
+    }
+
+    if (
+      typeof carregarControleChamadasMensal ===
+      'function'
+    ) {
+      carregarControleChamadasMensal();
+    }
+
+    return;
+  }
+
+  const nomes = {
+    dashboard: 'Dashboard',
+    matriculas: 'Matrículas',
+    turmas: 'Turmas',
+    professores: 'Professores',
+    pagamentos: 'Pagamentos',
+    boletos: 'Boletos',
+    relatorios: 'Relatórios',
+    analises: 'Análises'
+  };
+
+  const placeholderTitulo =
+    document.getElementById('placeholderTitulo');
+
+  if (placeholderTitulo) {
+    placeholderTitulo.textContent =
+      nomes[tela] || 'Módulo';
+  }
+
+  const placeholder =
+    document.getElementById('tela-placeholder');
+
+  if (placeholder) {
+    placeholder.classList.remove('oculto');
+  }
+}
+
+
+function abrirTelaMatriculas(botaoMenu) {
+  marcarMenuAtivo(botaoMenu);
+  fecharMenuMobile();
+  esconderMensagem();
+  esconderTelas();
+
+  const tela = document.getElementById('tela-matriculas');
+
+  if (!tela) {
+    mostrarMensagem(
+      'A tela de matrículas não foi encontrada no Pages.html.',
+      'erro'
+    );
+    return;
+  }
+
+  tela.classList.remove('oculto');
+  voltarPesquisaMatriculas(false);
+  carregarBaseBuscaMatriculasSIGA();
+
+  setTimeout(() => {
+    const campo = document.getElementById('buscaMatriculas');
+    if (campo) campo.focus();
+  }, 80);
+}
+
+
+function voltarPesquisaMatriculas(focar = true) {
+  const cardPesquisa =
+    document.getElementById('resultadoPesquisaMatriculasCard');
+
+  const gestao =
+    document.getElementById('gestaoMatriculasAluno');
+
+  if (cardPesquisa) cardPesquisa.classList.remove('oculto');
+  if (gestao) gestao.classList.add('oculto');
+
+  if (focar) {
+    setTimeout(() => {
+      const campo = document.getElementById('buscaMatriculas');
+      if (campo) campo.focus();
+    }, 50);
+  }
+}
+
+
+function tratarEnterBuscaMatriculas(evento) {
+  if (evento.key !== 'Enter') return;
+
+  evento.preventDefault();
+  pesquisarAlunosParaMatriculas();
+}
+
+
+function agendarBuscaMatriculas() {
+  clearTimeout(timerBuscaMatriculas);
+
+  const termo = valor('buscaMatriculas');
+  const container =
+    document.getElementById('resultadosPesquisaMatriculas');
+
+  const quantidade =
+    document.getElementById('quantidadeResultadosMatriculas');
+
+  if (termo.length < 2) {
+    if (quantidade) quantidade.textContent = '';
+
+    if (container) {
+      container.innerHTML = `
+        <div class="estado-vazio">
+          Digite pelo menos 2 caracteres para pesquisar.
+        </div>
+      `;
+    }
+
+    return;
+  }
+
+  if (container) {
+    container.innerHTML = `
+      <div class="estado-vazio">Pesquisando...</div>
+    `;
+  }
+
+  timerBuscaMatriculas = setTimeout(
+    pesquisarAlunosParaMatriculas,
+    120
+  );
+}
+
+
+function carregarBaseBuscaMatriculasSIGA() {
+  if (Array.isArray(baseBuscaMatriculasSIGA) || carregandoBaseBuscaMatriculasSIGA) return;
+  carregandoBaseBuscaMatriculasSIGA = true;
+
+  google.script.run
+    .withSuccessHandler(alunos => {
+      clearTimeout(timeoutBaseBuscaMatriculasSIGA);
+      baseBuscaMatriculasSIGA = Array.isArray(alunos) ? alunos : [];
+      carregandoBaseBuscaMatriculasSIGA = false;
+
+      const termo = valor('buscaMatriculas');
+      if (termo.length >= 2) pesquisarAlunosParaMatriculas();
+
+      const termoGlobal = valor('buscaGlobal');
+      if (termoGlobal.length >= 2) {
+        ultimaBuscaExecutada = termoGlobal;
+        ultimoTermoPesquisado = termoGlobal;
+        mostrarResultados(
+          filtrarBaseMatriculasLocalSIGA(termoGlobal)
+        );
+      }
+    })
+    .withFailureHandler(erro => {
+      clearTimeout(timeoutBaseBuscaMatriculasSIGA);
+      carregandoBaseBuscaMatriculasSIGA = false;
+      baseBuscaMatriculasSIGA = null;
+
+      const termoGlobal = valor('buscaGlobal');
+      if (termoGlobal.length >= 2) {
+        pesquisarAlunosServidorFallbackSIGA(termoGlobal);
+      }
+
+      const termoMatriculas = valor('buscaMatriculas');
+      if (termoMatriculas.length >= 2) {
+        google.script.run
+          .withSuccessHandler(renderizarResultadosMatriculas)
+          .withFailureHandler(exibirErro)
+          .pesquisarAlunos(termoMatriculas);
+      }
+    })
+    .listarBasePesquisaMatriculasRapidaSIGA();
+
+  timeoutBaseBuscaMatriculasSIGA = setTimeout(() => {
+    if (!carregandoBaseBuscaMatriculasSIGA) return;
+    carregandoBaseBuscaMatriculasSIGA = false;
+    const termoGlobal = valor('buscaGlobal');
+    if (termoGlobal.length >= 2) pesquisarAlunosServidorFallbackSIGA(termoGlobal);
+  }, 8000);
+}
+
+
+function pesquisarAlunosServidorFallbackSIGA(termo) {
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (valor('buscaGlobal') !== termo) return;
+      mostrarResultados(Array.isArray(resultado) ? resultado : []);
+    })
+    .withFailureHandler(erro => {
+      ultimaBuscaExecutada = '';
+      const container = document.getElementById('resultadosAlunos');
+      if (container) {
+        container.innerHTML = `
+          <div class="estado-vazio">
+            Não foi possível pesquisar: ${escapar(erro?.message || String(erro || 'erro desconhecido'))}
+          </div>
+        `;
+      }
+    })
+    .pesquisarAlunos(termo);
+}
+
+
+function normalizarBuscaMatriculasSIGA(valorBusca) {
+  return String(valorBusca || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+function filtrarBaseMatriculasLocalSIGA(termo) {
+  const texto = normalizarBuscaMatriculasSIGA(termo);
+  const numeros = String(termo || '').replace(/\D/g, '');
+
+  return (baseBuscaMatriculasSIGA || [])
+    .filter(aluno => {
+      const alvoTexto = normalizarBuscaMatriculasSIGA([
+        aluno.idAluno,
+        aluno.nomeAluno,
+        aluno.nomeSocial
+      ].join(' '));
+
+      const alvoNumeros = [
+        aluno.cpf,
+        aluno.telefoneAluno,
+        aluno.telefoneResponsavel
+      ].join(' ').replace(/\D/g, '');
+
+      return (
+        (texto && alvoTexto.includes(texto)) ||
+        (numeros.length >= 3 && alvoNumeros.includes(numeros))
+      );
+    })
+    .slice(0, 50);
+}
+
+
+function pesquisarAlunosParaMatriculas() {
+  const termo = valor('buscaMatriculas');
+
+  if (termo.length < 2) {
+    return;
+  }
+
+  if (Array.isArray(baseBuscaMatriculasSIGA)) {
+    renderizarResultadosMatriculas(
+      filtrarBaseMatriculasLocalSIGA(termo)
+    );
+    return;
+  }
+
+  carregarBaseBuscaMatriculasSIGA();
+
+  google.script.run
+    .withSuccessHandler(renderizarResultadosMatriculas)
+    .withFailureHandler(exibirErro)
+    .pesquisarAlunos(termo);
+}
+
+
+function renderizarResultadosMatriculas(alunos) {
+  const container =
+    document.getElementById('resultadosPesquisaMatriculas');
+
+  const quantidade =
+    document.getElementById('quantidadeResultadosMatriculas');
+
+  if (!container) return;
+
+  const lista = Array.isArray(alunos) ? alunos : [];
+
+  if (quantidade) {
+    quantidade.textContent =
+      `${lista.length} resultado${lista.length === 1 ? '' : 's'}`;
+  }
+
+  if (!lista.length) {
+    container.innerHTML = `
+      <div class="estado-vazio">
+        Nenhum aluno cadastrado foi encontrado.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = lista.map(aluno => `
+    <div class="resultado-aluno">
+      <div>
+        <div class="nome-aluno">${escapar(aluno.nomeAluno)}</div>
+        <div class="id-aluno">${escapar(aluno.idAluno)}</div>
+      </div>
+
+      <div>
+        <div class="dado-secundario">CPF</div>
+        <div>${escapar(aluno.cpf || 'Não informado')}</div>
+      </div>
+
+      <div class="ocultar-tablet">
+        <div class="dado-secundario">Telefone</div>
+        <div>${escapar(aluno.telefoneAluno || 'Não informado')}</div>
+      </div>
+
+      <div></div>
+
+      <button
+        type="button"
+        class="botao botao-primario"
+        onclick="abrirGestaoMatriculasAluno(
+          '${escaparAtributo(aluno.idAluno)}'
+        )"
+      >
+        Gerenciar matrículas
+      </button>
+    </div>
+  `).join('');
+}
+
+
+function abrirGestaoMatriculasAluno(idAluno) {
+  idAlunoAberto = idAluno;
+  origemGestaoMatricula = 'MATRICULAS';
+
+  const cardPesquisa =
+    document.getElementById('resultadoPesquisaMatriculasCard');
+
+  const gestao =
+    document.getElementById('gestaoMatriculasAluno');
+
+  if (cardPesquisa) cardPesquisa.classList.add('oculto');
+  if (gestao) gestao.classList.remove('oculto');
+
+  const alunoLocal = Array.isArray(baseBuscaMatriculasSIGA)
+    ? baseBuscaMatriculasSIGA.find(item => String(item.idAluno || '') === String(idAluno || ''))
+    : null;
+
+  document.getElementById('nomeAlunoGestaoMatriculas').textContent =
+    alunoLocal?.nomeAluno || 'Carregando aluno...';
+
+  document.getElementById('dadosAlunoGestaoMatriculas').textContent =
+    alunoLocal
+      ? `${idAluno} · CPF: ${alunoLocal.cpf || 'não informado'}`
+      : idAluno;
+
+  document.getElementById('listaGestaoMatriculas').innerHTML = `
+    <div class="estado-vazio">Carregando matrículas...</div>
+  `;
+
+  let consultaFinalizada = false;
+  const limiteEspera = setTimeout(() => {
+    if (consultaFinalizada) return;
+    const lista = document.getElementById('listaGestaoMatriculas');
+    if (lista) {
+      lista.innerHTML = `
+        <div class="estado-vazio">
+          A consulta demorou mais que o esperado.
+          <br>
+          <button type="button" class="botao botao-primario" style="margin-top:12px" onclick="abrirGestaoMatriculasAluno('${escaparAtributo(idAluno)}')">
+            Tentar novamente
+          </button>
+        </div>
+      `;
+    }
+  }, 12000);
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      consultaFinalizada = true;
+      clearTimeout(limiteEspera);
+      const aluno = resultado?.aluno || alunoLocal || {};
+      nomeAlunoAberto = aluno.nomeAluno || '';
+      document.getElementById('nomeAlunoGestaoMatriculas').textContent =
+        aluno.nomeAluno || 'Aluno';
+      document.getElementById('dadosAlunoGestaoMatriculas').textContent =
+        `${aluno.idAluno || idAluno} · CPF: ${aluno.cpf || 'não informado'}`;
+      renderizarGestaoMatriculas(
+        Array.isArray(resultado?.matriculas) ? resultado.matriculas : []
+      );
+    })
+    .withFailureHandler(erro => {
+      consultaFinalizada = true;
+      clearTimeout(limiteEspera);
+      const lista = document.getElementById('listaGestaoMatriculas');
+      if (lista) {
+        lista.innerHTML = '<div class="estado-vazio">Não foi possível carregar as matrículas.</div>';
+      }
+      exibirErro(erro);
+    })
+    .obterFichaAlunoCompletaSIGAV4(idAluno);
+}
+
+
+
+function obterConfiguracaoStatusMatricula(statusInformado) {
+  const status = String(statusInformado || '')
+    .trim()
+    .toUpperCase();
+
+  const encerrados = [
+    'CANCELADO',
+    'CANCELADA',
+    'FINALIZADO',
+    'FINALIZADA',
+    'ABANDONO',
+    'INATIVO',
+    'INATIVA',
+    'TURMA ENCERRADA'
+  ];
+
+  if (status === 'ATIVO' || status === 'ATIVA') {
+    return {
+      status,
+      encerrada: false,
+      classeStatus: 'status-ativo',
+      classeCartao: 'matricula-card-ativo'
+    };
+  }
+
+  if (status === 'EM ESPERA') {
+    return {
+      status,
+      encerrada: false,
+      classeStatus: 'status-espera',
+      classeCartao: 'matricula-card-espera'
+    };
+  }
+
+  if (status === 'SUSPENSO' || status === 'SUSPENSA') {
+    return {
+      status,
+      encerrada: false,
+      classeStatus: 'status-suspenso',
+      classeCartao: 'matricula-card-suspenso'
+    };
+  }
+
+  if (status === 'CANCELADO' || status === 'CANCELADA') {
+    return {
+      status,
+      encerrada: true,
+      classeStatus: 'status-cancelado',
+      classeCartao: 'matricula-card-cancelado'
+    };
+  }
+
+  if (status === 'FINALIZADO' || status === 'FINALIZADA') {
+    return {
+      status,
+      encerrada: true,
+      classeStatus: 'status-finalizado',
+      classeCartao: 'matricula-card-finalizado'
+    };
+  }
+
+  if (status === 'ABANDONO') {
+    return {
+      status,
+      encerrada: true,
+      classeStatus: 'status-abandono',
+      classeCartao: 'matricula-card-abandono'
+    };
+  }
+
+  return {
+    status,
+    encerrada: encerrados.includes(status),
+    classeStatus: 'status-outro',
+    classeCartao: 'matricula-card-outro'
+  };
+}
+
+
+function gerarLinhaTempoMatricula(matricula) {
+  const eventos = [];
+
+  const tipo = String(matricula.tipoMatricula || '')
+    .trim()
+    .toUpperCase();
+
+  const tituloCadastro =
+    tipo === 'UPGRADE'
+      ? 'Upgrade registrado'
+      : tipo === 'RENOVAÇÃO'
+        ? 'Renovação registrada'
+        : tipo === 'TRANSFERÊNCIA'
+          ? 'Transferência registrada'
+          : tipo === 'ATIVAÇÃO'
+            ? 'Ativação registrada'
+            : tipo === 'MUDANÇA APPAI'
+              ? 'Mudança APPAI registrada'
+              : 'Matrícula registrada';
+
+  if (matricula.dataMatricula) {
+    eventos.push({
+      data: matricula.dataMatricula,
+      dataOrdenacao: matricula.dataMatriculaHtml || '',
+      titulo: tituloCadastro,
+      detalhe:
+        matricula.motivoAlteracao ||
+        matricula.tipoMatricula ||
+        ''
+    });
+  }
+
+  if (matricula.dataEfetivoTurma) {
+    eventos.push({
+      data: matricula.dataEfetivoTurma,
+      dataOrdenacao: matricula.dataEfetivoTurmaHtml || '',
+      titulo: 'Início efetivo na turma',
+      detalhe: matricula.turma || ''
+    });
+  }
+
+  if (matricula.dataCancelamento) {
+    const status = String(matricula.status || '')
+      .trim()
+      .toUpperCase();
+
+    eventos.push({
+      data: matricula.dataCancelamento,
+      dataOrdenacao: matricula.dataCancelamentoHtml || '',
+      titulo:
+        status === 'FINALIZADO' || status === 'FINALIZADA'
+          ? 'Matrícula finalizada'
+          : status === 'ABANDONO'
+            ? 'Abandono registrado'
+            : 'Matrícula cancelada',
+      detalhe: ''
+    });
+  }
+
+  if (!eventos.length) {
+    return '';
+  }
+
+  eventos.sort((a, b) =>
+    String(a.dataOrdenacao || '').localeCompare(
+      String(b.dataOrdenacao || '')
+    )
+  );
+
+  return `
+    <div class="linha-tempo-matricula">
+      <div class="linha-tempo-titulo">
+        Histórico da matrícula
+      </div>
+
+      ${eventos.map(evento => `
+        <div class="linha-tempo-item">
+          <div class="linha-tempo-marcador"></div>
+
+          <div class="linha-tempo-conteudo">
+            <time>${escapar(evento.data)}</time>
+            <strong>${escapar(evento.titulo)}</strong>
+
+            ${
+              evento.detalhe
+                ? `<span>${escapar(evento.detalhe)}</span>`
+                : ''
+            }
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+
+function gerarAcoesMatricula(matricula, encerrada) {
+  const idMatricula =
+    escaparAtributo(matricula.idMatricula || '');
+
+  return `
+    <div class="acoes-matricula-gestao">
+      <button
+        type="button"
+        class="botao botao-secundario"
+        onclick="abrirEdicaoMatricula('${idMatricula}')"
+      >
+        Editar
+      </button>
+
+      ${
+        encerrada
+          ? ''
+          : `
+            <button
+              type="button"
+              class="botao botao-secundario"
+              onclick="abrirUpgradeMatricula('${idMatricula}')"
+            >
+              Fazer upgrade
+            </button>
+
+            <button
+              type="button"
+              class="botao botao-perigo"
+              onclick="solicitarCancelamento('${idMatricula}')"
+            >
+              Alterar status
+            </button>
+          `
+      }
+    </div>
+  `;
+}
+
+function gerarDetalhesEncerramentoMatriculaKAN51(matricula) {
+  const status = normalizarBuscaMatriculasSIGA(matricula.status || '');
+  const encerrada = ['CANCELADO','CANCELADA','FINALIZADO','FINALIZADA','ABANDONO','SUSPENSO'].includes(status);
+  const possuiDetalhes =
+    matricula.dataCancelamento ||
+    matricula.motivo ||
+    matricula.obs ||
+    Number(matricula.taxaCancelamento || 0) > 0;
+
+  if (!possuiDetalhes) return '';
+
+  const taxa = Number(matricula.taxaCancelamento || 0);
+
+  return `
+    <div class="detalhes-encerramento-kan51">
+      <div><span>${encerrada ? 'Motivo do encerramento' : 'Motivo da alteração'}</span><strong>${escapar(matricula.motivo || matricula.motivoAlteracao || 'Não informado')}</strong></div>
+      ${encerrada || taxa > 0 ? `<div><span>Taxa de cancelamento</span><strong>${taxa.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</strong></div>` : ''}
+      ${matricula.obs ? `<div class="detalhe-obs-kan51"><span>Observações</span><strong>${escapar(matricula.obs)}</strong></div>` : ''}
+    </div>
+  `;
+}
+
+
+function gerarBeneficiosMatriculaSIGA(matricula) {
+  const appaiTexto =
+    normalizarBuscaMatriculasSIGA(
+      matricula.appai || ''
+    );
+
+  const ehAppai =
+    ['SIM','S','APPAI','ATIVO','ATIVA']
+      .includes(appaiTexto);
+
+  const percentualBolsa =
+    percentualBolsaTelaSIGA_(
+      matricula.bolsista
+    );
+
+  const bolsistaTexto =
+    percentualBolsa === ''
+      ? 'Não'
+      : `${Number(percentualBolsa)
+          .toLocaleString(
+            'pt-BR',
+            { maximumFractionDigits: 2 }
+          )}%`;
+
+  const isentoTexto =
+    String(
+      matricula.isentoMatricula || 'NÃO'
+    ).trim() || 'NÃO';
+
+
+  /* ==============================
+     VALORES BASE DA MATRÍCULA
+     ============================== */
+
+  const semComboAntes =
+    Number(
+      matricula.semComboAntes || 0
+    );
+
+  const semComboDepois =
+    Number(
+      matricula.semComboDepois || 0
+    );
+
+  const comComboAntes =
+    Number(
+      matricula.comComboAntes || 0
+    );
+
+  const comComboDepois =
+    Number(
+      matricula.comComboDepois || 0
+    );
+
+
+  /*
+   * Por enquanto, a ficha exibe como referência principal
+   * o valor SEM COMBO antes do vencimento.
+   *
+   * Os demais valores ficam identificados abaixo.
+   */
+
+  let valorPrincipal =
+    semComboAntes;
+
+  /*
+   * Aplica bolsa ao valor exibido.
+   */
+
+  if (
+    percentualBolsa !== '' &&
+    Number(percentualBolsa) > 0
+  ) {
+    valorPrincipal =
+      valorPrincipal *
+      (
+        1 -
+        Number(percentualBolsa) / 100
+      );
+  }
+
+
+  const moeda = valor =>
+    Number(valor || 0)
+      .toLocaleString(
+        'pt-BR',
+        {
+          style: 'currency',
+          currency: 'BRL'
+        }
+      );
+
+
+  const detalhesValores = [];
+
+  if (
+    semComboDepois > 0 &&
+    semComboDepois !== semComboAntes
+  ) {
+    detalhesValores.push(
+      `Após vencimento: ${moeda(
+        percentualBolsa !== ''
+          ? semComboDepois *
+            (
+              1 -
+              Number(percentualBolsa) / 100
+            )
+          : semComboDepois
+      )}`
+    );
+  }
+
+  if (
+    comComboAntes > 0 &&
+    comComboAntes !== semComboAntes
+  ) {
+    detalhesValores.push(
+      `Combo: ${moeda(
+        percentualBolsa !== ''
+          ? comComboAntes *
+            (
+              1 -
+              Number(percentualBolsa) / 100
+            )
+          : comComboAntes
+      )}`
+    );
+  }
+
+  if (
+    comComboDepois > 0 &&
+    comComboDepois !== comComboAntes
+  ) {
+    detalhesValores.push(
+      `Combo após vencimento: ${moeda(
+        percentualBolsa !== ''
+          ? comComboDepois *
+            (
+              1 -
+              Number(percentualBolsa) / 100
+            )
+          : comComboDepois
+      )}`
+    );
+  }
+
+
+  return `
+    <div class="matricula-beneficios-siga">
+
+      <div class="matricula-beneficio ${
+        ehAppai
+          ? 'beneficio-sim'
+          : 'beneficio-nao'
+      }">
+        <span>APPAI</span>
+
+        <strong>
+          ${ehAppai ? 'Sim' : 'Não'}
+        </strong>
+      </div>
+
+
+      <div class="matricula-beneficio">
+        <span>Bolsista</span>
+
+        <strong>
+          ${escapar(bolsistaTexto)}
+        </strong>
+      </div>
+
+
+      <div class="matricula-beneficio">
+        <span>Isento de matrícula</span>
+
+        <strong>
+          ${escapar(isentoTexto)}
+        </strong>
+      </div>
+
+
+      <div class="matricula-beneficio">
+        <span>Mensalidade</span>
+
+        <strong>
+          ${
+            valorPrincipal > 0
+              ? moeda(valorPrincipal)
+              : 'Não informado'
+          }
+        </strong>
+
+        ${
+          detalhesValores.length
+            ? `
+              <small
+                style="
+                  display:block;
+                  margin-top:5px;
+                  color:#667085;
+                  font-size:10px;
+                  line-height:1.45;
+                "
+              >
+                ${detalhesValores
+                  .map(escapar)
+                  .join('<br>')}
+              </small>
+            `
+            : ''
+        }
+      </div>
+
+    </div>
+  `;
+}
+
+
+function renderizarGestaoMatriculas(matriculas) {
+  const container =
+    document.getElementById('listaGestaoMatriculas');
+
+  const quantidade =
+    document.getElementById('quantidadeGestaoMatriculas');
+
+  const lista = Array.isArray(matriculas) ? matriculas : [];
+
+  if (quantidade) {
+    quantidade.textContent =
+      `${lista.length} matrícula${lista.length === 1 ? '' : 's'}`;
+  }
+
+  if (!lista.length) {
+    container.innerHTML = `
+      <div class="estado-vazio">
+        Este aluno ainda não possui matrículas.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = lista
+    .map(gerarCartaoGestaoMatricula)
+    .join('');
+}
+
+
+function gerarCartaoGestaoMatricula(matricula) {
+  const configuracao =
+    obterConfiguracaoStatusMatricula(matricula.status);
+
+  return `
+    <article
+      class="
+        matricula
+        matricula-gestao
+        matricula-card-profissional
+        ${configuracao.classeCartao}
+      "
+    >
+      <div class="matricula-topo">
+        <div>
+          <h3>${escapar(matricula.turma || 'Turma não informada')}</h3>
+
+          <div class="matricula-identificacao">
+            ${escapar(matricula.idMatricula || '')}
+
+            ${
+              matricula.tipoMatricula
+                ? `<span>${escapar(matricula.tipoMatricula)}</span>`
+                : ''
+            }
+          </div>
+        </div>
+
+        <span class="status ${configuracao.classeStatus}">
+          ${escapar(matricula.status || 'SEM STATUS')}
+        </span>
+      </div>
+
+      <div class="detalhes-matricula-gestao">
+        <div>
+          <span>Tipo</span>
+          <strong>
+            ${escapar(matricula.tipoMatricula || 'Não informado')}
+          </strong>
+        </div>
+
+        <div>
+          <span>Data da matrícula</span>
+          <strong>
+            ${escapar(matricula.dataMatricula || 'Não informado')}
+          </strong>
+        </div>
+
+        <div>
+          <span>Início efetivo</span>
+          <strong>
+            ${escapar(matricula.dataEfetivoTurma || 'Não informado')}
+          </strong>
+        </div>
+
+        <div>
+          <span>Cancelamento/finalização</span>
+          <strong>
+            ${escapar(matricula.dataCancelamento || 'Não informado')}
+          </strong>
+        </div>
+      </div>
+
+      ${gerarBeneficiosMatriculaSIGA(matricula)}
+
+      ${gerarDetalhesEncerramentoMatriculaKAN51(matricula)}
+
+      ${gerarLinhaTempoMatricula(matricula)}
+
+      ${gerarAcoesMatricula(
+        matricula,
+        configuracao.encerrada
+      )}
+    </article>
+  `;
+}
+
+
+function atualizarListasMatriculasAbertas() {
+  if (!idAlunoAberto) return;
+
+  if (origemGestaoMatricula === 'MATRICULAS') {
+    google.script.run
+      .withSuccessHandler(renderizarGestaoMatriculas)
+      .withFailureHandler(exibirErro)
+      .listarMatriculasAlunoKAN51(idAlunoAberto);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(preencherMatriculas)
+    .withFailureHandler(exibirErro)
+    .listarMatriculasAlunoKAN51(idAlunoAberto);
+}
+
+
+    function focarBusca() {
+      document.getElementById('buscaGlobal').focus();
+    }
+
+
+    function executarBuscaGlobal() {
+  const termo = document
+    .getElementById('buscaGlobal')
+    .value
+    .trim();
+
+  if (termo.length < 2) {
+    return;
+  }
+
+  if (termo === ultimaBuscaExecutada) {
+    return;
+  }
+
+  ultimaBuscaExecutada = termo;
+  ultimoTermoPesquisado = termo;
+
+  esconderMensagem();
+  esconderTelas();
+
+  document
+    .getElementById('tela-alunos')
+    .classList.remove('oculto');
+
+  if (Array.isArray(baseBuscaMatriculasSIGA)) {
+    mostrarResultados(
+      filtrarBaseMatriculasLocalSIGA(termo)
+    );
+    return;
+  }
+
+  carregarBaseBuscaMatriculasSIGA();
+  return;
+}
+
+
+    function mostrarResultados(alunos) {
+      const container = document.getElementById('resultadosAlunos');
+      const quantidade = document.getElementById('quantidadeResultados');
+
+      quantidade.textContent =
+        `${alunos.length} resultado${alunos.length === 1 ? '' : 's'}`;
+
+      if (!alunos.length) {
+        container.innerHTML = `
+          <div class="estado-vazio">
+            Nenhum aluno encontrado para “${escapar(ultimoTermoPesquisado)}”.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = alunos.map(aluno => `
+        <div class="resultado-aluno">
+          <div>
+            <div class="nome-aluno">${escapar(aluno.nomeAluno)}</div>
+            <div class="id-aluno">${escapar(aluno.idAluno)}</div>
+          </div>
+
+          <div>
+            <div class="dado-secundario">CPF</div>
+            <div>${escapar(aluno.cpf || 'Não informado')}</div>
+          </div>
+
+          <div class="ocultar-tablet">
+            <div class="dado-secundario">Telefone</div>
+            <div>${escapar(aluno.telefoneAluno || 'Não informado')}</div>
+          </div>
+
+          <div class="ocultar-tablet">
+            <div class="dado-secundario">Nome social</div>
+            <div>${escapar(aluno.nomeSocial || 'Não informado')}</div>
+          </div>
+
+          <div
+            class="acoes-resultado-aluno"
+            style="
+              display:flex;
+              gap:8px;
+              align-items:center;
+              justify-content:flex-end;
+              flex-wrap:wrap;
+            "
+          >
+            <button
+              type="button"
+              class="botao botao-secundario"
+              onclick="abrirTelaAluno360SIGA('${escaparAtributo(aluno.idAluno)}','tela-alunos')"
+            >
+              👤 Ver ficha 360º
+            </button>
+
+            <button
+              type="button"
+              class="botao botao-perigo"
+              onclick="cancelarAlunoDiretoKAN51('${escaparAtributo(aluno.idAluno)}',this)"
+            >
+              Cancelar matrícula
+            </button>
+
+            <button
+              type="button"
+              class="botao botao-primario"
+              onclick="abrirFichaAluno(
+                '${escaparAtributo(aluno.idAluno)}'
+              )"
+            >
+              Abrir ficha
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function cancelarAlunoDiretoKAN51(idAluno,botao){
+      const textoOriginal=botao?.textContent||'Cancelar matrícula';
+      if(botao){botao.disabled=true;botao.textContent='Carregando...';}
+      google.script.run
+        .withSuccessHandler(matriculas=>{
+          if(botao){botao.disabled=false;botao.textContent=textoOriginal;}
+          const ativas=(Array.isArray(matriculas)?matriculas:[]).filter(m=>{
+            const s=String(m?.status||'').trim().toUpperCase();
+            return !['CANCELADO','CANCELADA','FINALIZADO','FINALIZADA','ABANDONO','INATIVO','INATIVA','TURMA ENCERRADA'].includes(s);
+          });
+          if(!ativas.length){mostrarAvisoKAN51('Cancelamento indisponível','Este aluno não possui matrícula disponível para cancelamento.');return;}
+          if(ativas.length===1){solicitarCancelamento(ativas[0].idMatricula);return;}
+          abrirEscolhaMatriculaKAN51(ativas);
+        })
+        .withFailureHandler(erro=>{
+          if(botao){botao.disabled=false;botao.textContent=textoOriginal;}
+          exibirErro(erro);
+        })
+        .listarMatriculasAlunoKAN51(idAluno);
+    }
+
+    function abrirEscolhaMatriculaKAN51(matriculas){
+      criarModalEncerramentoKAN51();
+      let seletor=document.getElementById('modalEscolhaMatriculaKAN51');
+      if(!seletor){
+        seletor=document.createElement('div');
+        seletor.id='modalEscolhaMatriculaKAN51';
+        seletor.className='modal-kan51 oculto';
+        seletor.innerHTML=`<div class="modal-kan51-caixa" onclick="event.stopPropagation()"><div class="modal-kan51-topo"><div><h2>Escolha a matrícula</h2><p>O aluno possui mais de uma matrícula ativa.</p></div><button type="button" class="modal-kan51-fechar" onclick="fecharEscolhaMatriculaKAN51()">×</button></div><div class="modal-kan51-campo" style="margin-top:18px"><label>Turma</label><select id="seletorMatriculaKAN51"></select></div><div class="modal-kan51-acoes"><button type="button" class="botao botao-secundario" onclick="fecharEscolhaMatriculaKAN51()">Voltar</button><button type="button" class="botao botao-perigo" onclick="confirmarEscolhaMatriculaKAN51()">Continuar</button></div></div>`;
+        seletor.onclick=fecharEscolhaMatriculaKAN51;
+        document.body.appendChild(seletor);
+      }
+      document.getElementById('seletorMatriculaKAN51').innerHTML=matriculas.map(m=>`<option value="${escaparAtributo(m.idMatricula||'')}">${escapar(m.turma||'Turma não informada')} · ${escapar(m.status||'')}</option>`).join('');
+      seletor.classList.remove('oculto');document.body.style.overflow='hidden';
+    }
+
+    function mostrarAvisoKAN51(titulo,mensagem){
+      let modal=document.getElementById('modalAvisoKAN51');
+      if(!modal){
+        const estilo=document.createElement('style');
+        estilo.textContent=`
+          .aviso-kan51-fundo{position:fixed;inset:0;background:rgba(16,24,40,.62);display:grid;place-items:center;padding:18px;z-index:4000}
+          .aviso-kan51-fundo.oculto{display:none}.aviso-kan51-caixa{width:min(460px,100%);background:#fff;border-radius:20px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.28);text-align:center}
+          .aviso-kan51-icone{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;margin:0 auto 16px;background:#fff4e5;color:#b54708;font-size:28px;font-weight:800}
+          .aviso-kan51-caixa h2{margin:0 0 10px;color:#101828}.aviso-kan51-caixa p{margin:0;color:#667085;line-height:1.55}.aviso-kan51-caixa button{margin-top:22px;min-width:120px}
+        `;
+        document.head.appendChild(estilo);
+        modal=document.createElement('div');
+        modal.id='modalAvisoKAN51';modal.className='aviso-kan51-fundo oculto';
+        modal.innerHTML=`<div class="aviso-kan51-caixa" onclick="event.stopPropagation()"><div class="aviso-kan51-icone">!</div><h2 id="tituloAvisoKAN51"></h2><p id="textoAvisoKAN51"></p><button type="button" class="botao botao-primario" onclick="fecharAvisoKAN51()">Entendi</button></div>`;
+        modal.onclick=fecharAvisoKAN51;
+        document.body.appendChild(modal);
+      }
+      document.getElementById('tituloAvisoKAN51').textContent=titulo||'Aviso';
+      document.getElementById('textoAvisoKAN51').textContent=mensagem||'';
+      modal.classList.remove('oculto');document.body.style.overflow='hidden';
+    }
+
+    function fecharAvisoKAN51(){
+      document.getElementById('modalAvisoKAN51')?.classList.add('oculto');
+      document.body.style.overflow='';
+    }
+
+    function fecharEscolhaMatriculaKAN51(){
+      document.getElementById('modalEscolhaMatriculaKAN51')?.classList.add('oculto');
+      document.body.style.overflow='';
+    }
+
+    function confirmarEscolhaMatriculaKAN51(){
+      const id=document.getElementById('seletorMatriculaKAN51')?.value;
+      fecharEscolhaMatriculaKAN51();
+      if(id)solicitarCancelamento(id);
+    }
+
+
+    function abrirFichaAluno(idAluno) {
+      idAlunoAberto = idAluno;
+      origemGestaoMatricula = 'FICHA';
+      esconderTelas();
+      document.getElementById('tela-ficha').classList.remove('oculto');
+     
+
+      const alunoLocal = Array.isArray(baseBuscaMatriculasSIGA)
+        ? baseBuscaMatriculasSIGA.find(item => String(item.idAluno || '') === String(idAluno || ''))
+        : null;
+
+      preencherFicha(Object.assign({
+        idAluno: idAluno,
+        nomeAluno: '',
+        nomeSocial: '',
+        dataNascimento: '',
+        email: '',
+        cpf: '',
+        telefoneAluno: '',
+        nomeResponsavel: '',
+        cpfResponsavel: '',
+        telefoneResponsavel: '',
+        endereco: '',
+        observacao: ''
+      }, alunoLocal || {}));
+
+      const listaInicial = document.getElementById('listaMatriculas');
+      if (listaInicial) {
+        listaInicial.innerHTML = '<div class="estado-vazio">Carregando matrículas...</div>';
+      }
+
+      const avisoDemoraFicha = setTimeout(() => {
+        const subtitulo = document.getElementById('subtituloFicha');
+        if (subtitulo) subtitulo.textContent = idAluno + ' · A consulta está demorando mais que o normal...';
+      }, 10000);
+
+      google.script.run
+        .withSuccessHandler(resultado => {
+          clearTimeout(avisoDemoraFicha);
+          preencherFicha(resultado?.aluno || {});
+          preencherMatriculas(
+            Array.isArray(resultado?.matriculas) ? resultado.matriculas : []
+          );
+          document.getElementById('subtituloFicha').textContent = idAluno;
+        })
+        .withFailureHandler(erro => {
+          clearTimeout(avisoDemoraFicha);
+          const lista = document.getElementById('listaMatriculas');
+          if (lista) {
+            lista.innerHTML = '<div class="estado-vazio">Não foi possível carregar as matrículas.</div>';
+          }
+          exibirErro(erro);
+        })
+        .obterFichaAlunoCompletaSIGAV4(idAluno);
+    }
+
+
+    function preencherFicha(aluno) {
+      nomeAlunoAberto = aluno.nomeAluno || '';
+      Object.keys(aluno).forEach(chave => {
+        const campo = document.getElementById(chave);
+
+        if (campo) {
+          campo.value = aluno[chave] || '';
+        }
+      });
+
+      document.getElementById('tituloFicha').textContent =
+        aluno.nomeAluno || 'Ficha do aluno';
+
+      document.getElementById('subtituloFicha').textContent =
+        `${aluno.idAluno} · CPF: ${aluno.cpf || 'não informado'}`;
+
+     
+    }
+    function preencherMatriculas(matriculas) {
+      const container =
+        document.getElementById('listaMatriculas');
+
+      const lista =
+        Array.isArray(matriculas)
+          ? matriculas
+          : [];
+
+      if (!lista.length) {
+        container.innerHTML = `
+          <div class="estado-vazio">
+            Este aluno ainda não possui matrículas.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="lista-matriculas-ficha">
+          ${lista.map(matricula => {
+            const configuracao =
+              obterConfiguracaoStatusMatricula(
+                matricula.status
+              );
+
+            return `
+              <article
+                class="
+                  matricula
+                  matricula-card-profissional
+                  ${configuracao.classeCartao}
+                "
+              >
+                <div class="matricula-topo">
+                  <div>
+                    <h3>
+                      ${escapar(
+                        matricula.turma ||
+                        'Turma não informada'
+                      )}
+                    </h3>
+
+                    <div class="matricula-identificacao">
+                      ${escapar(
+                        matricula.idMatricula || ''
+                      )}
+
+                      ${
+                        matricula.tipoMatricula
+                          ? `
+                            <span>
+                              ${escapar(
+                                matricula.tipoMatricula
+                              )}
+                            </span>
+                          `
+                          : ''
+                      }
+                    </div>
+                  </div>
+
+                  <span
+                    class="
+                      status
+                      ${configuracao.classeStatus}
+                    "
+                  >
+                    ${escapar(
+                      matricula.status ||
+                      'SEM STATUS'
+                    )}
+                  </span>
+                </div>
+
+                <div class="detalhes-matricula-gestao">
+                  <div>
+                    <span>Data da matrícula</span>
+                    <strong>
+                      ${escapar(
+                        matricula.dataMatricula ||
+                        'Não informado'
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Início efetivo</span>
+                    <strong>
+                      ${escapar(
+                        matricula.dataEfetivoTurma ||
+                        'Não informado'
+                      )}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span>Cancelamento/finalização</span>
+                    <strong>
+                      ${escapar(
+                        matricula.dataCancelamento ||
+                        'Não informado'
+                      )}
+                    </strong>
+                  </div>
+                </div>
+
+                ${gerarBeneficiosMatriculaSIGA(matricula)}
+
+                ${gerarDetalhesEncerramentoMatriculaKAN51(matricula)}
+
+                ${gerarLinhaTempoMatricula(matricula)}
+
+                ${gerarAcoesMatricula(
+                  matricula,
+                  configuracao.encerrada
+                )}
+              </article>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+
+    function trocarAbaFicha(aba) {
+      const dados = aba === 'dados';
+
+      document
+        .getElementById('conteudoDados')
+        .classList.toggle('oculto', !dados);
+
+      document
+        .getElementById('conteudoMatriculas')
+        .classList.toggle('oculto', dados);
+
+      document
+        .getElementById('abaDados')
+        .classList.toggle('ativa', dados);
+
+      document
+        .getElementById('abaMatriculas')
+        .classList.toggle('ativa', !dados);
+    }
+
+
+    function salvarEdicaoAluno() {
+      const dados = {
+        idAluno: valor('idAluno'),
+        nomeAluno: valor('nomeAluno'),
+        nomeSocial: valor('nomeSocial'),
+        dataNascimento: valor('dataNascimento'),
+        cpf: valor('cpf'),
+        email: valor('email'),
+        telefoneAluno: valor('telefoneAluno'),
+        nomeResponsavel: valor('nomeResponsavel'),
+        cpfResponsavel: valor('cpfResponsavel'),
+        telefoneResponsavel: valor('telefoneResponsavel'),
+        endereco: valor('endereco'),
+        observacao: valor('observacao')
+      };
+
+      google.script.run
+        .withSuccessHandler(resultado => {
+          mostrarMensagem(resultado.mensagem, 'sucesso');
+          abrirFichaAluno(dados.idAluno);
+        })
+        .withFailureHandler(exibirErro)
+        .atualizarAluno(dados);
+    }
+
+
+    function solicitarCancelamento(idMatricula) {
+      criarModalEncerramentoKAN51();
+      document.getElementById('kan51IdMatricula').value=idMatricula;
+      document.getElementById('kan51Status').value='CANCELADO';
+      document.getElementById('kan51Data').value=new Date().toLocaleDateString('en-CA');
+      document.getElementById('kan51Motivo').value='';
+      document.getElementById('kan51OutroMotivo').value='';
+      document.getElementById('kan51Taxa').value='0,00';
+      document.getElementById('kan51Obs').value='';
+      alternarOutroMotivoKAN51();
+      document.getElementById('modalEncerramentoKAN51').classList.remove('oculto');
+      document.body.style.overflow='hidden';
+    }
+
+    function criarModalEncerramentoKAN51(){
+      if(document.getElementById('modalEncerramentoKAN51'))return;
+      const estilo=document.createElement('style');
+      estilo.textContent=`
+        .modal-kan51{position:fixed;inset:0;background:rgba(16,24,40,.64);display:grid;place-items:center;padding:18px;z-index:3000}
+        .modal-kan51.oculto{display:none}.modal-kan51-caixa{width:min(680px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:20px;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.25)}
+        .modal-kan51-topo{display:flex;justify-content:space-between;gap:15px;align-items:center}.modal-kan51-fechar{border:0;background:#f2f4f7;border-radius:10px;width:38px;height:38px;cursor:pointer;font-size:22px}
+        .modal-kan51-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.modal-kan51-campo{display:flex;flex-direction:column;gap:6px}.modal-kan51-campo label{font-weight:700;color:#344054}
+        .modal-kan51-campo input,.modal-kan51-campo select,.modal-kan51-campo textarea{border:1px solid #d0d5dd;border-radius:10px;padding:11px;background:#fff;font:inherit}.modal-kan51-campo textarea{min-height:90px;resize:vertical}.modal-kan51-largo{grid-column:1/-1}
+        .modal-kan51-acoes{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.detalhes-encerramento-kan51{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0;padding:14px;background:#fff8f2;border:1px solid #fed7aa;border-radius:12px}.detalhes-encerramento-kan51 span{display:block;font-size:11px;color:#667085;margin-bottom:4px}.detalhe-obs-kan51{grid-column:1/-1}
+        @media(max-width:600px){.modal-kan51-grid,.detalhes-encerramento-kan51{grid-template-columns:1fr}.modal-kan51-largo,.detalhe-obs-kan51{grid-column:auto}}
+      `;
+      document.head.appendChild(estilo);
+      const modal=document.createElement('div');
+      modal.id='modalEncerramentoKAN51';modal.className='modal-kan51 oculto';
+      modal.innerHTML=`<div class="modal-kan51-caixa" onclick="event.stopPropagation()"><div class="modal-kan51-topo"><div><h2>Alterar status da matrícula</h2><p>Registre a alteração da situação da matrícula.</p></div><button type="button" class="modal-kan51-fechar" onclick="fecharModalEncerramentoKAN51()">×</button></div><input id="kan51IdMatricula" type="hidden"><div class="modal-kan51-grid"><div class="modal-kan51-campo"><label>Status</label><select id="kan51Status"><option value="ATIVO">Ativo</option><option value="CANCELADO">Cancelado</option><option value="ABANDONO">Abandono</option><option value="EM ESPERA">Em espera</option><option value="FINALIZADO">Finalizado</option><option value="SUSPENSO">Suspenso</option><option value="INATIVO">Inativo</option><option value="TURMA ENCERRADA">Turma encerrada</option></select></div><div class="modal-kan51-campo"><label>Data do cancelamento/finalização</label><input id="kan51Data" type="date"></div><div class="modal-kan51-campo"><label>Motivo</label><select id="kan51Motivo" onchange="alternarOutroMotivoKAN51()"><option value="">Selecione</option><option>Financeiro</option><option>Mudança de horário</option><option>Mudança de cidade</option><option>Problemas pessoais</option><option>Problemas de saúde</option><option>Insatisfação</option><option>Abandono sem contato</option><option>Transferência de turma</option><option>Finalização do curso</option><option>Reativação da matrícula</option><option>Entrada em lista de espera</option><option value="OUTRO">Outro</option></select></div><div class="modal-kan51-campo oculto" id="campoOutroMotivoKAN51"><label>Informe o motivo</label><input id="kan51OutroMotivo" maxlength="150"></div><div class="modal-kan51-campo"><label>Taxa de cancelamento</label><input id="kan51Taxa" type="text" inputmode="decimal" value="0,00"></div><div class="modal-kan51-campo modal-kan51-largo"><label>Observações</label><textarea id="kan51Obs" maxlength="1000" placeholder="Informações complementares"></textarea></div></div><div class="modal-kan51-acoes"><button type="button" class="botao botao-secundario" onclick="fecharModalEncerramentoKAN51()">Cancelar</button><button id="kan51Salvar" type="button" class="botao botao-perigo" onclick="salvarEncerramentoKAN51()">Salvar alteração</button></div></div>`;
+      modal.onclick=fecharModalEncerramentoKAN51;
+      document.body.appendChild(modal);
+    }
+
+    function alternarOutroMotivoKAN51(){
+      document.getElementById('campoOutroMotivoKAN51')?.classList.toggle('oculto',document.getElementById('kan51Motivo')?.value!=='OUTRO');
+    }
+
+    function fecharModalEncerramentoKAN51(){
+      document.getElementById('modalEncerramentoKAN51')?.classList.add('oculto');
+      document.body.style.overflow='';
+    }
+
+    function salvarEncerramentoKAN51(){
+      const motivoSelecionado=document.getElementById('kan51Motivo').value;
+      const motivo=motivoSelecionado==='OUTRO'?document.getElementById('kan51OutroMotivo').value.trim():motivoSelecionado;
+      const dados={idMatricula:document.getElementById('kan51IdMatricula').value,status:document.getElementById('kan51Status').value,dataCancelamento:document.getElementById('kan51Data').value,motivo,taxaCancelamento:document.getElementById('kan51Taxa').value,obs:document.getElementById('kan51Obs').value.trim()};
+      if(!['ATIVO','EM ESPERA'].includes(dados.status)&&!dados.dataCancelamento){alert('Informe a data do cancelamento/finalização.');return;}
+      if(!dados.motivo){alert('Informe o motivo.');return;}
+      const botao=document.getElementById('kan51Salvar');botao.disabled=true;botao.textContent='Salvando...';
+      google.script.run.withSuccessHandler(resultado=>{botao.disabled=false;botao.textContent='Salvar alteração';fecharModalEncerramentoKAN51();mostrarMensagem(resultado.mensagem,'sucesso');atualizarListasMatriculasAbertas();}).withFailureHandler(erro=>{botao.disabled=false;botao.textContent='Salvar alteração';exibirErro(erro);}).salvarEncerramentoMatriculaKAN51V2(dados);
+    }
+
+
+    function abrirNovoAluno() {
+      esconderTelas();
+      document.getElementById('tela-novo-aluno').classList.remove('oculto');
+    
+      definirDataAtual();
+    }
+
+    function abrirNovaMatricula(tipoMatricula = '') {
+      const mensagemMatricula =
+        document.getElementById('mensagemNovaMatricula');
+
+      if (mensagemMatricula) {
+        mensagemMatricula.classList.add('oculto');
+        mensagemMatricula.textContent = '';
+      }
+
+      if (!idAlunoAberto) {
+        mostrarMensagem('Selecione primeiro um aluno.', 'erro');
+        return;
+      }
+
+      const nomeAluno =
+        nomeAlunoAberto ||
+        document.getElementById('tituloFicha')?.textContent ||
+        document.getElementById('nomeAlunoGestaoMatriculas')?.textContent ||
+        'Aluno';
+
+      limparFormularioNovaMatricula();
+
+      document.getElementById('modoFormularioMatricula').value = 'NOVO';
+      document.getElementById('idMatriculaEdicao').value = '';
+      document.getElementById('origemModalMatricula').value =
+        origemGestaoMatricula;
+
+      document.getElementById('tituloModalNovaMatricula').textContent =
+        tipoMatricula === 'UPGRADE'
+          ? 'Upgrade de matrícula'
+          : 'Nova matrícula';
+
+      document.getElementById('alunoNovaMatricula').textContent =
+        `${nomeAluno} · ${idAlunoAberto}`;
+
+      document.getElementById('matriculaTipo').value =
+        tipoMatricula === 'UPGRADE'
+          ? 'UPGRADE'
+          : '';
+
+      document.getElementById('botaoSalvarNovaMatricula').textContent =
+        tipoMatricula === 'UPGRADE'
+          ? 'Salvar upgrade'
+          : 'Salvar matrícula';
+
+      document
+        .getElementById('modalNovaMatricula')
+        .classList.remove('oculto');
+
+      document.body.style.overflow = 'hidden';
+    }
+
+
+    function abrirUpgradeMatricula(idMatricula) {
+      origemGestaoMatricula =
+        document
+          .getElementById('tela-matriculas')
+          ?.classList.contains('oculto')
+          ? 'FICHA'
+          : 'MATRICULAS';
+
+      google.script.run
+        .withSuccessHandler(matricula => {
+          abrirNovaMatricula('UPGRADE');
+
+          document.getElementById('matriculaAppai').value =
+            matricula.appai || 'NÃO';
+
+          document.getElementById('matriculaIsento').value =
+            matricula.isentoMatricula || 'NÃO';
+
+          preencherPercentualBolsistaSIGA_(
+            'matriculaBolsista',
+            matricula.bolsista
+          );
+
+          document.getElementById('matriculaSemComboAntes').value =
+            matricula.semComboAntes ?? '';
+
+          document.getElementById('matriculaSemComboDepois').value =
+            matricula.semComboDepois ?? '';
+
+          document.getElementById('matriculaComComboAntes').value =
+            matricula.comComboAntes ?? '';
+
+          document.getElementById('matriculaComComboDepois').value =
+            matricula.comComboDepois ?? '';
+
+          document.getElementById('matriculaMotivoAlteracao').value =
+            `Upgrade da matrícula ${idMatricula}`;
+        })
+        .withFailureHandler(exibirErro)
+        .obterMatriculaPorId(idMatricula);
+    }
+
+
+    function abrirEdicaoMatricula(idMatricula) {
+      origemGestaoMatricula =
+        document
+          .getElementById('tela-matriculas')
+          ?.classList.contains('oculto')
+          ? 'FICHA'
+          : 'MATRICULAS';
+
+      google.script.run
+        .withSuccessHandler(matricula => {
+          limparFormularioNovaMatricula();
+
+          document.getElementById('modoFormularioMatricula').value =
+            'EDITAR';
+
+          document.getElementById('idMatriculaEdicao').value =
+            matricula.idMatricula || '';
+
+          document.getElementById('origemModalMatricula').value =
+            origemGestaoMatricula;
+
+          document.getElementById('tituloModalNovaMatricula').textContent =
+            'Editar matrícula';
+
+          document.getElementById('alunoNovaMatricula').textContent =
+            `${nomeAlunoAberto || 'Aluno'} · ${idAlunoAberto} · ${matricula.idMatricula}`;
+
+          document.getElementById('matriculaTurma').value =
+            matricula.turma || '';
+
+          preencherModalidadeDaTurma(
+            'matriculaTurma',
+            'matriculaModalidade'
+          );
+
+          document.getElementById('matriculaStatus').value =
+            matricula.status || 'ATIVO';
+
+          const campoTipoMatricula =
+            document.getElementById('matriculaTipo');
+
+          const tipoAtual =
+            matricula.tipoMatricula || '';
+
+          if (
+            tipoAtual &&
+            !Array.from(campoTipoMatricula.options)
+              .some(opcao => opcao.value === tipoAtual)
+          ) {
+            const opcaoHistorica =
+              document.createElement('option');
+
+            opcaoHistorica.value = tipoAtual;
+            opcaoHistorica.textContent = tipoAtual;
+            opcaoHistorica.dataset.historico = 'true';
+
+            campoTipoMatricula.appendChild(opcaoHistorica);
+          }
+
+          campoTipoMatricula.value = tipoAtual;
+
+          document.getElementById('matriculaMotivoAlteracao').value =
+            matricula.motivoAlteracao || '';
+
+          document.getElementById('matriculaAppai').value =
+            matricula.appai || 'NÃO';
+
+          document.getElementById('matriculaData').value =
+            matricula.dataMatriculaHtml || '';
+
+          document.getElementById('matriculaDataEfetivoTurma').value =
+            matricula.dataEfetivoTurmaHtml || '';
+
+          document.getElementById('matriculaIsento').value =
+            matricula.isentoMatricula || 'NÃO';
+
+          preencherPercentualBolsistaSIGA_(
+            'matriculaBolsista',
+            matricula.bolsista
+          );
+
+          document.getElementById('matriculaSemComboAntes').value =
+            matricula.semComboAntes ?? '';
+
+          document.getElementById('matriculaSemComboDepois').value =
+            matricula.semComboDepois ?? '';
+
+          document.getElementById('matriculaComComboAntes').value =
+            matricula.comComboAntes ?? '';
+
+          document.getElementById('matriculaComComboDepois').value =
+            matricula.comComboDepois ?? '';
+
+          document.getElementById('botaoSalvarNovaMatricula').textContent =
+            'Salvar alterações';
+
+          document
+            .getElementById('modalNovaMatricula')
+            .classList.remove('oculto');
+
+          document.body.style.overflow = 'hidden';
+        })
+        .withFailureHandler(exibirErro)
+        .obterMatriculaPorId(idMatricula);
+    }
+
+
+    function fecharNovaMatricula() {
+      document
+        .getElementById('modalNovaMatricula')
+        .classList.add('oculto');
+
+      document.body.style.overflow = '';
+    }
+
+
+    function fecharModalNovaMatriculaFora(evento) {
+      if (evento.target.id === 'modalNovaMatricula') {
+        fecharNovaMatricula();
+      }
+    }
+
+
+    function limparFormularioNovaMatricula() {
+      const campoTipoMatricula =
+        document.getElementById('matriculaTipo');
+
+      if (campoTipoMatricula) {
+        campoTipoMatricula
+          .querySelectorAll('option[data-historico="true"]')
+          .forEach(opcao => opcao.remove());
+      }
+      document.getElementById('modoFormularioMatricula').value = 'NOVO';
+      document.getElementById('idMatriculaEdicao').value = '';
+      document.getElementById('matriculaTurma').value = '';
+      document.getElementById('matriculaModalidade').value = '';
+      document.getElementById('matriculaAppai').value = '';
+      document.getElementById('matriculaMotivoAlteracao').value = '';
+      document.getElementById('matriculaData').value = obterDataAtualHtml();
+      document.getElementById('matriculaDataEfetivoTurma').value = '';
+      document.getElementById('matriculaStatus').value = 'ATIVO';
+      document.getElementById('matriculaTipo').value = '';
+      document.getElementById('matriculaIsento').value = 'NÃO';
+      document.getElementById('matriculaBolsista').value = '';
+      document.getElementById('matriculaSemComboAntes').value = '';
+      document.getElementById('matriculaSemComboDepois').value = '';
+      document.getElementById('matriculaComComboAntes').value = '';
+      document.getElementById('matriculaComComboDepois').value = '';
+    }
+
+function salvarNovaMatricula() {
+  // Mesmo motivo de salvarNovoAluno: o aviso da tentativa anterior
+  // sobrevive à correção do campo.
+  const avisoAnterior =
+    document.getElementById('mensagemNovaMatricula');
+
+  if (avisoAnterior) {
+    avisoAnterior.textContent = '';
+    avisoAnterior.classList.add('oculto');
+  }
+
+  const modo = valor('modoFormularioMatricula') || 'NOVO';
+
+  const dados = {
+    idMatricula: valor('idMatriculaEdicao'),
+    idAluno: idAlunoAberto,
+    nomeAluno:
+      nomeAlunoAberto ||
+      valor('nomeAluno') ||
+      document.getElementById('nomeAlunoGestaoMatriculas')?.textContent ||
+      '',
+    turma: valor('matriculaTurma'),
+    modalidade: valor('matriculaModalidade'),
+    appai: valor('matriculaAppai'),
+    motivoAlteracao: valor('matriculaMotivoAlteracao'),
+    dataMatricula: valor('matriculaData'),
+    dataEfetivoTurma: valor('matriculaDataEfetivoTurma'),
+    status: valor('matriculaStatus'),
+    tipoMatricula: valor('matriculaTipo'),
+    isentoMatricula: valor('matriculaIsento'),
+    bolsista: valorBolsistaPlanilhaSIGA_(valor('matriculaBolsista')),
+    semComboAntes: valor('matriculaSemComboAntes'),
+    semComboDepois: valor('matriculaSemComboDepois'),
+    comComboAntes: valor('matriculaComComboAntes'),
+    comComboDepois: valor('matriculaComComboDepois')
+  };
+
+  const camposObrigatorios = [
+    ['idAluno', 'Não foi possível identificar o aluno.'],
+    ['nomeAluno', 'Não foi possível identificar o nome do aluno.'],
+    ['turma', 'Selecione a turma.'],
+    ['modalidade', 'Informe a modalidade.'],
+    ['appai', 'Informe se o aluno é APPAI.'],
+    ['dataMatricula', 'Informe a data da matrícula.'],
+    [
+      'dataEfetivoTurma',
+      'Informe a data em que o aluno iniciará na turma.'
+    ],
+    ['status', 'Informe o status da matrícula.'],
+    ['tipoMatricula', 'Informe o tipo de matrícula.'],
+    [
+      'isentoMatricula',
+      'Informe se o aluno é isento da matrícula.'
+    ],
+  ];
+
+  if (modo === 'EDITAR' && !dados.idMatricula) {
+    mostrarErroNovaMatricula(
+      'Não foi possível identificar a matrícula que será editada.',
+      'erro'
+    );
+    return;
+  }
+
+  for (const [campo, mensagem] of camposObrigatorios) {
+    if (!dados[campo]) {
+      mostrarErroNovaMatricula(mensagem, 'erro');
+      return;
+    }
+  }
+
+  const dataInicioTurma =
+    obterDataInicioTurmaSelecionada('matriculaTurma');
+
+  if (
+    dataInicioTurma &&
+    dados.dataEfetivoTurma &&
+    new Date(`${dados.dataEfetivoTurma}T00:00:00`) <
+      new Date(`${dataInicioTurma}T00:00:00`)
+  ) {
+    mostrarErroNovaMatricula(
+      'A data em que o aluno iniciará na turma deve ser maior ou igual à data de início da turma.',
+      'erro'
+    );
+    return;
+  }
+
+  const botao =
+    document.getElementById('botaoSalvarNovaMatricula');
+
+  botao.disabled = true;
+  botao.textContent = 'Salvando...';
+
+  const sucesso = resultado => {
+    botao.disabled = false;
+    botao.textContent =
+      modo === 'EDITAR'
+        ? 'Salvar alterações'
+        : 'Salvar matrícula';
+
+    fecharNovaMatricula();
+
+    mostrarMensagem(
+      `${resultado.mensagem}${
+        resultado.idMatricula
+          ? ` ID: ${resultado.idMatricula}.`
+          : ''
+      }`,
+      'sucesso'
+    );
+
+    atualizarListasMatriculasAbertas();
+  };
+
+  const falha = erro => {
+    botao.disabled = false;
+    botao.textContent =
+      modo === 'EDITAR'
+        ? 'Salvar alterações'
+        : 'Salvar matrícula';
+
+    mostrarErroNovaMatricula(
+      erro && erro.message
+        ? erro.message
+        : String(
+            erro ||
+            'Ocorreu um erro ao salvar a matrícula.'
+          ),
+      'erro'
+    );
+  };
+
+  const executor = google.script.run
+    .withSuccessHandler(sucesso)
+    .withFailureHandler(falha);
+
+  if (modo === 'EDITAR') {
+    executor.atualizarMatricula(dados);
+  } else {
+    executor.cadastrarMatriculaAlunoExistente(dados);
+  }
+}
+
+function obterDataAtualHtml() {
+      const hoje = new Date();
+
+      return [
+        hoje.getFullYear(),
+        String(hoje.getMonth() + 1).padStart(2, '0'),
+        String(hoje.getDate()).padStart(2, '0')
+      ].join('-');
+    }
+
+
+    function salvarNovoAluno() {
+      /*
+       * Sem isto, o aviso vermelho da tentativa ANTERIOR fica na tela
+       * enquanto o botão já mostra "Salvando...". A pessoa corrige o
+       * campo, salva de novo, e continua lendo o erro velho como se
+       * fosse o novo.
+       */
+      esconderMensagem();
+
+      const dados = {
+        nomeAluno: valor('novoNomeAluno'),
+        nomeSocial: valor('novoNomeSocial'),
+        dataNascimento: valor('novoDataNascimento'),
+        cpf: valor('novoCpf'),
+        email: valor('novoEmail'),
+        telefoneAluno: valor('novoTelefoneAluno'),
+        nomeResponsavel: valor('novoNomeResponsavel'),
+        cpfResponsavel: valor('novoCpfResponsavel'),
+        telefoneResponsavel: valor('novoTelefoneResponsavel'),
+        endereco: valor('novoEndereco'),
+        observacao: valor('novoObservacao'),
+
+        turma: valor('novaTurma'),
+        modalidade: valor('novoModalidade'),
+        captacao: valor('novoCaptacao'),
+        appai: valor('novoAppai'),
+        motivoAlteracao: valor('novoMotivoAlteracao'),
+        dataMatricula: valor('novaDataMatricula'),
+        dataEfetivoTurma: valor('novaDataEfetivoTurma'),
+        status: valor('novoStatus'),
+        tipoMatricula: 'NOVA',
+        isentoMatricula: valor('novoIsentoMatricula'),
+        bolsista: valorBolsistaPlanilhaSIGA_(valor('novoBolsista')),
+
+        semComboAntes: valor('novoSemComboAntes'),
+        semComboDepois: valor('novoSemComboDepois'),
+        comComboAntes: valor('novoComComboAntes'),
+        comComboDepois: valor('novoComComboDepois')
+      };
+
+      const camposObrigatorios = [
+        ['nomeAluno', 'Informe o nome do aluno.'],
+        ['dataNascimento', 'Informe a data de nascimento.'],
+        ['cpf', 'Informe o CPF.'],
+        ['email', 'Informe o e-mail.'],
+        ['telefoneAluno', 'Informe o telefone do aluno.'],
+        ['endereco', 'Informe o endereço.'],
+        ['turma', 'Selecione a turma.'],
+        ['modalidade', 'Informe a modalidade.'],
+        ['appai', 'Informe se o aluno é APPAI.'],
+        ['dataMatricula', 'Informe a data da matrícula.'],
+        ['dataEfetivoTurma', 'Informe a data em que o aluno iniciará na turma.'],
+        ['status', 'Informe o status da matrícula.'],
+        ['isentoMatricula', 'Informe se o aluno é isento da matrícula.'],
+      ];
+
+      for (const [campo, mensagem] of camposObrigatorios) {
+        if (!dados[campo]) {
+          mostrarMensagem(mensagem, 'erro');
+          return;
+        }
+      }
+
+      const botao = document.getElementById('botaoSalvarNovo');
+      botao.disabled = true;
+      botao.textContent = 'Salvando...';
+
+      const dataInicioTurma = converterDataBrParaHtml(
+        obterDataInicioTurmaSelecionada('novaTurma')
+      );
+      const dataEfetivo = valor('novaDataEfetivoTurma');
+
+      if (
+        dataInicioTurma &&
+        dataEfetivo &&
+        dataEfetivo < dataInicioTurma
+      ) {
+        mostrarMensagem(
+          'A data em que o aluno iniciará na turma deve ser maior ou igual à data de início da turma.',
+          'erro'
+        );
+        botao.disabled = false;
+        botao.textContent = 'Salvar aluno e matrícula';
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(resultado => {
+          botao.disabled = false;
+          botao.textContent = 'Salvar aluno e matrícula';
+
+          mostrarMensagem(
+            `${resultado.mensagem} ID: ${resultado.idAluno}.`,
+            'sucesso'
+          );
+
+          limparNovoAluno();
+          document.getElementById('buscaGlobal').value = resultado.idAluno;
+          ultimaBuscaExecutada = '';
+          executarBuscaGlobal();
+        })
+        .withFailureHandler(erro => {
+          botao.disabled = false;
+          botao.textContent = 'Salvar aluno e matrícula';
+          exibirErro(erro);
+        })
+        .salvarCadastro(dados);
+    }
+        function carregarTurmas() {
+      google.script.run
+        .withSuccessHandler(turmas => {
+          preencherSelectTurmas('novaTurma', turmas);
+          preencherSelectTurmas('matriculaTurma', turmas);
+        })
+        .withFailureHandler(exibirErro)
+        .listarTurmas();
+    }
+
+
+    function preencherSelectTurmas(idSelect, turmas) {
+  const select = document.getElementById(idSelect);
+
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML =
+    '<option value="">Selecione uma turma</option>';
+
+  turmas.forEach(item => {
+    const option = document.createElement('option');
+
+    option.value = item.turma;
+
+    const partes = [item.turma];
+
+    if (item.dataInicio) {
+      partes.push(`Início: ${item.dataInicio}`);
+    }
+
+    if (item.status) {
+      partes.push(item.status);
+    }
+
+    option.textContent = partes.join(' — ');
+
+    option.dataset.modalidade = item.modalidade || '';
+    option.dataset.dataInicio = item.dataInicio || '';
+
+    select.appendChild(option);
+  });
+}
+
+function preencherSelectTurmas(idSelect, turmas) {
+  const select = document.getElementById(idSelect);
+
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML =
+    '<option value="">Selecione uma turma</option>';
+
+  turmas.forEach(item => {
+    const option = document.createElement('option');
+
+    option.value = item.turma;
+
+    const partes = [item.turma];
+
+    if (item.dataInicio) {
+      partes.push(`Início: ${item.dataInicio}`);
+    }
+
+    if (item.status) {
+      partes.push(item.status);
+    }
+
+    option.textContent = partes.join(' — ');
+
+    option.dataset.modalidade =
+      item.modalidade || '';
+
+    option.dataset.dataInicio =
+      item.dataInicio || '';
+
+    select.appendChild(option);
+  });
+}
+
+function converterDataBrParaHtml(data) {
+  if (!data) {
+    return '';
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return data;
+  }
+
+  const partes = data.split('/');
+
+  if (partes.length !== 3) {
+    return '';
+  }
+
+  return `${partes[2]}-${partes[1]}-${partes[0]}`;
+}
+
+    function configurarEventosTurma() {
+      const novaTurma = document.getElementById('novaTurma');
+      const matriculaTurma = document.getElementById('matriculaTurma');
+
+      if (novaTurma) {
+        novaTurma.addEventListener('change', () => {
+          preencherModalidadeDaTurma('novaTurma', 'novoModalidade');
+        });
+      }
+
+      if (matriculaTurma) {
+        matriculaTurma.addEventListener('change', () => {
+          preencherModalidadeDaTurma(
+            'matriculaTurma',
+            'matriculaModalidade'
+          );
+        });
+      }
+    }
+
+
+    function preencherModalidadeDaTurma(idSelect, idCampoModalidade) {
+      const select = document.getElementById(idSelect);
+      const campo = document.getElementById(idCampoModalidade);
+
+      if (!select || !campo) {
+        return;
+      }
+
+      const option = select.options[select.selectedIndex];
+      campo.value = option && option.value
+        ? option.dataset.modalidade || ''
+        : '';
+    }
+
+
+    function definirDataAtual() {
+      const hoje = new Date();
+      const data = [
+        hoje.getFullYear(),
+        String(hoje.getMonth() + 1).padStart(2, '0'),
+        String(hoje.getDate()).padStart(2, '0')
+      ].join('-');
+
+      const campoDataMatricula =
+        document.getElementById('novaDataMatricula');
+
+      if (campoDataMatricula) {
+        campoDataMatricula.value = data;
+      }
+    }
+
+
+    function limparNovoAluno() {
+      [
+        'novoNomeAluno',
+        'novoNomeSocial',
+        'novoDataNascimento',
+        'novoCpf',
+        'novoEmail',
+        'novoTelefoneAluno',
+        'novoNomeResponsavel',
+        'novoCpfResponsavel',
+        'novoTelefoneResponsavel',
+        'novoEndereco',
+        'novoObservacao',
+        'novaTurma',
+        'novoModalidade',
+        'novoCaptacao',
+        'novoAppai',
+        'novoMotivoAlteracao',
+        'novaDataEfetivoTurma',
+        'novoSemComboAntes',
+        'novoSemComboDepois',
+        'novoComComboAntes',
+        'novoComComboDepois'
+      ].forEach(id => {
+        const elemento = document.getElementById(id);
+
+        if (elemento) {
+          elemento.value = '';
+        }
+      });
+
+      document.getElementById('novoStatus').value = 'ATIVO';
+      document.getElementById('novoIsentoMatricula').value = 'NÃO';
+      document.getElementById('novoBolsista').value = '';
+      definirDataAtual();
+    }
+
+
+    function voltarParaPesquisa() {
+      esconderTelas();
+      document.getElementById('tela-alunos').classList.remove('oculto');
+      
+
+      if (ultimoTermoPesquisado) {
+        document.getElementById('buscaGlobal').value = ultimoTermoPesquisado;
+      }
+    }
+
+
+    function valor(id) {
+      const elemento = document.getElementById(id);
+      return elemento ? String(elemento.value || '').trim() : '';
+    }
+
+
+    function mostrarMensagem(texto, tipo = 'erro') {
+  const modais = [
+    {
+      idModal: 'modalComprovante',
+      idMensagem: 'mensagemComprovante'
+    },
+    {
+      idModal: 'modalNovaMatricula',
+      idMensagem: 'mensagemNovaMatricula'
+    }
+  ];
+
+  for (const item of modais) {
+    const modal = document.getElementById(item.idModal);
+
+    if (
+      !modal ||
+      modal.classList.contains('oculto')
+    ) {
+      continue;
+    }
+
+    let mensagem =
+      document.getElementById(item.idMensagem);
+
+    if (!mensagem) {
+      const corpoModal =
+        modal.querySelector('.modal-corpo');
+
+      if (corpoModal) {
+        mensagem = document.createElement('div');
+        mensagem.id = item.idMensagem;
+        mensagem.className = 'mensagem oculto';
+        corpoModal.prepend(mensagem);
+      }
+    }
+
+    if (mensagem) {
+      mensagem.textContent = texto;
+      mensagem.className =
+        `mensagem ${
+          tipo === 'sucesso'
+            ? 'mensagem-sucesso'
+            : 'mensagem-erro'
+        }`;
+
+      mensagem.style.position = 'sticky';
+      mensagem.style.top = '0';
+      mensagem.style.zIndex = '999';
+      mensagem.style.marginBottom = '18px';
+      mensagem.classList.remove('oculto');
+
+      const janelaModal =
+        modal.querySelector('.modal');
+
+      if (janelaModal) {
+        janelaModal.scrollTop = 0;
+      }
+
+      return;
+    }
+  }
+
+  const mensagem =
+    document.getElementById('mensagem');
+
+  if (!mensagem) {
+    alert(texto);
+    return;
+  }
+
+  mensagem.textContent = texto;
+  mensagem.className =
+    `mensagem ${
+      tipo === 'sucesso'
+        ? 'mensagem-sucesso'
+        : 'mensagem-erro'
+    }`;
+
+  mensagem.classList.remove('oculto');
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  });
+}
+
+function esconderMensagem() {
+      document.getElementById('mensagem').classList.add('oculto');
+    }
+
+
+    function exibirErro(erro) {
+      mostrarMensagem(
+        erro && erro.message
+          ? erro.message
+          : String(erro || 'Ocorreu um erro.'),
+        'erro'
+      );
+    }
+
+
+    function escapar(texto) {
+      const div = document.createElement('div');
+      div.textContent = texto || '';
+      return div.innerHTML;
+    }
+
+
+    function escaparAtributo(texto) {
+      return String(texto || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'");
+    }
+    function agendarBuscaGlobal() {
+  const termo = document
+    .getElementById('buscaGlobal')
+    .value
+    .trim();
+
+  clearTimeout(temporizadorBusca);
+
+  if (termo.length < 2) {
+    ultimaBuscaExecutada = '';
+
+    document.getElementById('quantidadeResultados').textContent = '';
+
+    document.getElementById('resultadosAlunos').innerHTML = `
+      <div class="estado-vazio">
+        Digite pelo menos 2 caracteres para pesquisar.
+      </div>
+    `;
+
+    return;
+  }
+
+  document.getElementById('resultadosAlunos').innerHTML = `
+    <div class="estado-vazio">
+      Pesquisando...
+    </div>
+  `;
+
+  temporizadorBusca = setTimeout(() => {
+    executarBuscaGlobal();
+  }, 120);
+}
+
+function obterDataInicioTurmaSelecionada(idSelect) {
+
+    const select = document.getElementById(idSelect);
+
+    if (!select) return '';
+
+    const option = select.options[select.selectedIndex];
+
+    if (!option) return '';
+
+    return option.dataset.dataInicio || '';
+}
+let temporizadorPesquisaTurmas = null;
+
+
+function abrirTelaTurmas(botaoMenu) {
+  const telaTurmas =
+    document.getElementById('tela-turmas');
+
+  const modalTurma =
+    document.getElementById('modalTurma');
+
+  const pagina =
+    document.querySelector('main.pagina');
+
+  if (!telaTurmas) {
+    alert(
+      'A tela tela-turmas não foi encontrada no Pages.html.'
+    );
+    return;
+  }
+
+  /*
+   * Garante que a tela de turmas não esteja dentro
+   * de outra tela que esteja oculta.
+   */
+  if (pagina && telaTurmas.parentElement !== pagina) {
+    pagina.appendChild(telaTurmas);
+  }
+
+  /*
+   * Também posiciona o modal diretamente dentro
+   * da página principal.
+   */
+  if (
+    pagina &&
+    modalTurma &&
+    modalTurma.parentElement !== pagina
+  ) {
+    pagina.appendChild(modalTurma);
+  }
+
+  clearTimeout(temporizadorBusca);
+  ultimaBuscaExecutada = '';
+
+  marcarMenuAtivo(botaoMenu);
+  fecharMenuMobile();
+  esconderMensagem();
+  esconderTelas();
+
+  telaTurmas.classList.remove('oculto');
+  
+
+  carregarTurmasSistema();
+}
+
+
+function agendarPesquisaTurmas() {
+  clearTimeout(temporizadorPesquisaTurmas);
+
+  temporizadorPesquisaTurmas = setTimeout(() => {
+    carregarTurmasSistema();
+  }, 350);
+}
+
+
+function carregarTurmasSistema() {
+  const termo = valor('pesquisaTurma');
+  const status = valor('filtroStatusTurma');
+  const container = document.getElementById('listaTurmasSistema');
+
+  container.innerHTML = `
+    <div class="estado-vazio">
+      Carregando turmas...
+    </div>
+  `;
+
+  google.script.run
+    .withSuccessHandler(renderizarTurmasSistema)
+    .withFailureHandler(exibirErro)
+    .listarTurmasGestao({
+      termo,
+      status
+    });
+}
+
+
+function renderizarTurmasSistema(turmas) {
+  const container = document.getElementById('listaTurmasSistema');
+  const quantidade = document.getElementById('quantidadeTurmas');
+
+  quantidade.textContent =
+    `${turmas.length} turma${turmas.length === 1 ? '' : 's'}`;
+
+  if (!turmas.length) {
+    container.innerHTML = `
+      <div class="estado-vazio">
+        Nenhuma turma encontrada.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = turmas.map(turma => {
+    const status = String(turma.statusTurma || '').toUpperCase();
+
+    const classeStatus =
+      status === 'EM ANDAMENTO'
+        ? 'status-ativo'
+        : status === 'ENCERRADA'
+          ? 'status-encerrado'
+          : 'status-outro';
+
+    const podeEncerrar = status !== 'ENCERRADA';
+
+    return `
+  <article class="turma-card">
+    <div class="turma-card-conteudo">
+
+      <div class="turma-card-topo">
+        <div>
+          <h3>${escapar(turma.tipoMatricula)}</h3>
+
+          <div class="turma-resumo-linha">
+            ${escapar(turma.dia || '—')}
+            (${escapar(turma.hora || '—')})
+            · Início ${escapar(turma.dataInicio || '—')}
+            · Fim ${escapar(turma.dataFim || '—')}
+          </div>
+        </div>
+
+        <span class="status ${classeStatus}">
+          ${escapar(turma.statusTurma || 'SEM STATUS')}
+        </span>
+      </div>
+
+    </div>
+
+    <div class="turma-card-acoes">
+      <button
+        type="button"
+        class="botao botao-secundario"
+        onclick="abrirEdicaoTurma(
+          '${escaparAtributo(turma.tipoMatricula)}'
+        )"
+      >
+        Editar
+      </button>
+
+      ${
+        podeEncerrar
+          ? `
+              <button
+                type="button"
+                class="botao botao-perigo"
+                onclick="encerrarTurmaSistema(
+                  '${escaparAtributo(turma.tipoMatricula)}'
+                )"
+              >
+                Encerrar
+              </button>
+            `
+          : ''
+      }
+    </div>
+  </article>
+`;
+  }).join('');
+}
+
+
+function abrirNovaTurma() {
+  limparFormularioTurma();
+
+  document.getElementById('modoFormularioTurma').value = 'NOVO';
+  document.getElementById('tituloModalTurma').textContent = 'Nova turma';
+  document.getElementById('subtituloModalTurma').textContent =
+    'Preencha os dados para criar uma turma.';
+
+  const campoTipo = document.getElementById('turmaTipoMatricula');
+  campoTipo.disabled = false;
+
+  document
+    .getElementById('modalTurma')
+    .classList.remove('oculto');
+
+  document.body.style.overflow = 'hidden';
+  campoTipo.focus();
+}
+
+
+function abrirEdicaoTurma(tipoMatricula) {
+  google.script.run
+    .withSuccessHandler(turma => {
+      document.getElementById('modoFormularioTurma').value = 'EDICAO';
+      document.getElementById('tituloModalTurma').textContent = 'Editar turma';
+      document.getElementById('subtituloModalTurma').textContent =
+        tipoMatricula;
+
+      document.getElementById('turmaTipoMatricula').value =
+        turma.tipoMatricula || '';
+
+      document.getElementById('turmaTipoMatricula').disabled = true;
+
+      document.getElementById('turmaModalidade').value =
+        turma.modalidade || '';
+
+      document.getElementById('turmaDia').value =
+        turma.dia || '';
+
+      document.getElementById('turmaHora').value =
+        turma.hora || '';
+
+      document.getElementById('turmaStatus').value =
+        turma.statusTurma || 'EM ANDAMENTO';
+
+      document.getElementById('turmaDataInicio').value =
+        turma.dataInicioHtml || '';
+
+      document.getElementById('turmaDataFim').value =
+        turma.dataFimHtml || '';
+
+      atualizarPreviewTurmaDiaHora();
+
+      document
+        .getElementById('modalTurma')
+        .classList.remove('oculto');
+
+      document.body.style.overflow = 'hidden';
+    })
+    .withFailureHandler(exibirErro)
+    .obterTurmaGestao(tipoMatricula);
+}
+
+
+function fecharModalTurma() {
+  document
+    .getElementById('modalTurma')
+    .classList.add('oculto');
+
+  document.body.style.overflow = '';
+}
+
+
+function fecharModalTurmaFora(evento) {
+  if (evento.target.id === 'modalTurma') {
+    fecharModalTurma();
+  }
+}
+
+
+function limparFormularioTurma() {
+  document.getElementById('turmaTipoMatricula').value = '';
+  document.getElementById('turmaModalidade').value = '';
+  document.getElementById('turmaDia').value = '';
+  document.getElementById('turmaHora').value = '';
+  document.getElementById('turmaStatus').value = 'EM ANDAMENTO';
+  document.getElementById('turmaDataInicio').value = '';
+  document.getElementById('turmaDataFim').value = '';
+  document.getElementById('turmaDiaHoraPreview').value = '';
+}
+
+
+function atualizarPreviewTurmaDiaHora() {
+  const tipo = valor('turmaTipoMatricula');
+  const dia = valor('turmaDia');
+  const hora = valor('turmaHora');
+
+  const partes = [tipo, dia, hora].filter(Boolean);
+
+  document.getElementById('turmaDiaHoraPreview').value =
+    partes.join(' - ');
+}
+
+
+function salvarTurmaSistema() {
+  const modo = valor('modoFormularioTurma');
+
+  const dados = {
+    tipoMatricula: valor('turmaTipoMatricula'),
+    modalidade: valor('turmaModalidade'),
+    dia: valor('turmaDia'),
+    hora: valor('turmaHora'),
+    statusTurma: valor('turmaStatus'),
+    dataInicio: valor('turmaDataInicio'),
+    dataFim: valor('turmaDataFim')
+  };
+
+  const obrigatorios = [
+    ['tipoMatricula', 'Informe o tipo da turma.'],
+    ['modalidade', 'Informe a modalidade.'],
+    ['dia', 'Informe o dia da turma.'],
+    ['hora', 'Informe o horário da turma.'],
+    ['statusTurma', 'Informe o status da turma.'],
+    ['dataInicio', 'Informe a data de início.']
+  ];
+
+  for (const [campo, mensagem] of obrigatorios) {
+    if (!dados[campo]) {
+      mostrarMensagem(mensagem, 'erro');
+      return;
+    }
+  }
+
+  if (
+    dados.dataFim &&
+    dados.dataFim < dados.dataInicio
+  ) {
+    mostrarMensagem(
+      'A data de fim não pode ser anterior à data de início.',
+      'erro'
+    );
+    return;
+  }
+
+  const botao = document.getElementById('botaoSalvarTurma');
+  botao.disabled = true;
+  botao.textContent = 'Salvando...';
+
+  const executor = modo === 'EDICAO'
+    ? 'atualizarTurmaGestaoComAtivacaoSIGA'
+    : 'cadastrarTurmaGestao';
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      botao.disabled = false;
+      botao.textContent = 'Salvar turma';
+
+      fecharModalTurma();
+      mostrarMensagem(resultado.mensagem, 'sucesso');
+      carregarTurmasSistema();
+      carregarTurmas();
+    })
+    .withFailureHandler(erro => {
+      botao.disabled = false;
+      botao.textContent = 'Salvar turma';
+      exibirErro(erro);
+    })
+    [executor](dados);
+}
+
+
+function encerrarTurmaSistema(tipoMatricula) {
+  const dataFim = prompt(
+    `Informe a data de encerramento da turma ${tipoMatricula} no formato AAAA-MM-DD:`
+  );
+
+  if (!dataFim) {
+    return;
+  }
+
+  const confirmou = confirm(
+    `Deseja realmente encerrar a turma ${tipoMatricula}?`
+  );
+
+  if (!confirmou) {
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      mostrarMensagem(resultado.mensagem, 'sucesso');
+      carregarTurmasSistema();
+      carregarTurmas();
+    })
+    .withFailureHandler(exibirErro)
+    .encerrarTurmaGestao({
+      tipoMatricula,
+      dataFim
+    });
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  const camposPreview = [
+    'turmaTipoMatricula',
+    'turmaDia',
+    'turmaHora'
+  ];
+
+  camposPreview.forEach(id => {
+    const campo = document.getElementById(id);
+
+    if (campo) {
+      campo.addEventListener('input', atualizarPreviewTurmaDiaHora);
+      campo.addEventListener('change', atualizarPreviewTurmaDiaHora);
+    }
+  });
+});
+
+function abrirNovoComprovante() {
+  limparFormularioComprovante();
+
+  const modal = document.getElementById('modalComprovante');
+
+  if (!modal) {
+    mostrarMensagem(
+      'O modal de novo comprovante não foi encontrado.',
+      'erro'
+    );
+    return;
+  }
+
+  modal.classList.remove('oculto');
+  document.body.style.overflow = 'hidden';
+
+  setTimeout(() => {
+    const campo = document.getElementById('buscaAlunoComprovante');
+    if (campo) campo.focus();
+  }, 100);
+}
+
+
+function fecharModalComprovante() {
+  const modal = document.getElementById('modalComprovante');
+
+  if (modal) {
+    modal.classList.add('oculto');
+  }
+
+  document.body.style.overflow = '';
+}
+
+
+function fecharModalComprovanteFora(evento) {
+  if (evento.target.id === 'modalComprovante') {
+    fecharModalComprovante();
+  }
+}
+
+
+function limparFormularioComprovante() {
+  clearTimeout(timerBuscaComp);
+
+  alunoComp = null;
+  matriculasComp = [];
+  cardsComp = [];
+  seqCardComp = 0;
+
+  [
+    'buscaAlunoComprovante',
+    'comprovanteIdAluno',
+    'comprovanteNomeAluno',
+    'comprovantePeriodo',
+    'comprovanteFormaPagamento',
+    'comprovanteObservacao',
+    'comprovanteArquivo'
+  ].forEach(id => {
+    const campo = document.getElementById(id);
+    if (campo) campo.value = '';
+  });
+
+  const data = document.getElementById('comprovanteDataPagamento');
+  if (data) data.value = obterDataAtualHtml();
+
+  ['resultadoBuscaAlunoComprovante', 'cartoesPagamento'].forEach(id => {
+    const elemento = document.getElementById(id);
+    if (elemento) elemento.innerHTML = '';
+  });
+
+  [
+    'avisoAlunoNaoEncontrado',
+    'secaoDadosComprovante',
+    'secaoMatriculasComprovante',
+    'secaoResumoComprovante',
+    'historicoAlunoComprovante',
+    'previewArquivoComprovante',
+    'progressoSalvarComprovante'
+  ].forEach(id => {
+    const elemento = document.getElementById(id);
+    if (elemento) elemento.classList.add('oculto');
+  });
+
+  const vazio = document.getElementById('estadoSemCartoesPagamento');
+  if (vazio) vazio.classList.remove('oculto');
+
+  const botao = document.getElementById('botaoSalvarComprovante');
+  if (botao) {
+    botao.disabled = false;
+    botao.textContent = 'Salvar comprovante';
+  }
+
+  esconderMensagemComprovante();
+  atualizarResumoComprovanteV2();
+}
+
+
+function tratarTeclaBuscaComprovante(evento) {
+  if (evento.key !== 'Enter') return;
+
+  evento.preventDefault();
+
+  const primeiro = document.querySelector(
+    '#resultadoBuscaAlunoComprovante .resultado-aluno-comprovante'
+  );
+
+  if (primeiro) {
+    primeiro.click();
+    return;
+  }
+
+  buscarAlunoComprovanteAgora();
+}
+
+
+function agendarBuscaAlunoComprovante() {
+  clearTimeout(timerBuscaComp);
+
+  const termo = valor('buscaAlunoComprovante');
+
+  if (termo.length < 2) {
+    const resultado =
+      document.getElementById('resultadoBuscaAlunoComprovante');
+
+    if (resultado) resultado.innerHTML = '';
+
+    const aviso =
+      document.getElementById('avisoAlunoNaoEncontrado');
+
+    if (aviso) aviso.classList.add('oculto');
+
+    return;
+  }
+
+  timerBuscaComp = setTimeout(() => {
+    pesquisarAlunoParaComprovante(termo);
+  }, 350);
+}
+
+
+function buscarAlunoComprovanteAgora() {
+  const termo = valor('buscaAlunoComprovante');
+
+  if (termo.length < 2) {
+    mostrarMensagemComprovante(
+      'Digite pelo menos 2 caracteres para pesquisar o aluno.',
+      'erro'
+    );
+    return;
+  }
+
+  pesquisarAlunoParaComprovante(termo);
+}
+
+
+function pesquisarAlunoParaComprovante(termo) {
+  const container =
+    document.getElementById('resultadoBuscaAlunoComprovante');
+
+  if (!container) {
+    mostrarMensagemComprovante(
+      'A área de resultados da pesquisa não foi encontrada.',
+      'erro'
+    );
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="estado-vazio">
+      Pesquisando aluno...
+    </div>
+  `;
+
+  const aviso =
+    document.getElementById('avisoAlunoNaoEncontrado');
+
+  if (aviso) aviso.classList.add('oculto');
+
+  google.script.run
+    .withSuccessHandler(alunos => {
+      renderizarResultadosAlunoComprovante(alunos, termo);
+    })
+    .withFailureHandler(erro => {
+      mostrarMensagemComprovante(
+        erro && erro.message
+          ? erro.message
+          : String(erro || 'Não foi possível pesquisar o aluno.'),
+        'erro'
+      );
+    })
+    .pesquisarAlunosComprovante(termo);
+}
+
+
+function destacarTermoComprovante(texto, termo) {
+  const original = String(texto || '');
+  const busca = String(termo || '').trim();
+
+  if (!busca) return escapar(original);
+
+  const seguro = busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${seguro})`, 'ig');
+
+  return escapar(original).replace(regex, '<mark>$1</mark>');
+}
+
+
+function renderizarResultadosAlunoComprovante(alunos, termo) {
+  const container =
+    document.getElementById('resultadoBuscaAlunoComprovante');
+
+  const aviso =
+    document.getElementById('avisoAlunoNaoEncontrado');
+
+  if (!Array.isArray(alunos) || !alunos.length) {
+    container.innerHTML = '';
+    if (aviso) aviso.classList.remove('oculto');
+    return;
+  }
+
+  if (aviso) aviso.classList.add('oculto');
+
+  container.innerHTML = alunos.map(aluno => `
+    <button
+      type="button"
+      class="resultado-aluno-comprovante"
+      onclick="selecionarAlunoComprovante(
+        '${escaparAtributo(aluno.idAluno)}'
+      )"
+    >
+      <strong>
+        ${destacarTermoComprovante(aluno.nomeAluno, termo)}
+      </strong>
+
+      <span>
+        ${destacarTermoComprovante(aluno.idAluno, termo)}
+      </span>
+
+      <span>
+        CPF: ${destacarTermoComprovante(
+          aluno.cpf || 'Não informado',
+          termo
+        )}
+      </span>
+    </button>
+  `).join('');
+}
+
+
+function selecionarAlunoComprovante(idAluno) {
+  const container =
+    document.getElementById('resultadoBuscaAlunoComprovante');
+
+  container.innerHTML = `
+    <div class="estado-vazio">
+      Carregando matrículas...
+    </div>
+  `;
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      alunoComp = resultado.aluno;
+      matriculasComp = resultado.matriculas || [];
+
+      document.getElementById('comprovanteIdAluno').value =
+        resultado.aluno.idAluno || '';
+
+      document.getElementById('comprovanteNomeAluno').value =
+        resultado.aluno.nomeAluno || '';
+
+      container.innerHTML = `
+        <div class="aluno-selecionado-comprovante">
+          <div>
+            <strong>${escapar(resultado.aluno.nomeAluno)}</strong>
+            <span>
+              ${escapar(resultado.aluno.idAluno)}
+              · CPF: ${escapar(
+                resultado.aluno.cpf || 'Não informado'
+              )}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            class="botao botao-secundario"
+            onclick="trocarAlunoComprovante()"
+          >
+            Trocar aluno
+          </button>
+        </div>
+      `;
+
+      [
+        'secaoDadosComprovante',
+        'secaoMatriculasComprovante',
+        'secaoResumoComprovante'
+      ].forEach(id => {
+        const secao = document.getElementById(id);
+        if (secao) secao.classList.remove('oculto');
+      });
+
+      if (!matriculasComp.length) {
+        mostrarMensagemComprovante(
+          'Aluno encontrado, mas ainda não possui matrícula cadastrada.',
+          'erro'
+        );
+      }
+
+      carregarHistoricoAlunoComprovante(resultado.aluno.idAluno);
+    })
+    .withFailureHandler(erro => {
+      mostrarMensagemComprovante(
+        erro && erro.message
+          ? erro.message
+          : String(erro || 'Não foi possível carregar o aluno.'),
+        'erro'
+      );
+    })
+    .obterAlunoEMatriculasComprovante(idAluno);
+}
+
+
+function trocarAlunoComprovante() {
+  alunoComp = null;
+  matriculasComp = [];
+  cardsComp = [];
+  seqCardComp = 0;
+
+  document.getElementById('buscaAlunoComprovante').value = '';
+  document.getElementById('resultadoBuscaAlunoComprovante').innerHTML = '';
+  document.getElementById('cartoesPagamento').innerHTML = '';
+
+  [
+    'secaoDadosComprovante',
+    'secaoMatriculasComprovante',
+    'secaoResumoComprovante',
+    'historicoAlunoComprovante'
+  ].forEach(id => {
+    const secao = document.getElementById(id);
+    if (secao) secao.classList.add('oculto');
+  });
+
+  document.getElementById('buscaAlunoComprovante').focus();
+}
+
+
+function irParaCadastroAlunoDoComprovante() {
+  fecharModalComprovante();
+  abrirNovoAluno();
+
+  mostrarMensagem(
+    'Cadastre o aluno e depois retorne aos comprovantes.',
+    'erro'
+  );
+}
+
+
+function classeStatusMatriculaComprovante(status) {
+  const texto = String(status || '').toUpperCase();
+
+  if (texto === 'ATIVO' || texto === 'ATIVA') {
+    return 'status-ativo';
+  }
+
+  if (
+    [
+      'CANCELADO',
+      'CANCELADA',
+      'FINALIZADO',
+      'FINALIZADA',
+      'ENCERRADO',
+      'ENCERRADA',
+      'ABANDONO'
+    ].includes(texto)
+  ) {
+    return 'status-encerrado';
+  }
+
+  return 'status-outro';
+}
+
+
+function adicionarCartaoPagamento() {
+  if (!alunoComp) {
+    mostrarMensagemComprovante(
+      'Selecione um aluno antes de adicionar a matrícula.',
+      'erro'
+    );
+    return;
+  }
+
+  if (!matriculasComp.length) {
+    mostrarMensagemComprovante(
+      'Este aluno não possui matrículas cadastradas.',
+      'erro'
+    );
+    return;
+  }
+
+  abrirSeletorMultiplasMatriculasComprovante();
+}
+
+
+/**
+ * Permite selecionar várias matrículas de uma única vez.
+ * Cada matrícula selecionada continua gerando um cartão próprio
+ * e, consequentemente, uma linha própria na planilha.
+ *
+ * Isso mantém a distribuição dos valores correta e evita
+ * duplicar o mesmo valor automaticamente em várias matrículas.
+ */
+function abrirSeletorMultiplasMatriculasComprovante() {
+
+  fecharSeletorMultiplasMatriculasComprovante();
+
+  const usadas =
+    new Set(
+      cardsComp
+        .map(card =>
+          String(card.idMatricula || '')
+        )
+        .filter(Boolean)
+    );
+
+  const disponiveis =
+    matriculasComp.filter(
+      matricula =>
+        !usadas.has(
+          String(
+            matricula.idMatricula || ''
+          )
+        )
+    );
+
+  if (!disponiveis.length) {
+    mostrarMensagemComprovante(
+      'Todas as matrículas deste aluno já foram adicionadas ao comprovante.',
+      'erro'
+    );
+    return;
+  }
+
+  const fundo =
+    document.createElement('div');
+
+  fundo.id =
+    'modalMultiplasMatriculasComprovante';
+
+  fundo.className =
+    'modal-fundo seletor-matriculas-multiplas';
+
+  fundo.onclick = evento => {
+    if (evento.target === fundo) {
+      fecharSeletorMultiplasMatriculasComprovante();
+    }
+  };
+
+  const opcoes =
+    disponiveis
+      .map(matricula => {
+
+        const id =
+          String(
+            matricula.idMatricula || ''
+          );
+
+        const status =
+          String(
+            matricula.status ||
+            'SEM STATUS'
+          );
+
+        const tipo =
+          String(
+            matricula.tipoMatricula ||
+            ''
+          );
+
+        return `
+          <label class="opcao-matricula-multipla">
+            <input
+              type="checkbox"
+              value="${escaparAtributo(id)}"
+              class="check-matricula-multipla"
+            >
+
+            <span class="opcao-matricula-conteudo">
+              <strong>
+                ${escapar(
+                  matricula.turma ||
+                  'Turma não informada'
+                )}
+              </strong>
+
+              <span>
+                ${escapar(status)}
+                · ${escapar(id)}
+              </span>
+
+              ${
+                tipo
+                  ? `
+                    <span>
+                      ${escapar(tipo)}
+                    </span>
+                  `
+                  : ''
+              }
+
+              ${
+                matricula.dataMatricula
+                  ? `
+                    <span>
+                      Início:
+                      ${escapar(
+                        matricula.dataMatricula
+                      )}
+                    </span>
+                  `
+                  : ''
+              }
+            </span>
+          </label>
+        `;
+      })
+      .join('');
+
+  fundo.innerHTML = `
+    <section
+      class="modal seletor-matriculas-multiplas-modal"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="modal-cabecalho">
+        <div>
+          <h2>
+            Selecionar matrículas
+          </h2>
+
+          <div class="subtitulo">
+            Marque uma ou mais matrículas relacionadas a este pagamento.
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="modal-fechar"
+          onclick="fecharSeletorMultiplasMatriculasComprovante()"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="modal-corpo">
+
+        <div class="seletor-matriculas-acoes">
+          <button
+            type="button"
+            class="botao botao-secundario"
+            onclick="selecionarTodasMatriculasComprovante(true)"
+          >
+            Selecionar todas
+          </button>
+
+          <button
+            type="button"
+            class="botao botao-secundario"
+            onclick="selecionarTodasMatriculasComprovante(false)"
+          >
+            Limpar seleção
+          </button>
+        </div>
+
+        <div class="lista-matriculas-multiplas">
+          ${opcoes}
+        </div>
+
+      </div>
+
+      <div class="modal-rodape">
+        <button
+          type="button"
+          class="botao botao-secundario"
+          onclick="fecharSeletorMultiplasMatriculasComprovante()"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          class="botao botao-primario"
+          onclick="confirmarMultiplasMatriculasComprovante()"
+        >
+          Adicionar selecionadas
+        </button>
+      </div>
+    </section>
+  `;
+
+  document.body.appendChild(fundo);
+
+  garantirEstiloSeletorMultiplasMatriculasComprovante();
+}
+
+
+function confirmarMultiplasMatriculasComprovante() {
+
+  const selecionadas =
+    Array.from(
+      document.querySelectorAll(
+        '#modalMultiplasMatriculasComprovante .check-matricula-multipla:checked'
+      )
+    )
+      .map(campo =>
+        String(
+          campo.value || ''
+        )
+      )
+      .filter(Boolean);
+
+  if (!selecionadas.length) {
+    mostrarMensagemComprovante(
+      'Selecione pelo menos uma matrícula.',
+      'erro'
+    );
+    return;
+  }
+
+  selecionadas.forEach(
+    idMatricula => {
+
+      const jaExiste =
+        cardsComp.some(
+          card =>
+            String(
+              card.idMatricula || ''
+            ) ===
+            String(idMatricula)
+        );
+
+      if (jaExiste) {
+        return;
+      }
+
+      cardsComp.push({
+        id: ++seqCardComp,
+        idMatricula,
+        valores: {},
+        tiposAtivos: {},
+        descricaoOutro: ''
+      });
+    }
+  );
+
+  fecharSeletorMultiplasMatriculasComprovante();
+
+  renderizarCardsComprovanteV2();
+}
+
+
+function selecionarTodasMatriculasComprovante(
+  selecionar
+) {
+
+  document
+    .querySelectorAll(
+      '#modalMultiplasMatriculasComprovante .check-matricula-multipla'
+    )
+    .forEach(campo => {
+      campo.checked =
+        Boolean(selecionar);
+    });
+}
+
+
+function fecharSeletorMultiplasMatriculasComprovante() {
+
+  const modal =
+    document.getElementById(
+      'modalMultiplasMatriculasComprovante'
+    );
+
+  if (modal) {
+    modal.remove();
+  }
+}
+
+
+function garantirEstiloSeletorMultiplasMatriculasComprovante() {
+
+  if (
+    document.getElementById(
+      'estiloMultiplasMatriculasComprovante'
+    )
+  ) {
+    return;
+  }
+
+  const estilo =
+    document.createElement('style');
+
+  estilo.id =
+    'estiloMultiplasMatriculasComprovante';
+
+  estilo.textContent = `
+    .seletor-matriculas-multiplas{
+      z-index:99999 !important;
+    }
+
+    .seletor-matriculas-multiplas-modal{
+      width:min(720px,calc(100vw - 28px));
+      max-height:min(82vh,760px);
+    }
+
+    .seletor-matriculas-acoes{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-bottom:12px;
+    }
+
+    .lista-matriculas-multiplas{
+      display:grid;
+      gap:9px;
+      max-height:420px;
+      overflow:auto;
+      padding-right:4px;
+    }
+
+    .opcao-matricula-multipla{
+      display:flex;
+      align-items:flex-start;
+      gap:11px;
+      padding:12px 13px;
+      border:1px solid #e2e5ee;
+      border-radius:11px;
+      background:#fff;
+      cursor:pointer;
+      transition:.15s ease;
+    }
+
+    .opcao-matricula-multipla:hover{
+      border-color:#bfb5ff;
+      background:#faf9ff;
+    }
+
+    .opcao-matricula-multipla:has(input:checked){
+      border-color:#6427e8;
+      background:#f5f2ff;
+    }
+
+    .opcao-matricula-multipla input{
+      width:18px;
+      height:18px;
+      margin-top:2px;
+      accent-color:#6427e8;
+      flex:none;
+    }
+
+    .opcao-matricula-conteudo{
+      display:flex;
+      min-width:0;
+      flex-direction:column;
+      gap:3px;
+    }
+
+    .opcao-matricula-conteudo strong{
+      color:#202431;
+      font-size:13px;
+    }
+
+    .opcao-matricula-conteudo span{
+      color:#747b8d;
+      font-size:10px;
+    }
+  `;
+
+  document.head.appendChild(estilo);
+}
+
+
+function renderizarCardsComprovanteV2() {
+  const container = document.getElementById('cartoesPagamento');
+  const vazio = document.getElementById('estadoSemCartoesPagamento');
+
+  if (!container) return;
+
+  if (vazio) {
+    vazio.classList.toggle('oculto', cardsComp.length > 0);
+  }
+
+  container.innerHTML = cardsComp.map(card => {
+    const matriculaSelecionada = matriculasComp.find(
+      item => String(item.idMatricula) === String(card.idMatricula)
+    );
+
+    const opcoes = matriculasComp.map(matricula => `
+      <option
+        value="${escaparAtributo(matricula.idMatricula)}"
+        ${
+          String(card.idMatricula) === String(matricula.idMatricula)
+            ? 'selected'
+            : ''
+        }
+      >
+        ${escapar(matricula.turma)}
+        — ${escapar(matricula.status || 'SEM STATUS')}
+        — ${escapar(matricula.idMatricula)}
+      </option>
+    `).join('');
+
+    const identificacao = matriculaSelecionada
+      ? `
+          <div class="cartao-matricula-identificacao">
+            <span class="etiqueta-matricula">
+              ${escapar(matriculaSelecionada.idMatricula)}
+            </span>
+
+            <span class="etiqueta-matricula ${
+              classeStatusMatriculaComprovante(
+                matriculaSelecionada.status
+              )
+            }">
+              ${escapar(matriculaSelecionada.status || 'SEM STATUS')}
+            </span>
+
+            <span class="etiqueta-matricula">
+              ${escapar(
+                matriculaSelecionada.tipoMatricula || 'TIPO NÃO INFORMADO'
+              )}
+            </span>
+
+            ${
+              matriculaSelecionada.dataMatricula
+                ? `
+                    <span class="etiqueta-matricula">
+                      Início: ${escapar(
+                        matriculaSelecionada.dataMatricula
+                      )}
+                    </span>
+                  `
+                : ''
+            }
+          </div>
+        `
+      : '';
+
+    const campos = CAMPOS_COMP.map(([chave, label]) => {
+      const ativo = Boolean(card.tiposAtivos[chave]);
+      const valorAtual = Number(card.valores[chave] || 0);
+
+      return `
+        <div class="tipo-pagamento-item ${ativo ? 'ativo' : ''}">
+          <label class="tipo-pagamento-controle">
+            <input
+              type="checkbox"
+              ${ativo ? 'checked' : ''}
+              onchange="alternarTipoPagamentoComprovante(
+                ${card.id},
+                '${chave}',
+                this.checked
+              )"
+            >
+            <span>${escapar(label)}</span>
+          </label>
+
+          <input
+            type="text"
+            inputmode="decimal"
+            placeholder="R$ 0,00"
+            ${ativo ? '' : 'disabled'}
+            value="${
+              ativo && valorAtual > 0
+                ? valorAtual.toFixed(2).replace('.', ',')
+                : ''
+            }"
+            oninput="alterarValorComprovanteV2(
+              ${card.id},
+              '${chave}',
+              this.value
+            )"
+          >
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <article class="cartao-pagamento-matricula">
+        <div class="cartao-pagamento-cabecalho">
+          <div>
+            <h4>Pagamento por matrícula</h4>
+            <span class="dado-secundario">
+              Esta matrícula gerará uma linha na planilha.
+            </span>
+            ${identificacao}
+          </div>
+
+          <button
+            type="button"
+            class="botao botao-perigo"
+            onclick="removerCartaoPagamentoV2(${card.id})"
+          >
+            Remover
+          </button>
+        </div>
+
+        <div class="grade">
+          <div class="campo campo-total">
+            <label>Matrícula relacionada *</label>
+
+            <select
+              onchange="alterarMatriculaComprovanteV2(
+                ${card.id},
+                this.value
+              )"
+            >
+              <option value="">Selecione uma matrícula</option>
+              ${opcoes}
+            </select>
+          </div>
+
+          <div class="tipos-pagamento-grade">
+            ${campos}
+          </div>
+
+          <div class="campo campo-total ${
+            card.tiposAtivos.outro ? '' : 'oculto'
+          }">
+            <label>Especifique o pagamento “Outro” *</label>
+
+            <input
+              type="text"
+              value="${escaparAtributo(card.descricaoOutro || '')}"
+              placeholder="Descreva o que foi pago"
+              oninput="alterarDescricaoOutroComprovanteV2(
+                ${card.id},
+                this.value
+              )"
+            >
+          </div>
+        </div>
+
+        <div class="total-cartao-pagamento">
+          <span>Total desta linha</span>
+
+          <strong id="totalCardComp${card.id}">
+            ${formatarMoedaComprovanteV2(
+              calcularTotalCardComprovanteV2(card)
+            )}
+          </strong>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  atualizarResumoComprovanteV2();
+}
+
+
+function alterarMatriculaComprovanteV2(id, idMatricula) {
+  const card = cardsComp.find(item => item.id === id);
+
+  if (card) {
+    card.idMatricula = idMatricula;
+    renderizarCardsComprovanteV2();
+  }
+}
+
+
+function alternarTipoPagamentoComprovante(id, chave, ativo) {
+  const card = cardsComp.find(item => item.id === id);
+
+  if (!card) return;
+
+  card.tiposAtivos[chave] = ativo;
+
+  if (!ativo) {
+    card.valores[chave] = 0;
+
+    if (chave === 'outro') {
+      card.descricaoOutro = '';
+    }
+  }
+
+  renderizarCardsComprovanteV2();
+}
+
+
+function alterarValorComprovanteV2(id, chave, valorDigitado) {
+  const card = cardsComp.find(item => item.id === id);
+
+  if (!card) return;
+
+  card.valores[chave] =
+    converterMoedaNumeroComprovanteV2(valorDigitado);
+
+  const total = document.getElementById(`totalCardComp${id}`);
+
+  if (total) {
+    total.textContent = formatarMoedaComprovanteV2(
+      calcularTotalCardComprovanteV2(card)
+    );
+  }
+
+  atualizarResumoComprovanteV2();
+}
+
+
+function alterarDescricaoOutroComprovanteV2(id, descricao) {
+  const card = cardsComp.find(item => item.id === id);
+
+  if (card) {
+    card.descricaoOutro = String(descricao || '').trim();
+  }
+}
+
+
+function removerCartaoPagamentoV2(id) {
+  cardsComp = cardsComp.filter(item => item.id !== id);
+  renderizarCardsComprovanteV2();
+}
+
+
+function calcularTotalCardComprovanteV2(card) {
+  return CAMPOS_COMP.reduce(
+    (total, [chave]) =>
+      total + Number(card.valores[chave] || 0),
+    0
+  );
+}
+
+
+function atualizarResumoComprovanteV2() {
+  const total = cardsComp.reduce(
+    (soma, card) =>
+      soma + calcularTotalCardComprovanteV2(card),
+    0
+  );
+
+  const totalElemento =
+    document.getElementById('totalGeralComprovante');
+
+  if (totalElemento) {
+    totalElemento.textContent =
+      formatarMoedaComprovanteV2(total);
+  }
+
+  const linhas =
+    document.getElementById('resumoLinhasComprovante');
+
+  if (linhas) {
+    linhas.textContent =
+      `${cardsComp.length} linha${
+        cardsComp.length === 1 ? '' : 's'
+      } será${
+        cardsComp.length === 1 ? '' : 'ão'
+      } gravada${
+        cardsComp.length === 1 ? '' : 's'
+      }`;
+  }
+
+  const forma =
+    document.getElementById('resumoFormaComprovante');
+
+  if (forma) {
+    forma.textContent =
+      `Forma: ${valor('comprovanteFormaPagamento') || 'não informada'}`;
+  }
+
+  const periodo =
+    document.getElementById('resumoPeriodoComprovante');
+
+  if (periodo) {
+    periodo.textContent =
+      `Período: ${
+        formatarPeriodoComprovanteV2(
+          valor('comprovantePeriodo')
+        ) || 'não informado'
+      }`;
+  }
+}
+
+
+function formatarPeriodoComprovanteV2(periodo) {
+  const texto = String(periodo || '');
+
+  if (!/^\d{4}-\d{2}$/.test(texto)) {
+    return texto;
+  }
+
+  const [ano, mes] = texto.split('-');
+
+  return `${mes}/${ano}`;
+}
+
+
+function visualizarArquivoComprovante(input) {
+  const preview =
+    document.getElementById('previewArquivoComprovante');
+
+  if (!preview) return;
+
+  if (!input.files || !input.files.length) {
+    preview.innerHTML = '';
+    preview.classList.add('oculto');
+    return;
+  }
+
+  const arquivo = input.files[0];
+  const tamanhoMb = (arquivo.size / 1024 / 1024).toFixed(2);
+
+  if (arquivo.size > 10 * 1024 * 1024) {
+    input.value = '';
+    preview.innerHTML = '';
+    preview.classList.add('oculto');
+
+    mostrarMensagemComprovante(
+      'O arquivo deve possuir no máximo 10 MB.',
+      'erro'
+    );
+    return;
+  }
+
+  const imagem = arquivo.type.startsWith('image/')
+    ? `<img id="imagemPreviewComprovante" alt="Prévia do comprovante">`
+    : `<div class="etiqueta-matricula">PDF</div>`;
+
+  preview.innerHTML = `
+    ${imagem}
+
+    <div class="preview-arquivo-info">
+      <strong>${escapar(arquivo.name)}</strong>
+      <span>${escapar(arquivo.type || 'Arquivo')} · ${tamanhoMb} MB</span>
+    </div>
+
+    <button
+      type="button"
+      class="botao botao-secundario"
+      onclick="removerArquivoComprovante()"
+    >
+      Remover
+    </button>
+  `;
+
+  preview.classList.remove('oculto');
+
+  if (arquivo.type.startsWith('image/')) {
+    const leitor = new FileReader();
+
+    leitor.onload = evento => {
+      const imagemPreview =
+        document.getElementById('imagemPreviewComprovante');
+
+      if (imagemPreview) {
+        imagemPreview.src = evento.target.result;
+      }
+    };
+
+    leitor.readAsDataURL(arquivo);
+  }
+}
+
+
+function removerArquivoComprovante() {
+  const input = document.getElementById('comprovanteArquivo');
+  const preview = document.getElementById('previewArquivoComprovante');
+
+  if (input) input.value = '';
+
+  if (preview) {
+    preview.innerHTML = '';
+    preview.classList.add('oculto');
+  }
+}
+
+
+function salvarComprovantePagamento() {
+  esconderMensagemComprovante();
+
+  if (!alunoComp) {
+    mostrarMensagemComprovante('Selecione um aluno.', 'erro');
+    return;
+  }
+
+  const dadosGerais = {
+    idAluno: valor('comprovanteIdAluno'),
+    nomeAluno: valor('comprovanteNomeAluno'),
+    dataPagamento: valor('comprovanteDataPagamento'),
+    periodo: valor('comprovantePeriodo'),
+    formaPagamento: valor('comprovanteFormaPagamento'),
+    observacao: valor('comprovanteObservacao')
+  };
+
+  const obrigatorios = [
+    ['dataPagamento', 'Informe a data do pagamento.'],
+    ['periodo', 'Informe o período de referência.'],
+    ['formaPagamento', 'Informe a forma de pagamento.']
+  ];
+
+  for (const [campo, mensagem] of obrigatorios) {
+    if (!dadosGerais[campo]) {
+      mostrarMensagemComprovante(mensagem, 'erro');
+      return;
+    }
+  }
+
+  if (!cardsComp.length) {
+    mostrarMensagemComprovante(
+      'Adicione ao menos uma matrícula.',
+      'erro'
+    );
+    return;
+  }
+
+  const usadas = new Set();
+
+  for (const card of cardsComp) {
+    if (!card.idMatricula) {
+      mostrarMensagemComprovante(
+        'Selecione a matrícula em todos os cartões.',
+        'erro'
+      );
+      return;
+    }
+
+    if (usadas.has(card.idMatricula)) {
+      mostrarMensagemComprovante(
+        'A mesma matrícula não pode aparecer mais de uma vez.',
+        'erro'
+      );
+      return;
+    }
+
+    usadas.add(card.idMatricula);
+
+    if (calcularTotalCardComprovanteV2(card) <= 0) {
+      mostrarMensagemComprovante(
+        'Marque um tipo de pagamento e informe o valor em todos os cartões.',
+        'erro'
+      );
+      return;
+    }
+
+    if (
+      Number(card.valores.outro || 0) > 0 &&
+      !String(card.descricaoOutro || '').trim()
+    ) {
+      mostrarMensagemComprovante(
+        'Descreva o pagamento informado como “Outro”.',
+        'erro'
+      );
+      return;
+    }
+  }
+
+  const arquivoInput =
+    document.getElementById('comprovanteArquivo');
+
+  const enviar = arquivo => {
+    enviarComprovantePagamentoV2({
+      dadosGerais,
+      cartoes: cardsComp,
+      arquivo
+    });
+  };
+
+  if (arquivoInput.files && arquivoInput.files.length) {
+    const arquivo = arquivoInput.files[0];
+    const leitor = new FileReader();
+
+    leitor.onload = evento => {
+      enviar({
+        nome: arquivo.name,
+        tipo: arquivo.type || 'application/octet-stream',
+        base64: String(evento.target.result).split(',')[1]
+      });
+    };
+
+    leitor.onerror = () => {
+      mostrarMensagemComprovante(
+        'Não foi possível ler o arquivo selecionado.',
+        'erro'
+      );
+    };
+
+    leitor.readAsDataURL(arquivo);
+    return;
+  }
+
+  enviar(null);
+}
+
+
+function enviarComprovantePagamentoV2(payload) {
+  const botao =
+    document.getElementById('botaoSalvarComprovante');
+
+  const progresso =
+    document.getElementById('progressoSalvarComprovante');
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Salvando...';
+  }
+
+  if (progresso) {
+    progresso.classList.remove('oculto');
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar comprovante';
+      }
+
+      if (progresso) {
+        progresso.classList.add('oculto');
+      }
+
+      mostrarMensagemComprovante(
+        `${resultado.mensagem} ID: ${resultado.idComprovante}.`,
+        'sucesso'
+      );
+
+      carregarComprovantesRecentes();
+
+      setTimeout(() => {
+        fecharModalComprovante();
+      }, 1600);
+    })
+    .withFailureHandler(erro => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Salvar comprovante';
+      }
+
+      if (progresso) {
+        progresso.classList.add('oculto');
+      }
+
+      mostrarMensagemComprovante(
+        erro && erro.message
+          ? erro.message
+          : String(erro || 'Não foi possível salvar o comprovante.'),
+        'erro'
+      );
+    })
+    .salvarComprovantePagamento(payload);
+}
+
+
+function carregarHistoricoAlunoComprovante(idAluno) {
+  const container =
+    document.getElementById('historicoAlunoComprovante');
+
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="estado-vazio">
+      Carregando pagamentos anteriores...
+    </div>
+  `;
+
+  container.classList.remove('oculto');
+
+  google.script.run
+    .withSuccessHandler(lista => {
+      if (!Array.isArray(lista) || !lista.length) {
+        container.innerHTML = `
+          <h4>Pagamentos anteriores</h4>
+          <div class="dado-secundario">
+            Nenhum comprovante anterior encontrado para este aluno.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <h4>Últimos pagamentos deste aluno</h4>
+
+        ${lista.map(item => `
+          <div class="historico-comprovante-item">
+            <span>
+              ${escapar(item.dataPagamento || 'Sem data')}
+              · ${escapar(item.turma || 'Sem turma')}
+            </span>
+
+            <strong>${formatarMoedaComprovanteV2(item.valorTotal)}</strong>
+
+            <span class="dado-secundario">
+              ${escapar(item.idComprovante || '')}
+            </span>
+          </div>
+        `).join('')}
+      `;
+    })
+    .withFailureHandler(() => {
+      container.innerHTML = `
+        <h4>Pagamentos anteriores</h4>
+        <div class="dado-secundario">
+          Não foi possível carregar o histórico.
+        </div>
+      `;
+    })
+    .listarComprovantesAluno(idAluno, 5);
+}
+
+
+function carregarComprovantesRecentes() {
+  const container =
+    document.getElementById('listaComprovantesRecentes');
+
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="estado-vazio">
+      Carregando comprovantes...
+    </div>
+  `;
+
+  google.script.run
+    .withSuccessHandler(lista => {
+      if (!Array.isArray(lista) || !lista.length) {
+        container.innerHTML = `
+          <div class="estado-vazio">
+            Nenhum comprovante foi encontrado.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = lista.map(item => `
+        <article class="comprovante-recente">
+          <div>
+            <strong>${escapar(item.nomeAluno)}</strong>
+            <span>
+              ${escapar(item.idComprovante)}
+              · ${escapar(item.dataPagamento)}
+            </span>
+          </div>
+
+          <div>
+            <span class="dado-secundario">Turma</span>
+            <strong>${escapar(item.turma || 'Não informada')}</strong>
+          </div>
+
+          <div>
+            <span class="dado-secundario">Total da linha</span>
+            <strong>
+              ${formatarMoedaComprovanteV2(item.valorTotal)}
+            </strong>
+          </div>
+        </article>
+      `).join('');
+    })
+    .withFailureHandler(exibirErro)
+    .listarComprovantesRecentes(20);
+}
+
+
+function converterMoedaNumeroComprovanteV2(valor) {
+  let texto = String(valor || '').trim();
+
+  if (!texto) return 0;
+
+  texto = texto
+    .replace(/[R$\s]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .replace(/[^\d.-]/g, '');
+
+  const numero = Number(texto);
+
+  return Number.isFinite(numero) && numero > 0
+    ? numero
+    : 0;
+}
+
+
+function formatarMoedaComprovanteV2(numero) {
+  return Number(numero || 0).toLocaleString(
+    'pt-BR',
+    {
+      style: 'currency',
+      currency: 'BRL'
+    }
+  );
+}
+
+
+function mostrarMensagemComprovante(texto, tipo = 'erro') {
+  let mensagem =
+    document.getElementById('mensagemComprovante');
+
+  const modal =
+    document.getElementById('modalComprovante');
+
+  if (!mensagem && modal) {
+    const corpo = modal.querySelector('.modal-corpo');
+
+    if (corpo) {
+      mensagem = document.createElement('div');
+      mensagem.id = 'mensagemComprovante';
+      mensagem.className = 'mensagem oculto';
+      corpo.prepend(mensagem);
+    }
+  }
+
+  if (!mensagem) {
+    mostrarMensagem(texto, tipo);
+    return;
+  }
+
+  mensagem.textContent = texto;
+
+  mensagem.className =
+    `mensagem ${
+      tipo === 'sucesso'
+        ? 'mensagem-sucesso'
+        : 'mensagem-erro'
+    }`;
+
+  mensagem.classList.remove('oculto');
+
+  const caixaModal = modal
+    ? modal.querySelector('.modal')
+    : null;
+
+  if (caixaModal) {
+    caixaModal.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  }
+}
+
+
+function esconderMensagemComprovante() {
+  const mensagem =
+    document.getElementById('mensagemComprovante');
+
+  if (mensagem) {
+    mensagem.classList.add('oculto');
+    mensagem.textContent = '';
+  }
+}
+function mostrarErroNovaMatricula(texto, tipo = 'erro') {
+  const modal =
+    document.getElementById('modalNovaMatricula');
+
+  if (!modal) {
+    alert(texto);
+    return;
+  }
+
+  let mensagem =
+    document.getElementById('mensagemNovaMatricula');
+
+  if (!mensagem) {
+    const corpoModal =
+      modal.querySelector('.modal-corpo');
+
+    if (!corpoModal) {
+      alert(texto);
+      return;
+    }
+
+    mensagem = document.createElement('div');
+    mensagem.id = 'mensagemNovaMatricula';
+    mensagem.className = 'mensagem oculto';
+
+    corpoModal.prepend(mensagem);
+  }
+
+  mensagem.textContent = texto;
+
+  mensagem.className =
+    `mensagem ${
+      tipo === 'sucesso'
+        ? 'mensagem-sucesso'
+        : 'mensagem-erro'
+    }`;
+
+  mensagem.style.position = 'sticky';
+  mensagem.style.top = '0';
+  mensagem.style.zIndex = '999';
+  mensagem.style.marginBottom = '18px';
+
+  mensagem.classList.remove('oculto');
+
+  const janelaModal =
+    modal.querySelector('.modal');
+
+  if (janelaModal) {
+    janelaModal.scrollTop = 0;
+  }
+}
+
+
+/* =========================================================
+   PROFESSORES — CONTROLE MENSAL DE CHAMADAS
+   ========================================================= */
+
+function definirMesAtualControleChamadas() {
+  const campo = document.getElementById('mesControleChamadas');
+
+  if (!campo || campo.value) {
+    return;
+  }
+
+  const hoje = new Date();
+
+  campo.value = [
+    hoje.getFullYear(),
+    String(hoje.getMonth() + 1).padStart(2, '0')
+  ].join('-');
+}
+
+
+function carregarControleChamadasMensal() {
+  definirMesAtualControleChamadas();
+
+  const mesReferencia = valor('mesControleChamadas');
+  const corpo = document.getElementById('corpoTabelaControleChamadas');
+  const botao = document.getElementById('botaoAtualizarControleChamadas');
+
+  if (!mesReferencia) {
+    mostrarMensagem('Selecione o mês de referência.', 'erro');
+    return;
+  }
+
+  if (corpo) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="7" class="estado-vazio">
+          Carregando controle de chamadas...
+        </td>
+      </tr>
+    `;
+  }
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Carregando...';
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Atualizar';
+      }
+
+      renderizarControleChamadasMensal(resultado);
+    })
+    .withFailureHandler(erro => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Atualizar';
+      }
+
+      exibirErro(erro);
+    })
+    .listarControleChamadasMes(mesReferencia);
+}
+
+
+function renderizarControleChamadasMensal(resultado) {
+  const resumo = resultado && resultado.resumo
+    ? resultado.resumo
+    : {};
+
+  const aulas = resultado && Array.isArray(resultado.aulas)
+    ? resultado.aulas
+    : [];
+
+  definirTextoControle('totalAulasPrevistas', resumo.previstas || 0);
+  definirTextoControle('totalChamadasRealizadas', resumo.realizadas || 0);
+  definirTextoControle('totalChamadasPendentes', resumo.pendentes || 0);
+  definirTextoControle(
+    'percentualChamadasRealizadas',
+    `${Number(resumo.percentual || 0).toFixed(0)}%`
+  );
+
+  definirTextoControle(
+    'resumoMesControleChamadas',
+    resultado.mesFormatado || ''
+  );
+
+  const corpo = document.getElementById('corpoTabelaControleChamadas');
+
+  if (!corpo) {
+    return;
+  }
+
+  if (!aulas.length) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="7" class="estado-vazio">
+          Nenhuma aula prevista foi encontrada neste mês.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  corpo.innerHTML = aulas.map(aula => `
+    <tr>
+      <td>${escapar(aula.data || '')}</td>
+      <td>${escapar(aula.dia || '')}</td>
+      <td>${escapar(aula.hora || '—')}</td>
+      <td><strong>${escapar(aula.turma || '')}</strong></td>
+      <td>${escapar(aula.professor || '—')}</td>
+      <td>
+        <span class="selo-situacao-chamada ${classeSituacaoChamada(aula.situacao)}">
+          ${escapar(rotuloSituacaoChamada(aula.situacao))}
+        </span>
+      </td>
+      <td>${escapar(aula.dataEnvio || '—')}</td>
+    </tr>
+  `).join('');
+}
+
+
+function definirTextoControle(id, texto) {
+  const elemento = document.getElementById(id);
+
+  if (elemento) {
+    elemento.textContent = texto;
+  }
+}
+
+
+function classeSituacaoChamada(situacao) {
+  const valorSituacao = String(situacao || '').toUpperCase();
+
+  if (valorSituacao === 'REALIZADA') {
+    return 'situacao-realizada';
+  }
+
+  if (valorSituacao === 'FUTURA') {
+    return 'situacao-futura';
+  }
+
+  return 'situacao-pendente';
+}
+
+
+function rotuloSituacaoChamada(situacao) {
+  const valorSituacao = String(situacao || '').toUpperCase();
+
+  if (valorSituacao === 'REALIZADA') {
+    return '✓ Realizada';
+  }
+
+  if (valorSituacao === 'FUTURA') {
+    return 'Aula futura';
+  }
+
+  return 'Não realizada';
+}
+
+
+
+/* =========================================================
+   PAINEL DE FREQUÊNCIA — ABA ALUNOS
+   ========================================================= */
+
+function abrirPainelFrequenciaAlunos() {
+  esconderMensagem();
+  esconderTelas();
+
+  const tela =
+    document.getElementById(
+      'tela-frequencia-alunos'
+    );
+
+  if (!tela) {
+    mostrarMensagem(
+      'A tela de frequência não foi encontrada.',
+      'erro'
+    );
+    return;
+  }
+
+  tela.classList.remove('oculto');
+
+  definirPeriodoPadraoPainelFrequencia();
+  carregarTurmasPainelFrequencia();
+}
+
+
+function voltarPainelFrequenciaParaAlunos() {
+  esconderMensagem();
+  esconderTelas();
+
+  const telaAlunos =
+    document.getElementById('tela-alunos');
+
+  if (telaAlunos) {
+    telaAlunos.classList.remove('oculto');
+  }
+}
+
+
+function definirPeriodoPadraoPainelFrequencia() {
+  const campoInicial =
+    document.getElementById(
+      'filtroMesInicialFrequencia'
+    );
+
+  const campoFinal =
+    document.getElementById(
+      'filtroMesFinalFrequencia'
+    );
+
+  if (!campoInicial || !campoFinal) {
+    return;
+  }
+
+  const hoje = new Date();
+
+  if (!campoFinal.value) {
+    campoFinal.value = [
+      hoje.getFullYear(),
+      String(hoje.getMonth() + 1).padStart(2, '0')
+    ].join('-');
+  }
+
+  if (!campoInicial.value) {
+    const inicio = new Date(
+      hoje.getFullYear(),
+      hoje.getMonth() - 11,
+      1
+    );
+
+    campoInicial.value = [
+      inicio.getFullYear(),
+      String(inicio.getMonth() + 1).padStart(2, '0')
+    ].join('-');
+  }
+}
+
+
+function carregarTurmasPainelFrequencia() {
+  const select =
+    document.getElementById(
+      'filtroTurmaFrequencia'
+    );
+
+  if (!select) {
+    return;
+  }
+
+  if (select.dataset.carregado === 'SIM') {
+    return;
+  }
+
+  select.innerHTML =
+    '<option value="">Carregando turmas...</option>';
+
+  google.script.run
+    .withSuccessHandler(turmas => {
+      const lista =
+        Array.isArray(turmas)
+          ? turmas
+          : [];
+
+      select.innerHTML =
+        '<option value="">Selecione uma turma</option>';
+
+      lista.forEach(item => {
+        const turma =
+          typeof item === 'string'
+            ? item
+            : item.turma;
+
+        if (!turma) {
+          return;
+        }
+
+        const option =
+          document.createElement('option');
+
+        option.value = turma;
+        option.textContent = turma;
+
+        if (
+          item &&
+          typeof item === 'object'
+        ) {
+          option.dataset.dataInicio =
+            item.dataInicio || '';
+
+          option.dataset.dataFim =
+            item.dataFim || '';
+
+          option.dataset.emAndamento =
+            item.emAndamento
+              ? 'SIM'
+              : 'NAO';
+        }
+
+        select.appendChild(option);
+      });
+
+      select.dataset.carregado = 'SIM';
+
+      select.onchange =
+        aplicarPeriodoTurmaFrequencia;
+    })
+    .withFailureHandler(exibirErro)
+    .listarTurmasPainelFrequencia();
+}
+
+
+function aplicarPeriodoTurmaFrequencia() {
+  const select =
+    document.getElementById(
+      'filtroTurmaFrequencia'
+    );
+
+  const campoInicial =
+    document.getElementById(
+      'filtroMesInicialFrequencia'
+    );
+
+  const campoFinal =
+    document.getElementById(
+      'filtroMesFinalFrequencia'
+    );
+
+  if (
+    !select ||
+    !campoInicial ||
+    !campoFinal
+  ) {
+    return;
+  }
+
+  const opcao =
+    select.options[
+      select.selectedIndex
+    ];
+
+  if (!opcao || !opcao.value) {
+    return;
+  }
+
+  const hoje = new Date();
+
+  const mesAtual = [
+    hoje.getFullYear(),
+    String(
+      hoje.getMonth() + 1
+    ).padStart(2, '0')
+  ].join('-');
+
+  if (opcao.dataset.dataInicio) {
+    campoInicial.value =
+      opcao.dataset.dataInicio;
+  }
+
+  campoFinal.value =
+    opcao.dataset.emAndamento === 'NAO' &&
+    opcao.dataset.dataFim
+      ? opcao.dataset.dataFim
+      : mesAtual;
+
+  carregarPainelFrequenciaAlunos();
+}
+
+
+function carregarPainelFrequenciaAlunos() {
+  const turma =
+    valor('filtroTurmaFrequencia');
+
+  const mesInicial =
+    valor('filtroMesInicialFrequencia');
+
+  const mesFinal =
+    valor('filtroMesFinalFrequencia');
+
+  if (!turma) {
+    mostrarMensagem(
+      'Selecione uma turma.',
+      'erro'
+    );
+    return;
+  }
+
+  if (!mesInicial || !mesFinal) {
+    mostrarMensagem(
+      'Informe o mês inicial e o mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  if (mesInicial > mesFinal) {
+    mostrarMensagem(
+      'O mês inicial não pode ser posterior ao mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  esconderMensagem();
+
+  const corpo =
+    document.getElementById(
+      'corpoTabelaPainelFrequencia'
+    );
+
+  const grafico =
+    document.getElementById(
+      'graficoBarrasFrequenciaAlunos'
+    );
+
+  const botao =
+    document.getElementById(
+      'botaoCarregarPainelFrequencia'
+    );
+
+  if (corpo) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="5" class="estado-vazio">
+          Carregando frequência...
+        </td>
+      </tr>
+    `;
+  }
+
+  if (grafico) {
+    grafico.innerHTML = `
+      <div class="estado-vazio">
+        Carregando gráfico...
+      </div>
+    `;
+  }
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Carregando...';
+  }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Atualizar';
+      }
+
+      renderizarPainelFrequenciaAlunos(
+        resultado
+      );
+    })
+    .withFailureHandler(erro => {
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Atualizar';
+      }
+
+      exibirErro(erro);
+    })
+    .obterPainelFrequenciaTurma({
+      turma,
+      mesInicial,
+      mesFinal
+    });
+}
+
+
+function renderizarPainelFrequenciaAlunos(
+  resultado
+) {
+  const resumo =
+    resultado && resultado.resumo
+      ? resultado.resumo
+      : {};
+
+  const alunos =
+    resultado &&
+    Array.isArray(resultado.alunos)
+      ? resultado.alunos
+      : [];
+
+  definirTextoPainelFrequencia(
+    'indicadorTotalAulasFrequencia',
+    Number(resumo.totalAulas || 0)
+  );
+
+  definirTextoPainelFrequencia(
+    'indicadorMediaFrequencia',
+    `${formatarPercentualPainelFrequencia(
+      resumo.mediaFrequencia
+    )}%`
+  );
+
+  definirTextoPainelFrequencia(
+    'indicadorTotalAlunosFrequencia',
+    Number(resumo.totalAlunos || 0)
+  );
+
+  definirTextoPainelFrequencia(
+    'indicadorAlunosBaixaFrequencia',
+    Number(resumo.abaixo75 || 0)
+  );
+
+  definirTextoPainelFrequencia(
+    'tituloMatrizFrequencia',
+    resultado.turma || 'Frequência por aluno'
+  );
+
+  definirTextoPainelFrequencia(
+    'subtituloMatrizFrequencia',
+    resultado.periodoFormatado || ''
+  );
+
+  renderizarMiniCardsStatusFrequencia(
+    alunos,
+    resumo
+  );
+
+  renderizarTabelaPainelFrequencia(
+    alunos
+  );
+
+  renderizarGraficoPainelFrequencia(
+    alunos
+  );
+}
+
+
+function garantirEstilosPainelFrequencia() {
+  if (
+    document.getElementById(
+      'estilosPainelFrequenciaProfissional'
+    )
+  ) {
+    return;
+  }
+
+  const estilo =
+    document.createElement('style');
+
+  estilo.id =
+    'estilosPainelFrequenciaProfissional';
+
+  estilo.textContent = `
+    #miniCardsStatusFrequencia {
+      display:grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+      gap:14px;
+      width:100%;
+      margin:0 0 14px;
+    }
+
+    .mini-card-frequencia {
+      position:relative;
+      overflow:hidden;
+      min-width:0;
+      padding:18px;
+      border:1px solid #e5e7eb;
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 6px 18px rgba(15,23,42,.06);
+      transition:
+        transform .2s ease,
+        box-shadow .2s ease,
+        border-color .2s ease;
+    }
+
+    .mini-card-frequencia:hover {
+      transform:translateY(-3px);
+      box-shadow:0 12px 26px rgba(15,23,42,.12);
+    }
+
+    .mini-card-frequencia::before {
+      content:'';
+      position:absolute;
+      inset:0 0 auto 0;
+      height:5px;
+      background:var(--cor-card);
+    }
+
+    .mini-card-topo-frequencia {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:14px;
+    }
+
+    .mini-card-titulo-frequencia {
+      color:#64748b;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.05em;
+      text-transform:uppercase;
+      line-height:1.25;
+    }
+
+    .mini-card-icone-frequencia {
+      display:grid;
+      place-items:center;
+      width:34px;
+      height:34px;
+      border-radius:10px;
+      background:var(--fundo-icone);
+      color:var(--cor-card);
+      font-size:17px;
+      flex:0 0 auto;
+    }
+
+    .mini-card-valor-frequencia {
+      display:block;
+      color:var(--cor-card);
+      font-size:34px;
+      font-weight:850;
+      line-height:1;
+      letter-spacing:-.03em;
+    }
+
+    .mini-card-percentual-frequencia {
+      display:block;
+      margin-top:7px;
+      color:#64748b;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .mini-card-barra-frequencia {
+      height:7px;
+      margin-top:13px;
+      overflow:hidden;
+      border-radius:999px;
+      background:#eef2f7;
+    }
+
+    .mini-card-barra-frequencia span {
+      display:block;
+      height:100%;
+      border-radius:inherit;
+      background:var(--cor-card);
+      transition:width .45s ease;
+    }
+
+    #resumoAutomaticoFrequencia {
+      margin:0 0 18px;
+      padding:13px 16px;
+      border:1px solid #e5e7eb;
+      border-radius:13px;
+      background:#f8fafc;
+      color:#475569;
+      font-size:13px;
+      line-height:1.5;
+    }
+
+    #resumoAutomaticoFrequencia strong {
+      color:#0f172a;
+    }
+
+    #corpoTabelaPainelFrequencia tr {
+      transition:background .15s ease;
+    }
+
+    #corpoTabelaPainelFrequencia tr:hover {
+      background:#f8fafc;
+    }
+
+    .nome-aluno-frequencia {
+      display:block;
+      color:#0f172a;
+      font-size:14px;
+      font-weight:800;
+      line-height:1.3;
+    }
+
+    .status-aluno-frequencia {
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      margin-top:6px;
+      padding:3px 8px;
+      border-radius:999px;
+      font-size:10px;
+      font-weight:850;
+      letter-spacing:.04em;
+    }
+
+    .status-aluno-frequencia::before {
+      content:'';
+      width:6px;
+      height:6px;
+      border-radius:50%;
+      background:currentColor;
+    }
+
+    .status-frequencia-ativo {
+      color:#15803d;
+      background:#dcfce7;
+    }
+
+    .status-frequencia-finalizado {
+      color:#374151;
+      background:#e5e7eb;
+    }
+
+    .status-frequencia-desligado {
+      color:#c2410c;
+      background:#ffedd5;
+    }
+
+    .status-frequencia-outro {
+      color:#64748b;
+      background:#f1f5f9;
+    }
+
+    .linha-grafico-frequencia-profissional {
+      display:grid;
+      grid-template-columns:minmax(150px, 230px) 1fr 58px;
+      align-items:center;
+      gap:12px;
+      padding:8px 0;
+    }
+
+    .dados-aluno-grafico-frequencia {
+      min-width:0;
+    }
+
+    .nome-aluno-grafico-frequencia {
+      display:block;
+      overflow:hidden;
+      color:#334155;
+      font-size:12px;
+      font-weight:750;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    .status-aluno-grafico-frequencia {
+      display:block;
+      margin-top:2px;
+      color:#94a3b8;
+      font-size:9px;
+      font-weight:800;
+      letter-spacing:.04em;
+    }
+
+    .trilho-grafico-frequencia-profissional {
+      position:relative;
+      height:20px;
+      overflow:hidden;
+      border-radius:7px;
+      background:#eef2f7;
+    }
+
+    .barra-grafico-frequencia-profissional {
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      height:100%;
+      min-width:0;
+      padding-right:7px;
+      border-radius:inherit;
+      transition:width .45s ease;
+    }
+
+    .barra-grafico-frequencia-profissional.frequencia-alta {
+      background:linear-gradient(90deg,#16a34a,#22c55e);
+    }
+
+    .barra-grafico-frequencia-profissional.frequencia-media {
+      background:linear-gradient(90deg,#d97706,#f59e0b);
+    }
+
+    .barra-grafico-frequencia-profissional.frequencia-baixa {
+      background:linear-gradient(90deg,#dc2626,#ef4444);
+    }
+
+    .valor-dentro-barra-frequencia {
+      color:#fff;
+      font-size:10px;
+      font-weight:850;
+      white-space:nowrap;
+    }
+
+    .valor-grafico-frequencia-profissional {
+      color:#475569;
+      font-size:12px;
+      font-weight:800;
+      text-align:right;
+    }
+
+    @media (max-width:1100px) {
+      #miniCardsStatusFrequencia {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width:680px) {
+      #miniCardsStatusFrequencia {
+        grid-template-columns:1fr;
+      }
+
+      .linha-grafico-frequencia-profissional {
+        grid-template-columns:110px 1fr 48px;
+        gap:8px;
+      }
+
+      .nome-aluno-grafico-frequencia {
+        font-size:11px;
+      }
+    }
+  `;
+
+  document.head.appendChild(estilo);
+}
+
+
+function renderizarMiniCardsStatusFrequencia(
+  alunos,
+  resumo
+) {
+  garantirEstilosPainelFrequencia();
+
+  const corpoTabela =
+    document.getElementById(
+      'corpoTabelaPainelFrequencia'
+    );
+
+  if (!corpoTabela) {
+    return;
+  }
+
+  const tabela =
+    corpoTabela.closest('table');
+
+  if (!tabela || !tabela.parentElement) {
+    return;
+  }
+
+  const lista =
+    Array.isArray(alunos)
+      ? alunos
+      : [];
+
+  const total =
+    Number(
+      resumo &&
+      resumo.totalAlunos != null
+        ? resumo.totalAlunos
+        : lista.length
+    );
+
+  const ativos =
+    Number(
+      resumo &&
+      resumo.totalAtivosStatus != null
+        ? resumo.totalAtivosStatus
+        : 0
+    );
+
+  const desligados =
+    Number(
+      resumo &&
+      resumo.totalCanceladosAbandonoStatus != null
+        ? resumo.totalCanceladosAbandonoStatus
+        : 0
+    );
+
+  const finalizados =
+    Number(
+      resumo &&
+      resumo.totalFinalizadosStatus != null
+        ? resumo.totalFinalizadosStatus
+        : 0
+    );
+
+  const mediaFrequencia =
+    Number(
+      resumo &&
+      resumo.mediaFrequencia != null
+        ? resumo.mediaFrequencia
+        : 0
+    );
+
+  const percentualNumero = valor =>
+    total > 0
+      ? (
+          Number(valor || 0) /
+          total
+        ) * 100
+      : 0;
+
+  const percentualTexto = valor =>
+    percentualNumero(valor)
+      .toLocaleString(
+        'pt-BR',
+        {
+          minimumFractionDigits:1,
+          maximumFractionDigits:1
+        }
+      );
+
+  let container =
+    document.getElementById(
+      'miniCardsStatusFrequencia'
+    );
+
+  if (!container) {
+    container =
+      document.createElement('div');
+
+    container.id =
+      'miniCardsStatusFrequencia';
+
+    tabela.parentElement.insertBefore(
+      container,
+      tabela
+    );
+  }
+
+  const cards = [
+    {
+      titulo:'Total da turma',
+      valor:total,
+      percentual:100,
+      textoPercentual:'100,0% da turma',
+      cor:'#4f46e5',
+      fundo:'#eef2ff',
+      icone:'👥'
+    },
+    {
+      titulo:'Alunos ativos',
+      valor:ativos,
+      percentual:percentualNumero(ativos),
+      textoPercentual:
+        `${percentualTexto(ativos)}% da turma`,
+      cor:'#16a34a',
+      fundo:'#dcfce7',
+      icone:'✓'
+    },
+    {
+      titulo:'Desligados',
+      valor:desligados,
+      percentual:percentualNumero(desligados),
+      textoPercentual:
+        `${percentualTexto(desligados)}% da turma`,
+      cor:'#f97316',
+      fundo:'#ffedd5',
+      icone:'↘'
+    },
+    {
+      titulo:'Finalizados',
+      valor:finalizados,
+      percentual:percentualNumero(finalizados),
+      textoPercentual:
+        `${percentualTexto(finalizados)}% da turma`,
+      cor:'#374151',
+      fundo:'#e5e7eb',
+      icone:'■'
+    }
+  ];
+
+  container.innerHTML =
+    cards.map(card => `
+      <article
+        class="mini-card-frequencia"
+        style="
+          --cor-card:${card.cor};
+          --fundo-icone:${card.fundo};
+        "
+      >
+        <div class="mini-card-topo-frequencia">
+          <span class="mini-card-titulo-frequencia">
+            ${escapar(card.titulo)}
+          </span>
+
+          <span class="mini-card-icone-frequencia">
+            ${card.icone}
+          </span>
+        </div>
+
+        <strong class="mini-card-valor-frequencia">
+          ${Number(card.valor || 0)}
+        </strong>
+
+        <small class="mini-card-percentual-frequencia">
+          ${escapar(card.textoPercentual)}
+        </small>
+
+        <div class="mini-card-barra-frequencia">
+          <span
+            style="
+              width:${Math.min(
+                100,
+                Math.max(
+                  0,
+                  Number(card.percentual || 0)
+                )
+              )}%;
+            "
+          ></span>
+        </div>
+      </article>
+    `).join('');
+
+  let resumoAutomatico =
+    document.getElementById(
+      'resumoAutomaticoFrequencia'
+    );
+
+  if (!resumoAutomatico) {
+    resumoAutomatico =
+      document.createElement('div');
+
+    resumoAutomatico.id =
+      'resumoAutomaticoFrequencia';
+
+    container.insertAdjacentElement(
+      'afterend',
+      resumoAutomatico
+    );
+  }
+
+  resumoAutomatico.innerHTML = `
+    <strong>${total} aluno(s)</strong>
+    cadastrado(s) na turma:
+    <strong>${ativos} ativo(s)</strong>
+    (${percentualTexto(ativos)}%),
+    <strong>${desligados} desligado(s)</strong>
+    (${percentualTexto(desligados)}%) e
+    <strong>${finalizados} finalizado(s)</strong>
+    (${percentualTexto(finalizados)}%).
+    Frequência média:
+    <strong>${formatarPercentualPainelFrequencia(
+      mediaFrequencia
+    )}%</strong>.
+  `;
+}
+
+
+function obterClasseStatusAlunoFrequencia(
+  statusInformado
+) {
+  const status =
+    String(statusInformado || '')
+      .trim()
+      .toUpperCase();
+
+  if (
+    ['ATIVO', 'ATIVA']
+      .includes(status)
+  ) {
+    return 'status-frequencia-ativo';
+  }
+
+  if (
+    ['FINALIZADO', 'FINALIZADA']
+      .includes(status)
+  ) {
+    return 'status-frequencia-finalizado';
+  }
+
+  if (
+    [
+      'CANCELADO',
+      'CANCELADA',
+      'ABANDONO',
+      'INATIVO',
+      'INATIVA'
+    ].includes(status)
+  ) {
+    return 'status-frequencia-desligado';
+  }
+
+  return 'status-frequencia-outro';
+}
+
+
+function renderizarTabelaPainelFrequencia(
+  alunos
+) {
+  garantirEstilosPainelFrequencia();
+
+  const corpo =
+    document.getElementById(
+      'corpoTabelaPainelFrequencia'
+    );
+
+  if (!corpo) {
+    return;
+  }
+
+  const lista =
+    Array.isArray(alunos)
+      ? alunos
+      : [];
+
+  if (!lista.length) {
+    corpo.innerHTML = `
+      <tr>
+        <td colspan="5" class="estado-vazio">
+          Nenhum aluno foi encontrado para essa turma no período.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const ordenados =
+    [...lista].sort((a, b) =>
+      String(a.nomeAluno || '')
+        .localeCompare(
+          String(b.nomeAluno || ''),
+          'pt-BR'
+        )
+    );
+
+  corpo.innerHTML =
+    ordenados.map(aluno => {
+      const status =
+        String(
+          aluno.status ||
+          'SEM STATUS'
+        )
+          .trim()
+          .toUpperCase();
+
+      return `
+        <tr>
+          <td>
+            <span class="nome-aluno-frequencia">
+              ${escapar(
+                aluno.nomeAluno || ''
+              )}
+            </span>
+
+            <span
+              class="
+                status-aluno-frequencia
+                ${obterClasseStatusAlunoFrequencia(
+                  status
+                )}
+              "
+            >
+              ${escapar(status)}
+            </span>
+          </td>
+
+          <td>${Number(aluno.totalAulas || 0)}</td>
+          <td>${Number(aluno.presencas || 0)}</td>
+          <td>${Number(aluno.faltas || 0)}</td>
+
+          <td>
+            <span
+              class="
+                selo-frequencia-painel
+                ${classePercentualPainelFrequencia(
+                  aluno.percentual
+                )}
+              "
+            >
+              ${formatarPercentualPainelFrequencia(
+                aluno.percentual
+              )}%
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+}
+
+
+function renderizarGraficoPainelFrequencia(
+  alunos
+) {
+  garantirEstilosPainelFrequencia();
+
+  const container =
+    document.getElementById(
+      'graficoBarrasFrequenciaAlunos'
+    );
+
+  if (!container) {
+    return;
+  }
+
+  const lista =
+    Array.isArray(alunos)
+      ? alunos
+      : [];
+
+  if (!lista.length) {
+    container.innerHTML = `
+      <div class="estado-vazio">
+        Nenhum dado disponível para o gráfico.
+      </div>
+    `;
+    return;
+  }
+
+  const ordenados =
+    [...lista].sort((a, b) =>
+      Number(b.percentual || 0) -
+        Number(a.percentual || 0) ||
+      Number(b.presencas || 0) -
+        Number(a.presencas || 0) ||
+      String(a.nomeAluno || '')
+        .localeCompare(
+          String(b.nomeAluno || ''),
+          'pt-BR'
+        )
+    );
+
+  container.innerHTML =
+    ordenados.map(aluno => {
+      const percentual =
+        Math.min(
+          100,
+          Math.max(
+            0,
+            Number(
+              aluno.percentual || 0
+            )
+          )
+        );
+
+      const percentualFormatado =
+        formatarPercentualPainelFrequencia(
+          percentual
+        );
+
+      const status =
+        String(
+          aluno.status ||
+          'SEM STATUS'
+        )
+          .trim()
+          .toUpperCase();
+
+      const exibirDentro =
+        percentual >= 28;
+
+      return `
+        <div class="linha-grafico-frequencia-profissional">
+          <div class="dados-aluno-grafico-frequencia">
+            <span
+              class="nome-aluno-grafico-frequencia"
+              title="${escaparAtributo(
+                aluno.nomeAluno || ''
+              )}"
+            >
+              ${escapar(
+                aluno.nomeAluno || ''
+              )}
+            </span>
+
+            <small class="status-aluno-grafico-frequencia">
+              ${escapar(status)}
+            </small>
+          </div>
+
+          <div class="trilho-grafico-frequencia-profissional">
+            <div
+              class="
+                barra-grafico-frequencia-profissional
+                ${classePercentualPainelFrequencia(
+                  percentual
+                )}
+              "
+              style="
+                width:${percentual}%;
+              "
+            >
+              ${
+                exibirDentro
+                  ? `
+                    <span class="valor-dentro-barra-frequencia">
+                      ${percentualFormatado}%
+                    </span>
+                  `
+                  : ''
+              }
+            </div>
+          </div>
+
+          <div class="valor-grafico-frequencia-profissional">
+            ${
+              exibirDentro
+                ? ''
+                : `${percentualFormatado}%`
+            }
+          </div>
+        </div>
+      `;
+    }).join('');
+}
+
+
+function classePercentualPainelFrequencia(
+  percentual
+) {
+  const valorPercentual =
+    Number(percentual || 0);
+
+  if (valorPercentual >= 90) {
+    return 'frequencia-alta';
+  }
+
+  if (valorPercentual >= 75) {
+    return 'frequencia-media';
+  }
+
+  return 'frequencia-baixa';
+}
+
+
+
+function formatarPercentualPainelFrequencia(
+  percentual
+) {
+  return Number(percentual || 0)
+    .toLocaleString(
+      'pt-BR',
+      {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1
+      }
+    );
+}
+
+
+function definirTextoPainelFrequencia(
+  id,
+  texto
+) {
+  const elemento =
+    document.getElementById(id);
+
+  if (elemento) {
+    elemento.textContent = texto;
+  }
+}
+
+
+
+/* =========================================================
+   RELATÓRIOS DE FREQUÊNCIA EM PDF
+   ========================================================= */
+
+function exportarPdfTurmaFrequencia() {
+  const turma =
+    valor('filtroTurmaFrequencia');
+
+  const mesInicial =
+    valor('filtroMesInicialFrequencia');
+
+  const mesFinal =
+    valor('filtroMesFinalFrequencia');
+
+  if (!turma) {
+    mostrarMensagem(
+      'Selecione uma turma antes de gerar o PDF.',
+      'erro'
+    );
+    return;
+  }
+
+  if (!mesInicial || !mesFinal) {
+    mostrarMensagem(
+      'Informe o mês inicial e o mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  if (mesInicial > mesFinal) {
+    mostrarMensagem(
+      'O mês inicial não pode ser posterior ao mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  executarGeracaoPdfFrequencia_({
+    idBotao: 'botaoPdfTurmaFrequencia',
+    textoCarregando: 'Gerando PDF da turma...',
+    executar(executor) {
+      executor.gerarPdfFrequenciaTurma({
+        turma,
+        mesInicial,
+        mesFinal
+      });
+    }
+  });
+}
+
+
+function exportarPdfGeralFrequencia() {
+  const mesInicial =
+    valor('filtroMesInicialFrequencia');
+
+  const mesFinal =
+    valor('filtroMesFinalFrequencia');
+
+  if (!mesInicial || !mesFinal) {
+    mostrarMensagem(
+      'Informe o mês inicial e o mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  if (mesInicial > mesFinal) {
+    mostrarMensagem(
+      'O mês inicial não pode ser posterior ao mês final.',
+      'erro'
+    );
+    return;
+  }
+
+  const confirmou =
+    confirm(
+      'Gerar um único PDF com todas as turmas em andamento? O processamento pode levar alguns segundos.'
+    );
+
+  if (!confirmou) {
+    return;
+  }
+
+  executarGeracaoPdfFrequencia_({
+    idBotao: 'botaoPdfGeralFrequencia',
+    textoCarregando: 'Gerando PDF geral...',
+    executar(executor) {
+      executor.gerarPdfFrequenciaTurmasAtivas({
+        mesInicial,
+        mesFinal
+      });
+    }
+  });
+}
+
+
+function executarGeracaoPdfFrequencia_(
+  configuracao
+) {
+  const botao =
+    document.getElementById(
+      configuracao.idBotao
+    );
+
+  const textoOriginal =
+    botao
+      ? botao.innerHTML
+      : '';
+
+  bloquearBotoesRelatorioFrequencia_(
+    true
+  );
+
+  if (botao) {
+    botao.textContent =
+      configuracao.textoCarregando;
+  }
+
+  mostrarAvisoGeracaoPdfFrequencia_(
+    configuracao.textoCarregando,
+    'processando'
+  );
+
+  const executor =
+    google.script.run
+      .withSuccessHandler(resultado => {
+        bloquearBotoesRelatorioFrequencia_(
+          false
+        );
+
+        if (botao) {
+          botao.innerHTML =
+            textoOriginal;
+        }
+
+        mostrarAvisoGeracaoPdfFrequencia_(
+          resultado &&
+          resultado.mensagem
+            ? resultado.mensagem
+            : 'PDF gerado com sucesso.',
+          'sucesso'
+        );
+
+        const url =
+          resultado &&
+          (
+            resultado.urlDownload ||
+            resultado.url
+          );
+
+        if (url) {
+          abrirArquivoPdfFrequencia_(url);
+        }
+      })
+      .withFailureHandler(erro => {
+        bloquearBotoesRelatorioFrequencia_(
+          false
+        );
+
+        if (botao) {
+          botao.innerHTML =
+            textoOriginal;
+        }
+
+        const mensagem =
+          erro && erro.message
+            ? erro.message
+            : String(
+                erro ||
+                'Não foi possível gerar o PDF.'
+              );
+
+        mostrarAvisoGeracaoPdfFrequencia_(
+          mensagem,
+          'erro'
+        );
+
+        mostrarMensagem(
+          mensagem,
+          'erro'
+        );
+      });
+
+  configuracao.executar(executor);
+}
+
+
+function bloquearBotoesRelatorioFrequencia_(
+  bloquear
+) {
+  [
+    'botaoPdfTurmaFrequencia',
+    'botaoPdfGeralFrequencia'
+  ].forEach(id => {
+    const botao =
+      document.getElementById(id);
+
+    if (botao) {
+      botao.disabled =
+        Boolean(bloquear);
+    }
+  });
+}
+
+
+function abrirArquivoPdfFrequencia_(
+  url
+) {
+  const link =
+    document.createElement('a');
+
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+
+function mostrarAvisoGeracaoPdfFrequencia_(
+  texto,
+  tipo
+) {
+  let aviso =
+    document.getElementById(
+      'avisoGeracaoPdfFrequencia'
+    );
+
+  if (!aviso) {
+    aviso =
+      document.createElement('div');
+
+    aviso.id =
+      'avisoGeracaoPdfFrequencia';
+
+    aviso.className =
+      'aviso-geracao-pdf-frequencia';
+
+    document.body.appendChild(aviso);
+  }
+
+  aviso.className =
+    `aviso-geracao-pdf-frequencia aviso-pdf-${tipo}`;
+
+  aviso.innerHTML = `
+    <span class="aviso-pdf-icone">
+      ${
+        tipo === 'sucesso'
+          ? '✓'
+          : tipo === 'erro'
+            ? '!'
+            : '…'
+      }
+    </span>
+
+    <span>${escapar(texto)}</span>
+  `;
+
+  aviso.classList.add('visivel');
+
+  clearTimeout(
+    window.timerAvisoPdfFrequencia
+  );
+
+  if (tipo !== 'processando') {
+    window.timerAvisoPdfFrequencia =
+      setTimeout(() => {
+        aviso.classList.remove(
+          'visivel'
+        );
+      }, 6000);
+  }
+}
+
+/* =========================================================
+   PROFESSORES — PAGAMENTOS
+   ========================================================= */
+function abrirAbaInternaProfessoresSIGA(aba) {
+  const pagamentos = aba === 'pagamentos';
+  document.getElementById('painelControleProfessoresSIGA')?.classList.toggle('oculto', pagamentos);
+  document.getElementById('painelPagamentosProfessoresSIGA')?.classList.toggle('oculto', !pagamentos);
+  document.getElementById('abaControleProfessores')?.classList.toggle('ativa', !pagamentos);
+  document.getElementById('abaPagamentosProfessores')?.classList.toggle('ativa', pagamentos);
+
+  if (pagamentos) {
+    definirMesAtualPagamentosProfessoresSIGA();
+    carregarPagamentosProfessoresSIGA();
+  }
+}
+
+function definirMesAtualPagamentosProfessoresSIGA() {
+  const campo = document.getElementById('mesPagamentoProfessor');
+  if (!campo || campo.value) return;
+  const hoje = new Date();
+  campo.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function carregarPagamentosProfessoresSIGA(preservarFiltros) {
+  definirMesAtualPagamentosProfessoresSIGA();
+  const mesReferencia = valor('mesPagamentoProfessor');
+  const professor = valor('filtroProfessorPagamento');
+  const turma = valor('filtroTurmaPagamento');
+  const corpo = document.getElementById('corpoTabelaPagamentosProfessores');
+  const botao = document.getElementById('botaoAtualizarPagamentosProfessores');
+
+  if (!mesReferencia) return mostrarMensagem('Selecione o mês/ano da aula.', 'erro');
+  if (corpo) corpo.innerHTML = '<tr><td colspan="7" class="estado-vazio">Carregando pagamentos...</td></tr>';
+  if (botao) { botao.disabled = true; botao.textContent = 'Carregando...'; }
+
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) { botao.disabled = false; botao.textContent = 'Atualizar'; }
+      renderizarPagamentosProfessoresSIGA(resultado, preservarFiltros ? professor : '', preservarFiltros ? turma : '');
+    })
+    .withFailureHandler(erro => {
+      if (botao) { botao.disabled = false; botao.textContent = 'Atualizar'; }
+      exibirErro(erro);
+    })
+    .listarPagamentosProfessoresSIGA({ mesReferencia, professor, turma });
+}
+
+function renderizarPagamentosProfessoresSIGA(resultado, professorAtual, turmaAtual) {
+  resultado = resultado || {};
+  preencherFiltroPagamentoProfessorSIGA('filtroProfessorPagamento', resultado.professores || [], 'Todos os professores', professorAtual);
+  preencherFiltroPagamentoProfessorSIGA('filtroTurmaPagamento', resultado.turmas || [], 'Todas as turmas', turmaAtual);
+
+  const resumo = resultado.resumo || {};
+  definirTextoControle('cardValorPagarProfessores', formatarMoedaPagamentoProfessorSIGA(resumo.valorPagar || 0));
+  definirTextoControle('cardTotalHorasProfessores', formatarNumeroPagamentoProfessorSIGA(resumo.totalHoras || 0));
+
+  const corpo = document.getElementById('corpoTabelaPagamentosProfessores');
+  const linhas = Array.isArray(resultado.linhas) ? resultado.linhas : [];
+  if (corpo) {
+    corpo.innerHTML = linhas.length ? linhas.map(item => `
+      <tr data-professor="${escapar(item.professor || '')}" data-data-aula="${escapar(item.dataAula || '')}" data-turma="${escapar(item.turma || '')}">
+        <td><strong>${escapar(item.professor || '')}</strong></td>
+        <td>${escapar(item.dataAula || '')}</td>
+        <td><input id="turmaProfessor_${item.linhaPlanilha}" class="entrada-pagamento-professor turma-pagamento-professor" type="text" maxlength="150" list="listaTurmasPagamentoManualSIGA" value="${escapar(item.turma || '')}" ${item.salvo ? 'disabled' : ''}></td>
+        <td><input id="horasProfessor_${item.linhaPlanilha}" data-linha-pagamento="${item.linhaPlanilha}" data-salvo="${item.salvo ? '1' : '0'}" class="entrada-pagamento-professor" type="number" min="0" step="0.25" value="${Number(item.horas || 0)}" ${item.salvo ? 'disabled' : ''}></td>
+        <td><input id="valorHoraProfessor_${item.linhaPlanilha}" class="entrada-pagamento-professor" type="number" min="0" step="0.01" value="${Number(item.valorHora || 0).toFixed(2)}" ${item.salvo ? 'disabled' : ''}></td>
+        <td><strong>${formatarMoedaPagamentoProfessorSIGA(item.valorPagar || 0)}</strong></td>
+        <td><div class="acoes-linha-pagamento-professor">
+          ${item.salvo ? `<button type="button" class="botao botao-secundario" onclick="editarLinhaPagamentoProfessorSIGA(${Number(item.linhaPlanilha)}, this)">Editar</button>` : '<span class="subtitulo">Novo</span>'}
+          <button type="button" class="botao botao-excluir-pagamento-professor" onclick="excluirLinhaPagamentoProfessorSIGA(${Number(item.linhaPlanilha)}, this)">Excluir</button>
+        </div></td>
+      </tr>`).join('') : '<tr><td colspan="7" class="estado-vazio">Nenhuma aula realizada foi encontrada para os filtros selecionados.</td></tr>';
+  }
+  const listaTurmas = document.getElementById('listaTurmasPagamentoManualSIGA');
+  if (listaTurmas && !listaTurmas.children.length) carregarAutocompletePagamentoProfessorManualSIGA_();
+  renderizarGraficoPagamentosProfessoresSIGA(resultado.grafico || []);
+}
+
+function preencherFiltroPagamentoProfessorSIGA(id, itens, rotuloTodos, selecionado) {
+  const campo = document.getElementById(id);
+  if (!campo) return;
+  campo.innerHTML = `<option value="">${escapar(rotuloTodos)}</option>` + itens.map(item => `<option value="${escapar(item)}">${escapar(item)}</option>`).join('');
+  campo.value = selecionado || '';
+}
+
+function editarLinhaPagamentoProfessorSIGA(linhaPlanilha, botao) {
+  const turma = document.getElementById(`turmaProfessor_${linhaPlanilha}`);
+  const horas = document.getElementById(`horasProfessor_${linhaPlanilha}`);
+  const valorHora = document.getElementById(`valorHoraProfessor_${linhaPlanilha}`);
+  if (turma) { turma.disabled = false; turma.focus(); turma.select(); }
+  if (horas) { horas.disabled = false; horas.dataset.salvo = '0'; }
+  if (valorHora) valorHora.disabled = false;
+  if (botao) { botao.disabled = true; botao.textContent = 'Em edição'; }
+}
+
+function salvarPagamentosProfessoresEmLoteSIGA() {
+  const registros = [...document.querySelectorAll('[data-linha-pagamento]')]
+    .filter(campo => campo.dataset.salvo !== '1')
+    .map(campo => {
+      const linhaPlanilha = Number(campo.dataset.linhaPagamento);
+      return {
+        linhaPlanilha,
+        turma: document.getElementById(`turmaProfessor_${linhaPlanilha}`)?.value?.trim() || '',
+        horas: campo.value || 0,
+        valorHora: document.getElementById(`valorHoraProfessor_${linhaPlanilha}`)?.value || 0
+      };
+    });
+
+  if (!registros.length) {
+    mostrarMensagem('Não há alterações para salvar.', 'erro');
+    return;
+  }
+
+  const botao = document.getElementById('botaoSalvarPagamentosEmLote');
+  if (botao) { botao.disabled = true; botao.textContent = 'Salvando...'; }
+  google.script.run
+    .withSuccessHandler(resultado => {
+      if (botao) { botao.disabled = false; botao.textContent = 'Salvar alterações'; }
+      mostrarMensagem(`${Number(resultado.quantidade || registros.length)} pagamento(s) salvo(s) com sucesso.`, 'sucesso');
+      carregarPagamentosProfessoresSIGA(true);
+    })
+    .withFailureHandler(erro => {
+      if (botao) { botao.disabled = false; botao.textContent = 'Salvar alterações'; }
+      exibirErro(erro);
+    })
+    .salvarPagamentosProfessoresEmLoteSIGA(registros);
+}
+
+function excluirLinhaPagamentoProfessorSIGA(linhaPlanilha, botao) {
+  const linha = botao?.closest('tr');
+  const professor = linha?.dataset?.professor || 'este professor';
+  const dataAula = linha?.dataset?.dataAula || '';
+  const turma = document.getElementById(`turmaProfessor_${linhaPlanilha}`)?.value || linha?.dataset?.turma || '';
+  const descricao = [professor, dataAula, turma].filter(Boolean).join(' — ');
+  if (!window.confirm(`Excluir o lançamento ${descricao}?\n\nEle será retirado da tela e não voltará pela sincronização automática.`)) return;
+
+  if (botao) { botao.disabled = true; botao.textContent = 'Excluindo...'; }
+  google.script.run
+    .withSuccessHandler(resultado => {
+      mostrarMensagem(resultado?.mensagem || 'Lançamento excluído com sucesso.', 'sucesso');
+      carregarPagamentosProfessoresSIGA(true);
+    })
+    .withFailureHandler(erro => {
+      if (botao) { botao.disabled = false; botao.textContent = 'Excluir'; }
+      exibirErro(erro);
+    })
+    .excluirPagamentoProfessorSIGA(linhaPlanilha);
+}
+
+function percentualBolsaTelaSIGA_(valorBolsa) {
+  const texto = String(valorBolsa ?? '').trim();
+  const normalizado = normalizarBuscaMatriculasSIGA(texto);
+  if (!texto || ['NAO', 'N', 'FALSE', 'FALSO'].includes(normalizado)) return '';
+  if (['SIM', 'S', 'TRUE', 'VERDADEIRO'].includes(normalizado)) return 100;
+
+  const possuiPercentual = texto.includes('%');
+  const numero = Number(texto.replace('%', '').replace(/\s/g, '').replace(',', '.'));
+  if (!Number.isFinite(numero) || numero <= 0) return '';
+  return Math.min(100, possuiPercentual || numero > 1 ? numero : numero * 100);
+}
+
+/*
+ * Só entrega o que foi digitado. Quem valida e converte para fração é
+ * normalizarBolsaSIGA_, no servidor — que também é chamado pela edição de
+ * matrícula e pelo cadastro de aluno existente.
+ *
+ * A versão anterior recusava 0 (`percentual <= 0` devolvia null) e a tela
+ * respondia "informe de 1 a 100 ou deixe em branco", sendo que o campo
+ * ESTAVA em branco: Number('') é 0. Ter a mesma regra escrita aqui e no
+ * servidor foi o que deixou as duas discordarem.
+ */
+function valorBolsistaPlanilhaSIGA_(valorTela) {
+  return String(valorTela ?? '').trim();
+}
+
+function preencherPercentualBolsistaSIGA_(idCampo, valorPlanilha) {
+  const campo = document.getElementById(idCampo);
+  if (campo) campo.value = String(percentualBolsaTelaSIGA_(valorPlanilha));
+}
+
+function abrirModalPagamentoProfessorManualSIGA() {
+  const modal = document.getElementById('modalPagamentoProfessorManualSIGA');
+  if (!modal) return;
+  const copiarOpcoes = (origemId, destinoId) => {
+    const origem = document.getElementById(origemId), destino = document.getElementById(destinoId);
+    if (!origem || !destino) return;
+    destino.innerHTML = [...origem.options].filter(option => option.value)
+      .map(option => `<option value="${escapar(option.value)}"></option>`).join('');
+  };
+  copiarOpcoes('filtroProfessorPagamento', 'listaProfessoresPagamentoManualSIGA');
+  copiarOpcoes('filtroTurmaPagamento', 'listaTurmasPagamentoManualSIGA');
+  carregarAutocompletePagamentoProfessorManualSIGA_();
+  const data = document.getElementById('manualPagamentoProfessorData');
+  if (data && !data.value) {
+    const hoje = new Date();
+    data.value = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+  }
+  mostrarErroPagamentoProfessorManualSIGA_('');
+  calcularPagamentoProfessorManualSIGA();
+  modal.classList.remove('oculto');
+  document.body.style.overflow = 'hidden';
+  document.getElementById('manualPagamentoProfessorNome')?.focus();
+}
+
+function carregarAutocompletePagamentoProfessorManualSIGA_() {
+  google.script.run
+    .withSuccessHandler(resultado => {
+      preencherDatalistPagamentoProfessorManualSIGA_(
+        'listaProfessoresPagamentoManualSIGA',
+        resultado?.professores || []
+      );
+      preencherDatalistPagamentoProfessorManualSIGA_(
+        'listaTurmasPagamentoManualSIGA',
+        resultado?.turmas || []
+      );
+    })
+    .withFailureHandler(erro => {
+      mostrarErroPagamentoProfessorManualSIGA_(
+        'Não foi possível carregar as sugestões: ' + (erro?.message || String(erro))
+      );
+    })
+    .listarOpcoesPagamentoProfessorManualSIGA();
+}
+
+function preencherDatalistPagamentoProfessorManualSIGA_(id, itens) {
+  const lista = document.getElementById(id);
+  if (!lista) return;
+  lista.innerHTML = [...new Set((itens || []).map(item => String(item || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    .map(item => `<option value="${escapar(item)}"></option>`)
+    .join('');
+}
+
+function fecharModalPagamentoProfessorManualSIGA() {
+  document.getElementById('modalPagamentoProfessorManualSIGA')?.classList.add('oculto');
+  document.body.style.overflow = '';
+}
+
+function fecharModalPagamentoProfessorManualForaSIGA(evento) {
+  if (evento.target?.id === 'modalPagamentoProfessorManualSIGA') fecharModalPagamentoProfessorManualSIGA();
+}
+
+function numeroPagamentoProfessorManualSIGA_(valorNumero) {
+  const texto = String(valorNumero || '').trim().replace(/R\$/gi, '').replace(/\s/g, '');
+  if (!texto) return 0;
+  const numero = Number(texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto);
+  return Number.isFinite(numero) ? numero : 0;
+}
+
+function calcularPagamentoProfessorManualSIGA() {
+  const horas = numeroPagamentoProfessorManualSIGA_(document.getElementById('manualPagamentoProfessorHoras')?.value);
+  const valorHora = numeroPagamentoProfessorManualSIGA_(document.getElementById('manualPagamentoProfessorValorHora')?.value);
+  definirTextoControle('manualPagamentoProfessorTotal', formatarMoedaPagamentoProfessorSIGA(horas * valorHora));
+}
+
+function mostrarErroPagamentoProfessorManualSIGA_(mensagem) {
+  const area = document.getElementById('erroPagamentoProfessorManualSIGA');
+  if (!area) return;
+  area.textContent = mensagem || '';
+  area.classList.toggle('oculto', !mensagem);
+}
+
+function limparPagamentoProfessorManualSIGA_() {
+  ['manualPagamentoProfessorNome','manualPagamentoProfessorData','manualPagamentoProfessorTurma','manualPagamentoProfessorHoras','manualPagamentoProfessorValorHora'].forEach(id => {
+    const campo = document.getElementById(id); if (campo) campo.value = '';
+  });
+  calcularPagamentoProfessorManualSIGA();
+}
+
+function salvarPagamentoProfessorManualSIGA() {
+  const dados = {
+    professor: String(document.getElementById('manualPagamentoProfessorNome')?.value || '').trim(),
+    dataAula: String(document.getElementById('manualPagamentoProfessorData')?.value || '').trim(),
+    turma: String(document.getElementById('manualPagamentoProfessorTurma')?.value || '').trim(),
+    horas: document.getElementById('manualPagamentoProfessorHoras')?.value || '',
+    valorHora: document.getElementById('manualPagamentoProfessorValorHora')?.value || ''
+  };
+  if (!dados.professor || !dados.dataAula || !dados.turma || numeroPagamentoProfessorManualSIGA_(dados.horas) <= 0 || numeroPagamentoProfessorManualSIGA_(dados.valorHora) <= 0) {
+    mostrarErroPagamentoProfessorManualSIGA_('Preencha professor, data, turma, horas e valor da hora com valores válidos.'); return;
+  }
+  const botao = document.getElementById('botaoSalvarPagamentoProfessorManualSIGA');
+  if (botao) { botao.disabled = true; botao.textContent = 'Salvando...'; }
+  mostrarErroPagamentoProfessorManualSIGA_('');
+  google.script.run.withSuccessHandler(resultado => {
+    if (botao) { botao.disabled = false; botao.textContent = 'Salvar lançamento'; }
+    limparPagamentoProfessorManualSIGA_(); fecharModalPagamentoProfessorManualSIGA();
+    const mes = document.getElementById('mesPagamentoProfessor'); if (mes) mes.value = dados.dataAula.slice(0, 7);
+    const fp = document.getElementById('filtroProfessorPagamento'), ft = document.getElementById('filtroTurmaPagamento');
+    if (fp) fp.value = ''; if (ft) ft.value = '';
+    mostrarMensagem(resultado?.mensagem || 'Lançamento manual salvo com sucesso.', 'sucesso');
+    carregarPagamentosProfessoresSIGA();
+  }).withFailureHandler(erro => {
+    if (botao) { botao.disabled = false; botao.textContent = 'Salvar lançamento'; }
+    mostrarErroPagamentoProfessorManualSIGA_(erro?.message || String(erro));
+  }).inserirPagamentoProfessorManualSIGA(dados);
+}
+
+function renderizarGraficoPagamentosProfessoresSIGA(itens) {
+  const grafico = document.getElementById('graficoPagamentosProfessores');
+  if (!grafico) return;
+  if (!itens.length) {
+    grafico.innerHTML = '<div class="estado-vazio">Ainda não há valores preenchidos para exibir.</div>';
+    return;
+  }
+  const maior = Math.max(...itens.map(item => Number(item.valor || 0)), 1);
+  grafico.innerHTML = itens.map(item => `
+    <div class="linha-grafico-professor">
+      <strong>${escapar(item.professor || '')}</strong>
+      <div class="barra-fundo-professor"><div class="barra-professor" style="width:${Math.max(0, Number(item.valor || 0)) / maior * 100}%"></div></div>
+      <span>${formatarMoedaPagamentoProfessorSIGA(item.valor || 0)}</span>
+    </div>`).join('');
+}
+
+function formatarMoedaPagamentoProfessorSIGA(valorNumero) {
+  return Number(valorNumero || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function formatarNumeroPagamentoProfessorSIGA(valorNumero) {
+  return Number(valorNumero || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+
+/* =========================================================
+   CANCELAMENTO DE BOLETOS / RECORRÊNCIAS
+   ========================================================= */
+
+let cancelamentosBoletosSIGA = [];
+
+(function instalarEstilosCancelamentoBoletosSIGA(){
+  if (document.getElementById('estilosCancelamentoBoletosSIGA')) return;
+  const estilo = document.createElement('style');
+  estilo.id = 'estilosCancelamentoBoletosSIGA';
+  estilo.textContent = `
+    .cancelamento-boletos-resumo-siga{display:inline-flex;min-width:220px;flex-direction:column;gap:8px;margin-bottom:16px;border-left:5px solid #dc2626}
+    .cancelamento-boletos-resumo-siga span{color:#687083;font-size:11px;font-weight:900;text-transform:uppercase}
+    .cancelamento-boletos-resumo-siga strong{font-size:30px;color:#1b2030}
+    .cancelamento-boletos-busca-siga{max-width:520px;margin-bottom:18px}
+    .cancelamento-boletos-tabela-wrap-siga{width:100%;overflow-x:auto}
+    .cancelamento-boletos-tabela-siga{width:100%;border-collapse:collapse;min-width:720px}
+    .cancelamento-boletos-tabela-siga th,.cancelamento-boletos-tabela-siga td{padding:14px 12px;border-bottom:1px solid #e8eaf0;text-align:left;vertical-align:middle}
+    .cancelamento-boletos-tabela-siga th{color:#687083;font-size:11px;text-transform:uppercase}
+    .status-cancelamento-boleto-siga{display:inline-block;padding:6px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:800}
+    .check-cancelamento-boleto-siga{display:flex;align-items:center;gap:9px;font-weight:700;cursor:pointer}
+    .check-cancelamento-boleto-siga input{width:20px;height:20px;accent-color:#16a34a;cursor:pointer}
+  `;
+  document.head.appendChild(estilo);
+})();
+
+function abrirCancelamentoBoletosSIGA() {
+  esconderMensagem();
+  esconderTelas();
+  const tela = document.getElementById('tela-cancelamento-boletos');
+  if (!tela) {
+    mostrarMensagem('A tela de cancelamento de boletos não foi encontrada.', 'erro');
+    return;
+  }
+  tela.classList.remove('oculto');
+  resetarRolagemPrincipalSIGA();
+  carregarCancelamentoBoletosSIGA();
+}
+
+function voltarCancelamentoBoletosParaAlunosSIGA() {
+  esconderTelas();
+  document.getElementById('tela-alunos')?.classList.remove('oculto');
+  resetarRolagemPrincipalSIGA();
+}
+
+function carregarCancelamentoBoletosSIGA() {
+  const corpo = document.getElementById('corpoCancelamentoBoletosSIGA');
+  const botao = document.getElementById('botaoAtualizarCancelamentoBoletosSIGA');
+  const total = document.getElementById('totalCancelamentoBoletosSIGA');
+
+  if (!corpo) return;
+
+  const requisicao =
+    (carregarCancelamentoBoletosSIGA._seq || 0) + 1;
+  carregarCancelamentoBoletosSIGA._seq = requisicao;
+
+  const atual = () =>
+    carregarCancelamentoBoletosSIGA._seq === requisicao;
+
+  const liberar = () => {
+    if (botao) {
+      botao.disabled = false;
+      botao.textContent = '↻ Atualizar';
+    }
+  };
+
+  const mostrarErro = erro => {
+    if (!atual()) return;
+
+    liberar();
+
+    const mensagem = erro && erro.message
+      ? erro.message
+      : String(erro || 'Erro desconhecido.');
+
+    if (total) total.textContent = '—';
+
+    corpo.innerHTML =
+      '<tr><td colspan="4" class="estado-vazio"></td></tr>';
+
+    corpo.querySelector('td').textContent =
+      'Não foi possível carregar os cancelamentos: ' + mensagem;
+
+    console.error('Cancelamento de boletos:', erro);
+  };
+
+  corpo.innerHTML =
+    '<tr><td colspan="4" class="estado-vazio">Carregando...</td></tr>';
+
+  if (total) total.textContent = '—';
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = '↻ Atualizando...';
+  }
+
+  try {
+    google.script.run
+      .withSuccessHandler(resultado => {
+        if (!atual()) return;
+
+        if (
+          !resultado ||
+          resultado.sucesso !== true ||
+          !Array.isArray(resultado.registros)
+        ) {
+          mostrarErro(new Error(
+            resultado && resultado.mensagem
+              ? resultado.mensagem
+              : 'O servidor não retornou uma lista válida de recorrências.'
+          ));
+          return;
+        }
+
+        try {
+          cancelamentosBoletosSIGA = resultado.registros;
+          filtrarCancelamentoBoletosSIGA();
+        } catch (erro) {
+          mostrarErro(erro);
+        } finally {
+          liberar();
+        }
+      })
+      .withFailureHandler(mostrarErro)
+      .listarRecorrenciasParaCancelarSIGA();
+
+  } catch (erro) {
+    mostrarErro(erro);
+  }
+}
+
+function filtrarCancelamentoBoletosSIGA() {
+  const termo = normalizarTexto(document.getElementById('buscaCancelamentoBoletosSIGA')?.value || '');
+  const lista = cancelamentosBoletosSIGA.filter(item =>
+    !termo || normalizarTexto([item.nomeAluno,item.turma,item.status].join(' ')).includes(termo)
+  );
+  document.getElementById('totalCancelamentoBoletosSIGA').textContent = String(cancelamentosBoletosSIGA.length);
+  renderizarCancelamentoBoletosSIGA(lista);
+}
+
+function renderizarCancelamentoBoletosSIGA(lista) {
+  const corpo = document.getElementById('corpoCancelamentoBoletosSIGA');
+  if (!corpo) return;
+  if (!lista.length) {
+    corpo.innerHTML = '<tr><td colspan="4" class="estado-vazio">Nenhuma recorrência pendente de cancelamento.</td></tr>';
+    return;
+  }
+  corpo.innerHTML = lista.map(item => `
+    <tr id="linhaRecorrenciaSIGA_${escaparAtributo(item.idMatricula)}">
+      <td><strong>${escapar(item.nomeAluno || '—')}</strong></td>
+      <td>${escapar(item.turma || '—')}</td>
+      <td><span class="status-cancelamento-boleto-siga">${escapar(item.status || '—')}</span></td>
+      <td>
+        <label class="check-cancelamento-boleto-siga">
+          <input type="checkbox" onchange="confirmarCancelamentoRecorrenciaSIGA(this,'${escaparAtributo(item.idMatricula)}')">
+          Cancelada
+        </label>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function confirmarCancelamentoRecorrenciaSIGA(check, idMatricula) {
+  if (!check.checked) return;
+  check.disabled = true;
+  google.script.run
+    .withSuccessHandler(() => {
+      cancelamentosBoletosSIGA = cancelamentosBoletosSIGA.filter(item => String(item.idMatricula) !== String(idMatricula));
+      document.getElementById(`linhaRecorrenciaSIGA_${idMatricula}`)?.remove();
+      filtrarCancelamentoBoletosSIGA();
+      mostrarMensagem('Recorrência registrada como cancelada.', 'sucesso');
+    })
+    .withFailureHandler(erro => {
+      check.checked = false;
+      check.disabled = false;
+      exibirErro(erro);
+    })
+    .marcarRecorrenciaCanceladaSIGA(idMatricula);
+}
+
+</script>

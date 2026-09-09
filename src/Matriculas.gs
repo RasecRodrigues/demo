@@ -375,6 +375,12 @@ function formatarDataExibicaoMatricula_(valor) {
  *   1 a 100    -> é o percentual
  *   resto      -> erro, com a mensagem dizendo o que fazer
  *
+ * GRAVA FRAÇÃO, NÃO O NÚMERO DIGITADO: 50 vira 0,5 e 100 vira 1.
+ * Não é enfeite. ehMatriculaIsentaPagUnif_, no Pagamentos, zera a
+ * mensalidade quando lê 100 OU 1 na célula. Guardando o número cru,
+ * uma bolsa de 1% viraria bolsa integral e o aluno pararia de ser
+ * cobrado. Na fração, 1% é 0,01 e só a bolsa de 100% grava 1.
+ *
  * Por que 0 vira vazio em vez de zero: quem lê essa coluna depois
  * (ehMatriculaIsentaPagUnif_ no Pagamentos, o cálculo de mensalidade)
  * trata "sem bolsa" como célula vazia. Gravar 0 criaria um segundo jeito
@@ -442,5 +448,11 @@ function normalizarBolsaSIGA_(valor) {
     );
   }
 
-  return numero;
+  /*
+   * Fração — ver a explicação no cabeçalho. O arredondamento é em quatro
+   * casas, não duas: arredPagUnif_ arredondaria 12,5% (0,125) para 0,13,
+   * ou seja, 13%. Quatro casas guardam qualquer percentual com dois
+   * decimais sem mexer no que a pessoa digitou.
+   */
+  return Math.round(numero * 100) / 10000;
 }
