@@ -1,6 +1,21 @@
 /**
  * SIGA — Análises comparativas e estratégicas
  *
+ * POR QUE AS CONSTANTES TERMINAM EM _SIGA2
+ * Existe outra cópia deste arquivo no projeto (hoje no Alunos.gs). Como
+ * todos os .gs dividem o mesmo escopo global, dois `const` de mesmo nome
+ * derrubam o projeto INTEIRO antes de qualquer função rodar — nem as
+ * telas que nada têm a ver com Análises sobem. Com o sufixo, os dois
+ * arquivos convivem e o sistema funciona.
+ *
+ * As funções continuam com os nomes de sempre. O Apps Script concatena os
+ * arquivos na ordem da lista, e "Analises" vem depois de "Alunos": as
+ * versões que valem são as DESTE arquivo, que são as corrigidas
+ * (confirmado por procurarCopiaDoAnalisesSIGA, no fim do arquivo).
+ *
+ * Não é preciso desfazer o sufixo depois de limpar o Alunos.gs — nomes de
+ * constante são internos, nada fora daqui depende deles.
+ *
  * Reaproveita os leitores e helpers já existentes no projeto
  * (lerMatriculasPagUnif_, mapaGenericoPagUnif_, parseDataPagUnif_,
  * normalizarPagUnif_, arredPagUnif_, numeroPagUnif_, obterAbaTodosBoletosPagamentosSIGA_,
@@ -17,17 +32,17 @@
  * algumas dezenas/centenas de linhas é quase instantânea.
  */
 
-const ANALISES_CACHE_SHEETS = {
+const ANALISES_CACHE_SHEETS_SIGA2 = {
   GERAL: 'AnalisesCache_Geral',
   TURMA: 'AnalisesCache_Turma',
   COMPARATIVO: 'AnalisesCache_ComparativoTurmas',
   PAGAMENTO_ALUNO: 'AnalisesCache_PagamentoAluno'
 };
-const ANALISES_CACHE_PROP_ATUALIZADO_EM = 'ANALISES_CACHE_ATUALIZADO_EM';
+const ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2 = 'ANALISES_CACHE_ATUALIZADO_EM';
 // Turma em que o cálculo de frequência parou por falta de tempo; a próxima
 // execução retoma dela em vez de recomeçar do início da lista.
-const ANALISES_CACHE_PROP_FREQ_CURSOR = 'ANALISES_CACHE_FREQ_CURSOR';
-const ANALISES_CACHE_MESES_MAX = 36;
+const ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2 = 'ANALISES_CACHE_FREQ_CURSOR';
+const ANALISES_CACHE_MESES_MAX_SIGA2 = 36;
 
 /**
  * Endpoint principal chamado pela tela. Só LÊ o cache — não faz nenhuma
@@ -38,7 +53,7 @@ function obterAnalisesSIGA(filtros) {
   filtros = filtros || {};
   validarPermissaoPagamentosSIGA_(filtros.token);
 
-  const mesesJanela = Math.min(ANALISES_CACHE_MESES_MAX, Math.max(3, Number(filtros.meses) || 12));
+  const mesesJanela = Math.min(ANALISES_CACHE_MESES_MAX_SIGA2, Math.max(3, Number(filtros.meses) || 12));
   const periodos = analisesGerarPeriodos_(mesesJanela);
   const chaves = periodos.map(p => analisesMesRotulo_(p).chave);
   const chavesSet = new Set(chaves);
@@ -191,7 +206,7 @@ function obterAnalisesSIGA(filtros) {
     serieMensalidadesPorTurma,
     detalheMensalPorTurma,
     lucroPorTurma,
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || null,
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || null,
     resumo: {
       alunosAtivos,
       alunosUnicosAtivosAgora,
@@ -350,7 +365,7 @@ function recalcularCacheAnalisesManualSIGA(filtros) {
   recalcularCacheAnalisesSIGA();
   return {
     sucesso: true,
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM)
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2)
   };
 }
 
@@ -383,7 +398,7 @@ function configurarGatilhoCacheAnalisesSIGA() {
 function garantirCacheAnalisesSIGA_() {
   const inicioExecucao = Date.now();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
+  if (ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL)) {
     return;
   }
 
@@ -393,7 +408,7 @@ function garantirCacheAnalisesSIGA_() {
   }
   let nucleo;
   try {
-    if (ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL)) {
+    if (ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL)) {
       return; // outra execução já terminou de criar o cache enquanto esperávamos o lock
     }
     nucleo = analisesRecalcularCacheNucleoSemLock_(ss);
@@ -452,7 +467,7 @@ function analisesRecalcularCacheNucleoComLock_(ss) {
  * do zero.
  */
 function analisesRecalcularCacheNucleoSemLock_(ss) {
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
 
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
@@ -502,7 +517,7 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
   analisesGravarCacheTurma_(ss, periodos, mensalidadesPorTurma.detalhesPorTurma, custoProfessorPorTurmaMes);
   analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma);
 
-  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM, new Date().toISOString());
+  PropertiesService.getScriptProperties().setProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2, new Date().toISOString());
 }
 
 
@@ -512,7 +527,7 @@ function analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo) {
    EXPORTAÇÃO EM PDF
    ========================================================================== */
 
-const ANALISES_PDF_CONFIG_ = {
+const ANALISES_PDF_CONFIG_SIGA2 = {
   NOME_ESCOLA: 'Casa de Artes Gabriel Engel',
   NOME_PASTA: 'SIGA - Relatórios de Análises'
 };
@@ -556,7 +571,7 @@ function gerarPdfAnalisesSIGA(dados) {
   const partes = [];
 
   partes.push('<div class="capa">');
-  partes.push('<div class="escola">' + escapeHtmlAnalisesPdf_(ANALISES_PDF_CONFIG_.NOME_ESCOLA) + '</div>');
+  partes.push('<div class="escola">' + escapeHtmlAnalisesPdf_(ANALISES_PDF_CONFIG_SIGA2.NOME_ESCOLA) + '</div>');
   partes.push('<h1>Análises</h1>');
   partes.push('<div class="meta">Período: <strong>' + escapeHtmlAnalisesPdf_(dados.periodo || '—') + '</strong>'
     + ' &nbsp;·&nbsp; Gerado em ' + escapeHtmlAnalisesPdf_(geradoEm)
@@ -665,8 +680,8 @@ function obterPastaRelatoriosAnalisesSIGA_() {
       // pasta apagada: cai fora e cria outra
     }
   }
-  const iterador = DriveApp.getFoldersByName(ANALISES_PDF_CONFIG_.NOME_PASTA);
-  const pasta = iterador.hasNext() ? iterador.next() : DriveApp.createFolder(ANALISES_PDF_CONFIG_.NOME_PASTA);
+  const iterador = DriveApp.getFoldersByName(ANALISES_PDF_CONFIG_SIGA2.NOME_PASTA);
+  const pasta = iterador.hasNext() ? iterador.next() : DriveApp.createFolder(ANALISES_PDF_CONFIG_SIGA2.NOME_PASTA);
   propriedades.setProperty('PASTA_RELATORIOS_ANALISES_ID', pasta.getId());
   return pasta;
 }
@@ -931,7 +946,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
     return vazio;
   }
 
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
   if (!aba || aba.getLastRow() < 2 || aba.getLastColumn() < 6) return vazio;
 
   // O orçamento conta a execução INTEIRA: as etapas anteriores já
@@ -975,11 +990,11 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
 
   const props = PropertiesService.getScriptProperties();
   if (!fila.length) {
-    props.deleteProperty(ANALISES_CACHE_PROP_FREQ_CURSOR);
+    props.deleteProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2);
     return vazio;
   }
 
-  const retomada = props.getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR) || '';
+  const retomada = props.getProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2) || '';
   const encontrado = retomada ? fila.indexOf(retomada) : -1;
   const indiceInicial = encontrado >= 0 ? encontrado : 0;
 
@@ -1041,7 +1056,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
   }
 
   try {
-    const atual = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+    const atual = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
     if (atual && atual.getLastRow() >= 2 && atual.getLastColumn() >= 6) {
       const linhas = atual.getRange(2, 1, atual.getLastRow() - 1, 6).getValues();
 
@@ -1060,7 +1075,7 @@ function analisesAtualizarFrequenciaCacheComOrcamento_(ss, comparativoTurmas, in
       }
     }
 
-    props.setProperty(ANALISES_CACHE_PROP_FREQ_CURSOR, proximaTurma);
+    props.setProperty(ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2, proximaTurma);
   } finally {
     lock.releaseLock();
   }
@@ -1087,12 +1102,12 @@ function analisesGerarPeriodos_(mesesJanela) {
   return periodos;
 }
 
-const ANALISES_MESES_ABREV_PT_ = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const ANALISES_MESES_ABREV_PT_SIGA2 = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 function analisesChaveParaRotulo_(chave) {
   const partes = String(chave).split('-');
   const mes = Number(partes[1]);
-  return ANALISES_MESES_ABREV_PT_[mes - 1] + '-' + partes[0].slice(-2);
+  return ANALISES_MESES_ABREV_PT_SIGA2[mes - 1] + '-' + partes[0].slice(-2);
 }
 
 function analisesObterOuCriarAbaCache_(ss, nome, cabecalhos) {
@@ -1124,7 +1139,7 @@ function analisesNormalizarChaveMes_(valor) {
 }
 
 function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceira) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.GERAL, ['Mes', 'Ativos', 'Novas', 'Cancelamentos', 'Receita']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.GERAL, ['Mes', 'Ativos', 'Novas', 'Cancelamentos', 'Receita']);
   const linhas = periodos.map((p, i) => {
     const chave = analisesMesRotulo_(p).chave;
     const mat = serieMatriculas[i] || {};
@@ -1137,7 +1152,7 @@ function analisesGravarCacheGeral_(ss, periodos, serieMatriculas, serieFinanceir
 }
 
 function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfessorPorTurmaMes) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.TURMA, ['Mes', 'Turma', 'Receita', 'CustoProfessor']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.TURMA, ['Mes', 'Turma', 'Receita', 'CustoProfessor']);
   const linhas = [];
   detalhesPorTurma.forEach((pontos, turma) => {
     periodos.forEach((p, i) => {
@@ -1161,7 +1176,7 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfesso
  * turma não pôde ser identificada — ver analisesAtribuirPagamentoPorTurma_).
  */
 function analisesGravarCachePagamentoAluno_(ss, valorPagoPorAlunoMesTurma) {
-  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO, ['ChaveAlunoMes', 'Turma', 'Valor']);
+  const aba = analisesObterOuCriarAbaCache_(ss, ANALISES_CACHE_SHEETS_SIGA2.PAGAMENTO_ALUNO, ['ChaveAlunoMes', 'Turma', 'Valor']);
   const linhas = [];
   valorPagoPorAlunoMesTurma.forEach((porTurma, chaveAlunoMes) => {
     porTurma.forEach((valor, turma) => {
@@ -1192,7 +1207,7 @@ function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequencia
 
   const aba = analisesObterOuCriarAbaCache_(
     ss,
-    ANALISES_CACHE_SHEETS.COMPARATIVO,
+    ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO,
     ['Turma', 'Ativos', 'Saidas', 'Total', 'TaxaEvasao', 'FrequenciaMedia']
   );
 
@@ -1216,7 +1231,7 @@ function analisesGravarCacheComparativoTurmas_(ss, comparativoTurmas, frequencia
 
 function analisesLerCacheGeral_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.GERAL);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.GERAL);
   const mapa = new Map();
   if (!aba || aba.getLastRow() < 2) {
     return mapa;
@@ -1239,7 +1254,7 @@ function analisesLerCacheGeral_() {
 
 function analisesLerCacheTurma_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.TURMA);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.TURMA);
   const lista = [];
   if (!aba || aba.getLastRow() < 2) {
     return lista;
@@ -1258,7 +1273,7 @@ function analisesLerCacheTurma_() {
 
 function analisesLerCacheComparativoTurmas_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
   const lista = [];
   if (!aba || aba.getLastRow() < 2) {
     return lista;
@@ -1289,7 +1304,7 @@ function analisesLerCacheComparativoTurmas_() {
  */
 function analisesLerCachePagamentoAluno_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.PAGAMENTO_ALUNO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.PAGAMENTO_ALUNO);
   const mapa = new Map();
   if (!aba || aba.getLastRow() < 2) {
     return mapa;
@@ -1697,7 +1712,7 @@ function diagnosticarCacheMensalidadesAnalisesSIGA() {
   const abaMat = ss.getSheetByName('DimMatricula');
   const matriculas = lerMatriculasPagUnif_(abaMat);
   const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
 
   const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
   let totalAoVivo = 0;
@@ -1718,7 +1733,7 @@ function diagnosticarCacheMensalidadesAnalisesSIGA() {
   cachePagamentoAluno.forEach(porTurma => porTurma.forEach(v => { totalGravadoCachePagamentoAluno += v; }));
 
   const diagnostico = {
-    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM),
+    atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2),
     totalAoVivo_semNenhumFiltro: arredPagUnif_(totalAoVivo),
     totalAposFiltroTurmaAtiva_calculadoAgora: arredPagUnif_(totalAposFiltroTurma),
     totalGravadoNoCache_AnalisesCache_Turma: arredPagUnif_(totalGravadoCacheTurma),
@@ -1768,7 +1783,7 @@ function diagnosticarAlunoAnalisesSIGA(nomeParcial, mesChave) {
 
   const chavesAluno = new Set(matsDoAluno.map(m => m.chaveAluno).filter(Boolean));
 
-  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX);
+  const periodos = analisesGerarPeriodos_(ANALISES_CACHE_MESES_MAX_SIGA2);
   const { valorPagoPorAlunoMesTurma } = analisesCalcularFinanceiroEValorPagoSIGA_(ss, periodos, identidades);
 
   const pagamentos = [];
@@ -1897,7 +1912,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
 
 function analisesMesRotulo_(data) {
   const chave = Utilities.formatDate(data, Session.getScriptTimeZone(), 'yyyy-MM');
-  const rotulo = ANALISES_MESES_ABREV_PT_[data.getMonth()] + '-' + String(data.getFullYear()).slice(-2);
+  const rotulo = ANALISES_MESES_ABREV_PT_SIGA2[data.getMonth()] + '-' + String(data.getFullYear()).slice(-2);
   return { chave, rotulo };
 }
 
@@ -2020,7 +2035,7 @@ function analisesNumeroFrequenciaCacheV3_(valor) {
  */
 function analisesLerFrequenciasCacheComparativo_(ss) {
   const mapa = new Map();
-  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS.COMPARATIVO);
+  const aba = ss.getSheetByName(ANALISES_CACHE_SHEETS_SIGA2.COMPARATIVO);
 
   // Aba recém-criada pode ainda não ter as 6 colunas; ler além do que
   // existe lança exceção e derrubaria o recálculo inteiro.
@@ -2456,7 +2471,7 @@ function analisesReconciliarMatriculasSIGA(meses) {
   const diagnostico = {
     janelaMeses: janela,
     atualizadoEmDoCache:
-      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || '(nunca)',
+      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || '(nunca)',
     linhasNaDimMatricula: linhasTotais,
     linhasQueOSistemaNaoLe: {
       semNomeAluno: descartadasSemNome,
@@ -2581,13 +2596,82 @@ function listarEntradasDoMesSIGA(chaveMes) {
     recalculadoAgoraSemFiltroDeTipo: semFiltroDeTipo,
     veredito,
     cacheAtualizadoEm:
-      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM) || '(nunca)',
+      PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2) || '(nunca)',
     entradasContadas: entradas,
     // Caíram no mês, mas o TIPO não é entrada.
     ignoradasPeloTipo: forasPorTipo,
     // Nem chegaram a ser lidas: falta NOME_ALUNO ou TURMA.
     ignoradasPorCadastroIncompleto: forasPorCadastro,
     entrouPelaDataDeEdicao: entradas.filter(x => x.dataUsada === 'DATA_ALTERACAO').length
+  };
+
+  console.log(JSON.stringify(resultado, null, 2));
+  return resultado;
+}
+
+
+/**
+ * Ainda existe uma cópia deste arquivo no projeto?
+ *
+ * Este arquivo não declara nenhum dos seis nomes antigos (todos ganharam
+ * o sufixo _SIGA2). Então, se `typeof ANALISES_CACHE_SHEETS` ainda
+ * responder, só pode ter vindo de outro .gs. typeof não estoura com nome
+ * inexistente, então o teste é seguro nos dois casos.
+ *
+ * Rode depois de limpar o Alunos.gs para confirmar que ficou só um.
+ */
+function procurarCopiaDoAnalisesSIGA() {
+  const nomesAntigos = [
+    'ANALISES_CACHE_SHEETS',
+    'ANALISES_CACHE_PROP_ATUALIZADO_EM',
+    'ANALISES_CACHE_PROP_FREQ_CURSOR',
+    'ANALISES_CACHE_MESES_MAX',
+    'ANALISES_PDF_CONFIG_',
+    'ANALISES_MESES_ABREV_PT_'
+  ];
+
+  const aindaExistem = nomesAntigos.filter(nome => {
+    try {
+      // eslint-disable-next-line no-eval
+      return eval('typeof ' + nome) !== 'undefined';
+    } catch (erro) {
+      return true; // nome em TDZ também prova que alguém o declarou
+    }
+  });
+
+  // Qual versão de cada função o projeto está usando de verdade: lê o
+  // código em memória e procura uma marca que só a corrigida tem.
+  const marcas = [
+    ['analisesGravarCacheComparativoTurmas_', 'analisesLerFrequenciasCacheComparativo_(ss)'],
+    ['analisesAtualizarFrequenciaCacheComOrcamento_', 'pendentes.concat(preenchidas)'],
+    ['calcularSerieMatriculasAnalisesSIGA_', 'analisesTipoEntradaMatricula_(m.tipo)'],
+    ['obterMovimentacaoTurmaAnalisesSIGA', 'matriculasAtivasPorMes'],
+    ['obterAlunosPagamentosPorTurmaAnalisesSIGA', 'analisesFecharCentavosPorMesAnalises_']
+  ];
+
+  const versoes = marcas.map(([nome, marca]) => {
+    let situacao;
+    try {
+      situacao = eval(nome).toString().indexOf(marca) >= 0
+        ? 'ESTA (corrigida)'
+        : 'A DA CÓPIA (antiga)';
+    } catch (erro) {
+      situacao = 'NÃO EXISTE — ' + (erro && erro.message ? erro.message : String(erro));
+    }
+    return { funcao: nome, valendoAgora: situacao };
+  });
+
+  const velhasVencendo = versoes.filter(v => v.valendoAgora === 'A DA CÓPIA (antiga)');
+
+  const resultado = {
+    copiaDetectada: aindaExistem.length > 0,
+    constantesQueVieramDeOutroArquivo: aindaExistem,
+    versaoEmUso: versoes,
+    veredito: !aindaExistem.length
+      ? 'LIMPO. Este é o único arquivo do Análises no projeto.'
+      : (velhasVencendo.length
+          ? 'CÓPIA VENCENDO em ' + velhasVencendo.length + ' função(ões) — a tela ainda mostra número errado.'
+          : 'A cópia existe mas PERDE em todas as funções: o sistema está usando o código corrigido.')
   };
 
   console.log(JSON.stringify(resultado, null, 2));
