@@ -1,0 +1,63 @@
+<!--
+  SIGA — a validação de bolsa no arquivo "Pages"
+
+  ONDE
+  Procure no Pages por:  percentual de bolsa
+  Só existe uma ocorrência: dentro de salvarNovoAluno (e possivelmente uma
+  segunda igual dentro de salvarNovaMatricula).
+
+  O QUE FAZER
+  Apague o `if` inteiro que produz essa mensagem — da linha do `if` até a
+  chave que o fecha — e ponha o bloco abaixo no lugar. Depois troque, no
+  objeto que é enviado ao servidor, a linha
+
+      bolsista: document.getElementById('novoBolsista').value,
+
+  por
+
+      bolsista: bolsa,
+
+  Se preferir não mexer no JavaScript: apagar o `if` e não pôr nada no
+  lugar TAMBÉM funciona. normalizarBolsaSIGA_ valida no servidor e recusa
+  101, negativo e texto com mensagem própria. A validação no navegador só
+  existe para o aviso aparecer antes da ida e volta.
+-->
+
+<script>
+// Bolsa: em branco ou 0 = não é bolsista; 1 a 100 = percentual.
+// Mesma regra de normalizarBolsaSIGA_ no servidor — se um dia mudar lá,
+// mude aqui junto, senão as duas telas discordam de novo.
+const bolsaTexto = String(
+  document.getElementById('novoBolsista')?.value || ''
+).trim().replace('%', '').replace(',', '.');
+
+let bolsa = '';
+
+if (bolsaTexto !== '') {
+  const bolsaNumero = Number(bolsaTexto);
+
+  if (!Number.isFinite(bolsaNumero) || bolsaNumero < 0 || bolsaNumero > 100) {
+    mostrarMensagem(
+      'Informe um percentual de bolsa de 1 a 100, ou deixe em branco se o aluno não for bolsista.',
+      'erro'
+    );
+    return;
+  }
+
+  // 0 é uma resposta válida — quer dizer "não tem bolsa" — e vira vazio,
+  // que é como a planilha registra isso. Testar `if (bolsaNumero)` aqui
+  // seria a mesma armadilha de antes: Number('') também é 0.
+  if (bolsaNumero > 0) {
+    bolsa = bolsaNumero;
+  }
+}
+</script>
+
+
+<!--
+  No modal de nova matrícula é idêntico, trocando só o id:
+  'novoBolsista' -> 'matriculaBolsista'.
+
+  Se o nome da função de aviso não for mostrarMensagem, use a que já
+  estiver sendo usada nas outras validações da mesma função.
+-->
