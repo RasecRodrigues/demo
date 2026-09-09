@@ -6701,9 +6701,21 @@ function carregarCancelamentoBoletosSIGA() {
 }
 
 function filtrarCancelamentoBoletosSIGA() {
-  const termo = normalizarTexto(document.getElementById('buscaCancelamentoBoletosSIGA')?.value || '');
+  /*
+   * normalizarTexto vive no Code.gs — é função de servidor. Chamada aqui,
+   * no navegador, estoura "is not defined" e derruba a tela inteira, que
+   * é o que acontecia ao abrir Cancelamento de boletos. O equivalente do
+   * lado do cliente é normalizarBuscaMatriculasSIGA, logo acima neste
+   * mesmo arquivo.
+   */
+  const termo = normalizarBuscaMatriculasSIGA(
+    document.getElementById('buscaCancelamentoBoletosSIGA')?.value || ''
+  );
   const lista = cancelamentosBoletosSIGA.filter(item =>
-    !termo || normalizarTexto([item.nomeAluno,item.turma,item.status].join(' ')).includes(termo)
+    !termo ||
+    normalizarBuscaMatriculasSIGA(
+      [item.nomeAluno, item.turma, item.status].join(' ')
+    ).includes(termo)
   );
   document.getElementById('totalCancelamentoBoletosSIGA').textContent = String(cancelamentosBoletosSIGA.length);
   renderizarCancelamentoBoletosSIGA(lista);
