@@ -42,6 +42,8 @@ const ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2 = 'ANALISES_CACHE_ATUALIZADO_EM';
 // Turma em que o cálculo de frequência parou por falta de tempo; a próxima
 // execução retoma dela em vez de recomeçar do início da lista.
 const ANALISES_CACHE_PROP_FREQ_CURSOR_SIGA2 = 'ANALISES_CACHE_FREQ_CURSOR';
+const ANALISES_CACHE_PROP_RECALC_EM_ANDAMENTO_SIGA2 = 'ANALISES_CACHE_RECALC_EM_ANDAMENTO';
+const ANALISES_CACHE_RECALC_TTL_MS_SIGA2 = 10 * 60 * 1000;
 const ANALISES_CACHE_MESES_MAX_SIGA2 = 36;
 
 /**
@@ -64,18 +66,21 @@ function obterAnalisesSIGA(filtros) {
   const turma = analisesLerCacheTurma_();
   const comparativoBruto = analisesLerCacheComparativoTurmas_();
 
-  const serieMatriculas = chaves.map(chave => {
-    const linha = geral.get(chave);
-    const novas = linha ? linha.novas : 0;
-    const canceladas = linha ? linha.canceladas : 0;
-    return {
-      periodo: analisesChaveParaRotulo_(chave),
-      novas,
-      canceladas,
-      ativos: linha ? linha.ativos : 0,
-      saldo: novas - canceladas
-    };
-  });
+  /*
+   * Matrículas e cancelamentos são baratos de calcular e precisam refletir
+   * a DimMatricula imediatamente. Entradas usam DATA_ALTERACAO/MATRICULA e
+   * os tipos NOVA/ATIVAÇÃO/UPGRADE/RENOVAÇÃO. Cancelamentos usam toda linha
+   * com DATA_CANCELAMENTO/FINALIZACAO preenchida, independentemente do
+   * STATUS. Por isso esta série NÃO vem do cache financeiro.
+   */
+  const ssAgora = SpreadsheetApp.getActiveSpreadsheet();
+  const abaMatAgora = ssAgora.getSheetByName('DimMatricula');
+  const matriculasAgora = abaMatAgora ? lerMatriculasPagUnif_(abaMatAgora) : [];
+  const serieMatriculas = calcularSerieMatriculasDiretoDimMatricula_(
+    abaMatAgora,
+    matriculasAgora,
+    periodos
+  );
 
   const serieFinanceira = chaves.map(chave => {
     const linha = geral.get(chave);
@@ -164,10 +169,6 @@ function obterAnalisesSIGA(filtros) {
    * Esses dois números são lidos diretamente da DimMatricula em cada abertura,
    * portanto não dependem do cache histórico da tela.
    */
-  const ssAgora = SpreadsheetApp.getActiveSpreadsheet();
-  const abaMatAgora = ssAgora.getSheetByName('DimMatricula');
-  const matriculasAgora = abaMatAgora ? lerMatriculasPagUnif_(abaMatAgora) : [];
-
   const ativasAgora = matriculasAgora.filter(m => {
     const status = normalizarPagUnif_(m && m.status || '');
     return status === 'ATIVO' || status === 'ATIVA';
@@ -313,16 +314,21 @@ function obterAlunosPagamentosPorTurmaAnalisesSIGA(filtros) {
       const porTurmaPagamento = valorPagoPorAlunoMesTurma.get(chaveAluno + '|' + chaveMes);
       if (!porTurmaPagamento) return;
 
-      const combo = vigentes.length > 1;
-      const turmasDoMes = vigentes
-        .map(m => ({
-          turma: String(m.turma || '').trim(),
-          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
-        }))
-        .filter(d => d.turma && turmasAtivas.has(d.turma));
+      const combo = analisesQuantidadeTurmasDistintas_(vigentes) > 1;
+      /*
+       * O rateio precisa enxergar TODAS as turmas em que o aluno estava
+       * matriculado naquele mês, inclusive uma turma hoje encerrada. O
+       * filtro de turmas exibidas só pode ser aplicado DEPOIS da atribuição.
+       * Filtrar antes era o erro que fazia, por exemplo, R$ 80 de uma turma
+       * antiga serem somados aos R$ 180 da turma selecionada (mostrando
+       * R$ 260 nela).
+       */
+      const turmasDoMes = analisesAgruparTurmasDoMes_(vigentes, combo, ref, dataCalculo);
       if (!turmasDoMes.length) return;
 
-      const parcela = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes).get(turmaAlvo) || 0;
+      const atribuicao = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes);
+      const turmaCanonica = analisesEncontrarTurmaCanonica_(turmaAlvo, turmasDoMes);
+      const parcela = turmaCanonica ? (atribuicao.get(turmaCanonica) || 0) : 0;
       if (!(parcela > 0)) return;
 
       if (!parcelaPorAlunoMes.has(chaveAluno)) parcelaPorAlunoMes.set(chaveAluno, new Map());
@@ -362,11 +368,11 @@ function analisesPeriodosEntreChaves_(mesInicial, mesFinal) {
 function recalcularCacheAnalisesManualSIGA(filtros) {
   filtros = filtros || {};
   validarPermissaoPagamentosSIGA_(filtros.token);
-  recalcularCacheAnalisesSIGA();
-  return {
+  const resultado = recalcularCacheAnalisesSIGA() || {};
+  return Object.assign({
     sucesso: true,
     atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2)
-  };
+  }, resultado);
 }
 
 /**
@@ -438,18 +444,87 @@ function garantirCacheAnalisesSIGA_() {
  * trabalho), então nenhuma delas precisa de lock.
  */
 function recalcularCacheAnalisesSIGA() {
-  const inicioExecucao = Date.now();
+  const reserva = analisesTentarReservarRecalculo_();
+  if (!reserva.adquirida) {
+    return {
+      sucesso: true,
+      emAndamento: true,
+      mensagem: 'Os dados já estão sendo recalculados por outra execução. Aguarde a conclusão.'
+    };
+  }
+
+  const inicioExecucao = reserva.inicio;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const nucleo = analisesRecalcularCacheNucleoComLock_(ss);
-  analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
-  analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas, inicioExecucao);
+  try {
+    const nucleo = analisesRecalcularCacheNucleoComLock_(ss);
+    if (!nucleo) {
+      return {
+        sucesso: true,
+        emAndamento: true,
+        mensagem: 'Outra rotina está finalizando o cache. Tente atualizar a tela em instantes.'
+      };
+    }
+
+    analisesAtualizarMensalidadesCacheSemLock_(ss, nucleo);
+    analisesAtualizarFrequenciaCacheComOrcamento_(ss, nucleo.comparativoTurmas, inicioExecucao);
+
+    return {
+      sucesso: true,
+      emAndamento: false,
+      atualizadoEm: PropertiesService.getScriptProperties().getProperty(ANALISES_CACHE_PROP_ATUALIZADO_EM_SIGA2)
+    };
+  } finally {
+    analisesLiberarReservaRecalculo_(reserva.inicio);
+  }
 }
 
 function analisesRecalcularCacheNucleoComLock_(ss) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  if (!lock.tryLock(5000)) return null;
   try {
     return analisesRecalcularCacheNucleoSemLock_(ss);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Reserva leve para impedir que botão, gatilho e primeira abertura iniciem
+ * simultaneamente o recálculo pesado. O ScriptLock fica preso por poucos
+ * milissegundos; a propriedade guarda a reserva durante o processamento.
+ */
+function analisesTentarReservarRecalculo_() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return { adquirida: false };
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const agora = Date.now();
+    const inicioAnterior = Number(
+      props.getProperty(ANALISES_CACHE_PROP_RECALC_EM_ANDAMENTO_SIGA2) || 0
+    );
+
+    if (inicioAnterior && agora - inicioAnterior < ANALISES_CACHE_RECALC_TTL_MS_SIGA2) {
+      return { adquirida: false, inicio: inicioAnterior };
+    }
+
+    props.setProperty(ANALISES_CACHE_PROP_RECALC_EM_ANDAMENTO_SIGA2, String(agora));
+    return { adquirida: true, inicio: agora };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function analisesLiberarReservaRecalculo_(inicioDaReserva) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return;
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const atual = props.getProperty(ANALISES_CACHE_PROP_RECALC_EM_ANDAMENTO_SIGA2);
+    if (String(atual || '') === String(inicioDaReserva || '')) {
+      props.deleteProperty(ANALISES_CACHE_PROP_RECALC_EM_ANDAMENTO_SIGA2);
+    }
   } finally {
     lock.releaseLock();
   }
@@ -478,7 +553,11 @@ function analisesRecalcularCacheNucleoSemLock_(ss) {
   // do sistema.
   const identidades = criarIndiceIdentidadePagamentosSIGA_(ss, matriculas);
 
-  const serieMatriculas = calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos);
+  const serieMatriculas = calcularSerieMatriculasDiretoDimMatricula_(
+    abaMat,
+    matriculas,
+    periodos
+  );
   const comparativoTurmas = calcularComparativoTurmasAnalisesSIGA_(matriculas, true);
 
   // Só turmas com aluno ativo agora — mesmo filtro já usado no
@@ -656,6 +735,8 @@ function gerarPdfAnalisesSIGA(dados) {
      * até a altura caber e sobrava metade da folha em branco dos dois
      * lados. 162mm é o que resta da altura útil (A4 paisagem, 186mm)
      * depois do título do bloco, e faz a LARGURA voltar a ser o limite.
+     * A tela agora manda esses dois gráficos já redesenhados na proporção
+     * da folha — ver ANALISES_PROPORCAO_PDF_ no Analises_.html.
      */
     + 'img.grafico{width:100%;max-height:162mm;object-fit:contain;display:block}'
     + 'td,th{overflow-wrap:anywhere}'
@@ -797,19 +878,19 @@ function obterMovimentacaoTurmaAnalisesSIGA(filtros) {
 
     if (!chaveAluno) return;
 
-    if (m.inicio instanceof Date) {
+    if (m.inicio instanceof Date && analisesTipoEntradaMatricula_(m.tipo)) {
       const chave = analisesMesRotulo_(m.inicio).chave;
       if (entradas.has(chave)) {
         entradas.set(chave, entradas.get(chave) + 1);
       }
     }
 
-    if (m.fim instanceof Date) {
+    if (m.fim instanceof Date && analisesStatusSaidaMatricula_(m.status)) {
       const chave = analisesMesRotulo_(m.fim).chave;
       if (saidas.has(chave)) {
         saidas.set(chave, saidas.get(chave) + 1);
       }
-    } else if (!analisesEmCursoParaMovimentacao_(m)) {
+    } else if (analisesStatusSaidaMatricula_(m.status) && !(m.fim instanceof Date)) {
       saidasSemData++;
     }
 
@@ -885,10 +966,10 @@ function analisesAtivoNoMes_(m, inicioMes, fimMes) {
   return analisesEmCursoParaMovimentacao_(m);
 }
 
-/** Matrícula que ainda não é uma saída: aluno em curso ou em espera. */
+/** Matrícula ativa conforme a regra oficial da DimMatricula. */
 function analisesEmCursoParaMovimentacao_(m) {
   const status = normalizarPagUnif_(m && m.status || '');
-  return status === 'ATIVO' || status === 'ATIVA' || status === 'EM ESPERA' || status === 'SUSPENSO' || status === 'SUSPENSA';
+  return status === 'ATIVO' || status === 'ATIVA';
 }
 
 /**
@@ -931,13 +1012,25 @@ function analisesMatriculaNoRateio_(m, ref, dataCalculo) {
  * falhar com uma mensagem que diz o que fazer, em vez de um ReferenceError.
  */
 function analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) {
-  if (typeof calcularValorMatriculaPagUnifV38_ === 'function') {
-    return calcularValorMatriculaPagUnifV38_(m, combo, ref, dataCalculo);
-  }
   if (typeof calcularValorMatriculaPagUnif_ === 'function') {
     return calcularValorMatriculaPagUnif_(m, combo, ref, dataCalculo);
   }
-  throw new Error('Análises não encontrou a função de cálculo do valor da matrícula (esperada calcularValorMatriculaPagUnifV38_ no arquivo Pagamentos). Se ela foi renomeada, atualize analisesCalcularValorMatricula_ no Analises.');
+
+  // O arquivo Pagamentos numera essa função a cada revisão (V38, V39...).
+  // Procura da versão mais nova para a mais antiga para não quebrar o
+  // Análises sempre que o cálculo financeiro ganhar uma versão.
+  for (let versao = 99; versao >= 1; versao--) {
+    const nome = 'calcularValorMatriculaPagUnifV' + versao + '_';
+    try {
+      // eslint-disable-next-line no-eval
+      const candidata = eval('typeof ' + nome + " === 'function' ? " + nome + ' : null');
+      if (candidata) return candidata(m, combo, ref, dataCalculo);
+    } catch (erro) {
+      // Continua procurando uma versão existente.
+    }
+  }
+
+  throw new Error('Análises não encontrou nenhuma função calcularValorMatriculaPagUnif_ no arquivo Pagamentos.');
 }
 
 /**
@@ -1180,7 +1273,8 @@ function analisesGravarCacheTurma_(ss, periodos, detalhesPorTurma, custoProfesso
     periodos.forEach((p, i) => {
       const chave = analisesMesRotulo_(p).chave;
       const ponto = pontos[i] || {};
-      const custo = custoProfessorPorTurmaMes ? Number(custoProfessorPorTurmaMes.get(turma + '|' + chave) || 0) : 0;
+      const chaveCusto = normalizarPagUnif_(turma) + '|' + chave;
+      const custo = custoProfessorPorTurmaMes ? Number(custoProfessorPorTurmaMes.get(chaveCusto) || 0) : 0;
       linhas.push([chave, turma, Number(ponto.receita || 0), custo]);
     });
   });
@@ -1562,12 +1656,17 @@ function analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes) {
   if (!porTurmaPagamento || !porTurmaPagamento.size || !turmasDoMes.length) {
     return resultado;
   }
-  const nomesTurmasDoMes = new Set(turmasDoMes.map(d => d.turma));
+  const canonicaPorChave = new Map();
+  turmasDoMes.forEach(d => {
+    const chave = normalizarPagUnif_(d.turma || '');
+    if (chave && !canonicaPorChave.has(chave)) canonicaPorChave.set(chave, d.turma);
+  });
 
   let valorDesconhecido = 0;
   porTurmaPagamento.forEach((valor, turma) => {
-    if (turma && nomesTurmasDoMes.has(turma)) {
-      resultado.set(turma, (resultado.get(turma) || 0) + valor);
+    const canonica = canonicaPorChave.get(normalizarPagUnif_(turma || ''));
+    if (canonica) {
+      resultado.set(canonica, (resultado.get(canonica) || 0) + valor);
     } else {
       valorDesconhecido += valor;
     }
@@ -1587,12 +1686,53 @@ function analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes) {
 }
 
 /**
- * Quanto a escola pagou de professor, por turma e por mês — soma
- * "Valor a Pagar" da aba "Pagamentos Professores", agrupando pela
- * própria coluna Turma e pelo mês de "Data da Aula" (não precisa de
- * resolução de identidade: a aba já vem com a turma escrita em cada
- * linha). Usado só pra calcular o lucro da tabela "Mensalidades por
- * turma no tempo" (receita paga − custo do professor).
+ * Agrupa matrículas repetidas da mesma turma antes do rateio. Isso impede
+ * que duas linhas históricas iguais façam a turma receber duas parcelas.
+ */
+function analisesAgruparTurmasDoMes_(matriculas, combo, ref, dataCalculo) {
+  const porChave = new Map();
+
+  (matriculas || []).forEach(m => {
+    const turma = String(m && m.turma || '').trim();
+    const chave = normalizarPagUnif_(turma);
+    if (!chave) return;
+
+    const valorDevido = Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0);
+    if (!porChave.has(chave)) {
+      porChave.set(chave, { turma, valorDevido: 0 });
+    }
+    porChave.get(chave).valorDevido += valorDevido;
+  });
+
+  return Array.from(porChave.values());
+}
+
+function analisesQuantidadeTurmasDistintas_(matriculas) {
+  return new Set(
+    (matriculas || [])
+      .map(m => normalizarPagUnif_(m && m.turma || ''))
+      .filter(Boolean)
+  ).size;
+}
+
+/** Resolve diferenças de maiúsculas, acentos e espaços no nome da turma. */
+function analisesEncontrarTurmaCanonica_(turma, turmasDoMes) {
+  const chave = normalizarPagUnif_(turma || '');
+  const encontrada = (turmasDoMes || []).find(d => normalizarPagUnif_(d.turma || '') === chave);
+  return encontrada ? encontrada.turma : '';
+}
+
+/**
+ * Quanto a escola desembolsa com professor por TURMA e por MÊS DE
+ * PAGAMENTO. O professor recebe em um mês pelas aulas do mês anterior.
+ * Portanto, a DATA DA AULA avança um mês para chegar ao mês em que o
+ * custo deve aparecer na tabela de lucro:
+ *
+ *   aulas JUL-26 -> custo/pagamento AGO-26
+ *   aulas AGO-26 -> custo/pagamento SET-26
+ *
+ * Se futuramente existir uma coluna explícita de mês/data do pagamento,
+ * ela será usada diretamente, sem deslocamento.
  */
 function analisesCalcularCustoProfessorPorTurmaMes_(ss) {
   const custoPorTurmaMes = new Map();
@@ -1605,14 +1745,85 @@ function analisesCalcularCustoProfessorPorTurmaMes_(ss) {
   for (let i = 1; i < dados.length; i++) {
     const linha = dados[i];
     const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
-    const dataAula = parseDataPagUnif_(campoPagUnif_(linha, mapa, ['DATA DA AULA', 'DATA_AULA']));
-    if (!turma || !dataAula) continue;
+    if (!turma) continue;
+
+    const competenciaAulas = analisesCompetenciaAulasProfessor_(linha, mapa);
+    if (!competenciaAulas) continue;
     const valor = numeroPagUnif_(campoPagUnif_(linha, mapa, ['VALOR A PAGAR']));
     if (valor <= 0) continue;
-    const chave = turma + '|' + analisesMesRotulo_(dataAula).chave;
+    const chave = normalizarPagUnif_(turma) + '|' + analisesMesRotulo_(competenciaAulas).chave;
     custoPorTurmaMes.set(chave, (custoPorTurmaMes.get(chave) || 0) + valor);
   }
   return custoPorTurmaMes;
+}
+
+function analisesCompetenciaAulasProfessor_(linha, mapa) {
+  /*
+   * Primeiro procura o mês em que o professor recebe/visualiza o pagamento.
+   * Os cabeçalhos abaixo cobrem as versões já usadas pelo portal.
+   */
+  const valorCompetenciaPagamento = campoPagUnif_(linha, mapa, [
+    'COMPETENCIA PAGAMENTO', 'COMPETÊNCIA PAGAMENTO',
+    'MES PAGAMENTO', 'MÊS PAGAMENTO',
+    'MES_ANO', 'MÊS_ANO', 'MES ANO', 'MÊS ANO',
+    'MES SELECIONADO', 'MÊS SELECIONADO',
+    'DATA PAGAMENTO', 'DATA DO PAGAMENTO'
+  ]);
+
+  const mesPagamento =
+    inicioMesPagUnif_(valorCompetenciaPagamento) ||
+    parseDataPagUnif_(valorCompetenciaPagamento);
+
+  const dataAula = parseDataPagUnif_(campoPagUnif_(linha, mapa, [
+    'DATA DA AULA', 'DATA_AULA'
+  ]));
+
+  // Uma coluna explícita já representa o mês do desembolso.
+  if (mesPagamento) {
+    return new Date(mesPagamento.getFullYear(), mesPagamento.getMonth(), 1);
+  }
+
+  // Na estrutura atual só existe Data da Aula: julho é pago em agosto.
+  return dataAula
+    ? new Date(dataAula.getFullYear(), dataAula.getMonth() + 1, 1)
+    : null;
+}
+
+/**
+ * Conferência pronta para o caso informado. Execute sem parâmetros para
+ * conferir FORMAÇÃO INTERMED1 em agosto/2026. Não altera nenhuma planilha.
+ */
+function diagnosticarCustoProfessorTurmaMesSIGA(turmaInformada, mesInformado) {
+  const turmaAlvo = String(turmaInformada || 'FORMAÇÃO INTERMED1').trim();
+  const mesAlvo = String(mesInformado || '2026-08').trim();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const aba = ss.getSheetByName('Pagamentos Professores');
+  if (!aba || aba.getLastRow() < 2) {
+    throw new Error('Aba Pagamentos Professores não encontrada ou vazia.');
+  }
+
+  const dados = aba.getDataRange().getValues();
+  const mapa = mapaGenericoPagUnif_(dados[0]);
+  const linhas = [];
+  let total = 0;
+
+  for (let i = 1; i < dados.length; i++) {
+    const linha = dados[i];
+    const turma = String(campoPagUnif_(linha, mapa, ['TURMA']) || '').trim();
+    if (normalizarPagUnif_(turma) !== normalizarPagUnif_(turmaAlvo)) continue;
+
+    const competencia = analisesCompetenciaAulasProfessor_(linha, mapa);
+    if (!competencia || analisesMesRotulo_(competencia).chave !== mesAlvo) continue;
+
+    const valor = numeroPagUnif_(campoPagUnif_(linha, mapa, ['VALOR A PAGAR']));
+    if (!(valor > 0)) continue;
+    total += valor;
+    linhas.push({ linhaPlanilha: i + 1, turma, competenciaAulas: mesAlvo, valor });
+  }
+
+  const resultado = { turma: turmaAlvo, competenciaAulas: mesAlvo, custoProfessor: arredPagUnif_(total), linhas };
+  console.log(JSON.stringify(resultado, null, 2));
+  return resultado;
 }
 
 /**
@@ -1887,13 +2098,12 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
         return;
       }
 
-      const combo = ativas.length > 1;
-      const turmasDoMes = ativas
-        .map(m => ({
-          turma: String(m.turma || '').trim(),
-          valorDevido: Number(analisesCalcularValorMatricula_(m, combo, ref, dataCalculo) || 0)
-        }))
-        .filter(d => d.turma && (!turmasAtivas || turmasAtivas.has(d.turma)));
+      const combo = analisesQuantidadeTurmasDistintas_(ativas) > 1;
+      // Rateia entre todas as matrículas vigentes do aluno naquele mês.
+      // `turmasAtivas` limita apenas o que será exibido, nunca a base do
+      // rateio; aplicar esse filtro aqui transferia pagamentos de turmas
+      // encerradas para a turma ativa que restou.
+      const turmasDoMes = analisesAgruparTurmasDoMes_(ativas, combo, ref, dataCalculo);
       if (!turmasDoMes.length) {
         return;
       }
@@ -1901,6 +2111,7 @@ function calcularMensalidadesPorTurmaAnalisesSIGA_(matriculas, periodos, turmasA
       const atribuicao = analisesAtribuirPagamentoPorTurma_(porTurmaPagamento, turmasDoMes);
       atribuicao.forEach((parcela, turma) => {
         if (!(parcela > 0)) return;
+        if (turmasAtivas && !turmasAtivas.has(turma)) return;
         if (!receitaPorTurmaMes.has(turma)) {
           receitaPorTurmaMes.set(turma, new Map());
         }
@@ -1939,19 +2150,23 @@ function analisesMesRotulo_(data) {
 }
 
 /**
- * "Em curso" para fins de contagem de alunos: ATIVO ou EM ESPERA somam
- * juntos. Qualquer outro status (CANCELADO, ABANDONO, FINALIZADO,
- * SUSPENSO, INATIVO, TURMA ENCERRADA etc.) conta como saída.
+ * Ativo significa exclusivamente STATUS ATIVO/ATIVA na DimMatricula.
+ * EM ESPERA não é matrícula ativa e SUSPENSO pertence às saídas.
  */
 function analisesStatusAtivo_(status) {
   const s = normalizarPagUnif_(status);
-  return s === 'ATIVO' || s === 'EM ESPERA';
+  return s === 'ATIVO' || s === 'ATIVA';
 }
 
 function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
+  const agora = new Date();
   return periodos.map(periodo => {
     const inicioMes = periodo;
     const fimMes = new Date(periodo.getFullYear(), periodo.getMonth() + 1, 0, 23, 59, 59, 999);
+    const limiteAtivos =
+      periodo.getFullYear() === agora.getFullYear() && periodo.getMonth() === agora.getMonth()
+        ? agora
+        : fimMes;
 
     let novas = 0;
     let canceladas = 0;
@@ -1968,7 +2183,7 @@ function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
         canceladas++;
       }
 
-      if (analisesStatusAtivo_(m.status) && vigenteNoMesPagUnif_(m, periodo)) {
+      if (analisesAtivoNoMes_(m, inicioMes, limiteAtivos)) {
         ativos++;
       }
     });
@@ -1978,6 +2193,88 @@ function calcularSerieMatriculasAnalisesSIGA_(matriculas, periodos) {
       novas,
       canceladas,
       ativos,
+      saldo: novas - canceladas
+    };
+  });
+}
+
+/**
+ * Série oficial do gráfico "Matrículas vs. cancelamentos", lida diretamente
+ * da DimMatricula.
+ *
+ * ENTRADA:
+ *   - ID_MATRICULA único;
+ *   - mês de DATA_ALTERACAO/MATRICULA;
+ *   - TIPO_MATRICULA/ALTERACAO em NOVA, ATIVAÇÃO, UPGRADE ou RENOVAÇÃO.
+ *
+ * CANCELAMENTO:
+ *   - ID_MATRICULA único;
+ *   - mês de DATA_CANCELAMENTO/FINALIZACAO;
+ *   - basta a data estar preenchida; STATUS não é usado como filtro.
+ */
+function calcularSerieMatriculasDiretoDimMatricula_(aba, matriculas, periodos) {
+  const baseAtivos = calcularSerieMatriculasAnalisesSIGA_(matriculas || [], periodos);
+  const entradasPorMes = new Map();
+  const cancelamentosPorMes = new Map();
+
+  (periodos || []).forEach(p => {
+    const chave = analisesMesRotulo_(p).chave;
+    entradasPorMes.set(chave, new Set());
+    cancelamentosPorMes.set(chave, new Set());
+  });
+
+  if (aba && aba.getLastRow() >= 2) {
+    const dados = aba.getDataRange().getValues();
+    const mapa = mapaGenericoPagUnif_(dados[0]);
+
+    for (let i = 1; i < dados.length; i++) {
+      const linha = dados[i];
+      const idMatricula = String(campoPagUnif_(linha, mapa, [
+        'ID_MATRICULA', 'ID MATRÍCULA', 'ID MATRICULA'
+      ]) || '').trim();
+
+      // Sem ID não existe matrícula válida para esta contagem.
+      if (!idMatricula) continue;
+
+      const tipo = campoPagUnif_(linha, mapa, [
+        'TIPO_MATRICULA/ALTERACAO', 'TIPO_MATRÍCULA/ALTERAÇÃO',
+        'TIPO_MATRICULA', 'TIPO DE MATRÍCULA'
+      ]);
+      const dataEntrada = parseDataPagUnif_(campoPagUnif_(linha, mapa, [
+        'DATA_ALTERACAO/MATRICULA', 'DATA_ALTERAÇÃO/MATRÍCULA',
+        'DATA ALTERACAO/MATRICULA', 'DATA ALTERAÇÃO/MATRÍCULA'
+      ]));
+
+      if (dataEntrada && analisesTipoEntradaMatricula_(tipo)) {
+        const chaveEntrada = analisesMesRotulo_(dataEntrada).chave;
+        if (entradasPorMes.has(chaveEntrada)) {
+          entradasPorMes.get(chaveEntrada).add(idMatricula);
+        }
+      }
+
+      const dataCancelamento = parseDataPagUnif_(campoPagUnif_(linha, mapa, [
+        'DATA_CANCELAMENTO/FINALIZACAO', 'DATA_CANCELAMENTO/FINALIZAÇÃO',
+        'DATA CANCELAMENTO/FINALIZACAO', 'DATA CANCELAMENTO/FINALIZAÇÃO'
+      ]));
+
+      if (dataCancelamento) {
+        const chaveCancelamento = analisesMesRotulo_(dataCancelamento).chave;
+        if (cancelamentosPorMes.has(chaveCancelamento)) {
+          cancelamentosPorMes.get(chaveCancelamento).add(idMatricula);
+        }
+      }
+    }
+  }
+
+  return (periodos || []).map((p, indice) => {
+    const { chave, rotulo } = analisesMesRotulo_(p);
+    const novas = entradasPorMes.get(chave).size;
+    const canceladas = cancelamentosPorMes.get(chave).size;
+    return {
+      periodo: rotulo,
+      novas,
+      canceladas,
+      ativos: Number(baseAtivos[indice] && baseAtivos[indice].ativos || 0),
       saldo: novas - canceladas
     };
   });
@@ -2004,13 +2301,13 @@ function calcularComparativoTurmasAnalisesSIGA_(matriculas, incluirTodas) {
     const item = porTurma.get(turma);
     item.total++;
 
-    // Todo status que não seja "em curso" (ATIVO ou EM ESPERA) conta como
-    // saída — CANCELADO, ABANDONO, FINALIZADO, SUSPENSO, INATIVO, TURMA
-    // ENCERRADA etc. Assim ativos + saídas sempre bate com o total, sem
-    // nenhum status ficando de fora da contagem.
+    // As duas contagens usam exatamente os conjuntos declarados na tela.
+    // EM ESPERA e qualquer status não listado permanecem no total histórico,
+    // mas não são inventados como saída.
     if (analisesStatusAtivo_(m.status)) {
       item.ativos++;
-    } else {
+    }
+    if (analisesStatusSaidaMatricula_(m.status)) {
       item.saidas++;
     }
   });
@@ -2072,10 +2369,10 @@ function analisesLerFrequenciasCacheComparativo_(ss) {
   return mapa;
 }
 
-/** ATIVAÇÃO vira ATIVACAO em normalizarPagUnif_ (o acento é removido). */
+/** ATIVAÇÃO/RENOVAÇÃO perdem o acento em normalizarPagUnif_. */
 function analisesTipoEntradaMatricula_(tipo) {
   const t = normalizarPagUnif_(tipo || '');
-  return t === 'ATIVACAO' || t === 'NOVA' || t === 'UPGRADE';
+  return t === 'ATIVACAO' || t === 'NOVA' || t === 'UPGRADE' || t === 'RENOVACAO';
 }
 
 /** Aceita as duas formas de gênero: a planilha traz as duas. */
