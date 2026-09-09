@@ -399,6 +399,30 @@ function normalizarBolsaSIGA_(valor) {
     return '';
   }
 
+  /*
+   * O campo "Bolsista?" foi um <select> NÃO/SIM antes de virar percentual,
+   * e telas abertas há horas ainda mandam essas palavras. "NÃO" é a mesma
+   * coisa que em branco, então passa. "SIM" não: ele afirma que há bolsa
+   * sem dizer quanto, e gravar um palpite aqui viraria mensalidade errada
+   * na cobrança — melhor recusar dizendo o que falta.
+   */
+  const semAcento = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  if (semAcento === 'NAO' || semAcento === 'N') {
+    return '';
+  }
+
+  if (semAcento === 'SIM' || semAcento === 'S') {
+    throw new Error(
+      'O campo de bolsa agora recebe o PERCENTUAL, não SIM/NÃO. ' +
+      'Informe um número de 1 a 100, ou deixe em branco (ou 0) se o aluno não for bolsista. ' +
+      'Se a tela ainda mostra um seletor SIM/NÃO, recarregue a página.'
+    );
+  }
+
   const numero = Number(texto);
   if (!Number.isFinite(numero)) {
     throw new Error(

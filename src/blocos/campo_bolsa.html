@@ -1,0 +1,68 @@
+<!--
+  SIGA — o campo "Bolsista?" vira percentual
+
+  PROBLEMA
+  A tela manda "NÃO" ou "SIM" (um <select>), e a validação em JavaScript
+  exige um número de 1 a 100. Nenhuma das duas opções do seletor passa —
+  por isso "Informe um percentual de bolsa entre 1 e 100" aparece mesmo
+  sem ninguém digitar nada errado. O campo e a regra nunca combinaram.
+
+  SOLUÇÃO
+  Trocar o seletor por um campo de número, nas DUAS telas que têm o campo.
+  Em branco ou 0 = não é bolsista; 1 a 100 = percentual.
+
+  São duas substituições no HTML, cada uma de um bloco <div class="campo">
+  inteiro. Procure pelo id (novoBolsista / matriculaBolsista).
+-->
+
+
+<!-- ==========================================================
+     1) TELA "NOVO ALUNO" — substitua o bloco do id novoBolsista
+     ========================================================== -->
+<div class="campo">
+  <label>Bolsa (%)</label>
+  <input
+    id="novoBolsista"
+    type="number"
+    min="0"
+    max="100"
+    step="1"
+    inputmode="numeric"
+    placeholder="Deixe em branco se não for bolsista"
+  >
+  <small class="dado-secundario">
+    Em branco ou 0 = não é bolsista. 100 = bolsa integral.
+  </small>
+</div>
+
+
+<!-- ==========================================================
+     2) MODAL "NOVA MATRÍCULA" — substitua o bloco do id matriculaBolsista
+     ========================================================== -->
+<div class="campo">
+  <label>Bolsa (%)</label>
+  <input
+    id="matriculaBolsista"
+    type="number"
+    min="0"
+    max="100"
+    step="1"
+    inputmode="numeric"
+    placeholder="Deixe em branco se não for bolsista"
+  >
+  <small class="dado-secundario">
+    Em branco ou 0 = não é bolsista. 100 = bolsa integral.
+  </small>
+</div>
+
+
+<!--
+  O `required` saiu de propósito nos dois: com ele, o navegador exigiria
+  um número em toda matrícula, e a maioria dos alunos não tem bolsa.
+  O rótulo perdeu o "*" pela mesma razão.
+
+  `type="number"` com min/max não substitui a validação — o campo aceita
+  ser preenchido por colagem e por autopreenchimento sem passar por ela,
+  e nada impede alguém chamar a função direto. Quem decide continua sendo
+  normalizarBolsaSIGA_, no servidor.
+-->
