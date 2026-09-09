@@ -113,8 +113,13 @@ function cadastrarMatriculaAlunoExistente(formulario) {
         'DATA_CANCELAMENTO/FINALIZACAO': '',
         ISENTO_MATRICULA:
           formulario.isentoMatricula || 'NÃO',
-        BOLSISTA:
-          formulario.bolsista || 'NÃO',
+        // `|| 'NÃO'` escrevia o TEXTO "NÃO" na coluna sempre que o campo
+        // vinha em branco — e o campo vem em branco na maioria das
+        // matrículas. Com isso "não é bolsista" passou a ter três
+        // grafias na DimMatricula ('', 'NÃO' e 0), e quem lê a coluna
+        // depois precisa conhecer as três. normalizarBolsaSIGA_ (no
+        // Matriculas.gs) reduz todas a célula vazia.
+        BOLSISTA: normalizarBolsaSIGA_(formulario.bolsista),
         SEM_COMBO_ANTES_VENCIMENTO:
           converterNumero(formulario.semComboAntes),
         SEM_COMBO_APOS_VENCIMENTO:
